@@ -15,14 +15,14 @@ description: 会话开始时建立流程纪律——任何开发任务动手前�
 
 ```
 triage（定级路由）
-  ├─ L1 小修 ──────────────→ plan → implement → review → acceptance → finish
+  ├─ L1 bug → debug（根因+分流）─→ 小修顺手 / plan → implement → review → acceptance → finish
   ├─ L2 单域功能 → spec ───→ plan → implement → review → acceptance → finish
   └─ L3 跨域协作 → spec → contract → breakdown
                      ├─ 轻档：单轮 implement → review → acceptance → finish
                      └─ 重档：各域并行(plan→implement→review) → integrate → finish
 ```
 
-横切法（被各节点引用，不占流程位）：`architecture-law`（架构法）、`defect-families`（缺陷族法）。
+横切（被各节点引用，不占流程位）：`architecture-law`（架构法）、`defect-families`（缺陷族法）；implement 中途撞失败 → 切入 `debug`。
 
 ## 依赖分档
 
