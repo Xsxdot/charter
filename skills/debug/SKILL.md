@@ -1,6 +1,6 @@
 ---
 name: debug
-description: 遇到 bug、测试失败、诡异行为时的排查纪律——先建红色反馈回路、无根因不许修、根因后分流。L1 bug 流的入口节点，也是 implement 中途撞失败时的横切纪律。
+description: 遇到 bug、测试失败、诡异行为时的排查纪律——先建红色反馈回路、无根因不许修、根因后分流。bug 流的入口节点，也是 implement 中途撞失败时的横切纪律。
 ---
 
 # Debug：排查
