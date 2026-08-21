@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# SessionStart hook：把 using-charter 网关 skill 全文注入会话上下文。
+# 职责：仅注入网关；其余节点 skill 由模型经 Skill 工具按需加载。
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+content=$(cat "${PLUGIN_ROOT}/skills/using-charter/SKILL.md" 2>&1 || echo "Error reading using-charter skill")
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+escaped=$(escape_for_json "$content")
+ctx="<EXTREMELY_IMPORTANT>\n你装载了 charter 开发流程套件。以下是网关 skill 'charter:using-charter' 的全文；其余节点 skill 用 Skill 工具加载：\n\n${escaped}\n</EXTREMELY_IMPORTANT>"
+
+printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$ctx"
+exit 0
