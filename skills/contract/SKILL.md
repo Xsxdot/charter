@@ -54,4 +54,4 @@ description: L3 的契约落地与冻结节点——把 spec 定下的契约语�
 - 落地阶段发现 spec 的语义定不下去（两个子系统对同一规则的归属有分歧）→ 退回 spec，不许自选。
 - 交棒：breakdown。
 
-**符号锚**：项目有代码图时，文档引用现状代码推荐 `file#Symbol` 符号锚（行号会漂，符号锚配 `handoff graph resolve` 查询时决议）；出稿自检跑 `handoff graph resolve --doc <本文档>`，坏锚即修。
+**符号锚**：项目有代码图时，文档引用现状代码推荐 `file#Symbol` 符号锚（行号会漂，符号锚配 `codegraph resolve` 查询时决议）；出稿自检跑 `codegraph resolve --doc <本文档>`，坏锚即修。
