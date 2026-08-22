@@ -24,7 +24,7 @@ bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / pla
         └─ 重档：各子系统并行(plan→implement→review) → integrate → finish
 ```
 
-横切（被各节点引用，不占流程位）：`architecture-law`（架构法·子系统与领域章）、`defect-families`（缺陷族法）；implement 中途撞失败 → 切入 `debug`。
+横切（被各节点引用，不占流程位）：`architecture-law`（架构法·子系统与领域章）、`defect-families`（缺陷族法）、`recon`（图对账——合并前核对分支改动与视图 diff，作为卡流「图对账」列的纪律块源头，被 finish 第 4 步引用）；implement 中途撞失败 → 切入 `debug`。
 
 定级与选档的判据在 spec 的「定级与选档」节，判决按定稿范围下、写进 spec 头部；判错的纠偏是**跨流迁移**（带着已产出的东西显式迁移并留痕），不是推倒重建。
 
