@@ -93,6 +93,9 @@ type Graph struct {
 	//（Edge 是二元组塞不进 kind 字段，spec §3）；语义上它们是 kind=implements 的边。
 	Implements  []Edge       `json:"implements,omitempty"`
 	Projections []Projection `json:"projections,omitempty"`
+	// Lifecycle 是生命周期段（谁创建/谁写状态），additive-only 新键（v0.3.0，契约 §2）：
+	// 旧消费方可安全忽略；产出者是扫描配方，Validate 管引用完整性。
+	Lifecycle []LifecycleRef `json:"lifecycle,omitempty"`
 }
 
 // Diff 是 codegraph/diffs/<view>.json：某分支/plan 相对基准的差异声明。
@@ -109,4 +112,6 @@ type Diff struct {
 	ImplementsDeleted  []Edge          `json:"implementsDeleted,omitempty"`
 	ProjectionsAdded   []Projection    `json:"projectionsAdded,omitempty"`
 	ProjectionsDeleted []Projection    `json:"projectionsDeleted,omitempty"`
+	LifecycleAdded     []LifecycleRef  `json:"lifecycleAdded,omitempty"`
+	LifecycleDeleted   []LifecycleRef  `json:"lifecycleDeleted,omitempty"`
 }

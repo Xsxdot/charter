@@ -1,6 +1,6 @@
 # Spec：codegraph 刀 1+2——schema v2 术语迁移 + 领域图
 
-> 状态：**待用户批准**
+> 状态：**已批准（2026-08-22，用户指令「并行进 contract」，批准即交棒）**
 > 级别与档位：**L3 轻档**（动跨仓 wire 契约：codegraph JSON schema 是 charter/graph 工具与 handoff 消费方之间的契约；单子系统工作量集中在 graph 工具侧、两仓工作串行无并行面 → 契约冻结与拆解照做、实现归一轮）
 > 输入：handoff 仓 `docs/2026-08-22-codegraph-batch-handover.md`（待拍板七条已于本 spec 对话逐条裁决）
 > 前置：刀 0 搬迁 + B173 边治理已完成（graph/v0.2.1，基线 4522 边零假边，check 0 fails）
