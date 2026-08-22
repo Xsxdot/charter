@@ -1,0 +1,11 @@
+{
+  "domain": "d_cli",
+  "responsibility": "命令入口与调度",
+  "invariants": [
+    {"text": "入口函数可执行", "testRef": "TestRunE"}
+  ],
+  "lifecycle": {"from": "cmd/run.go#runE", "to": "cmd/run.go#runE"},
+  "stateMachine": [
+    {"from": "ready", "to": "running", "anchor": "cmd/run.go#runE"}
+  ]
+}

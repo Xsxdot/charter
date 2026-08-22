@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -96,5 +97,54 @@ func TestEntityGoPreferredOnTie(t *testing.T) {
 	}
 	if !foundTS {
 		t.Fatalf("TS 侧应进入 Twins: %+v", r.Twins)
+	}
+}
+
+func TestEntityLifecycleAndDomainDecl(t *testing.T) {
+	v, repo := loadFixtureView(t)
+	c := v.Containers["k_ent"]
+	c.Domain = "d_cli"
+	v.Containers["k_ent"] = c
+	r, err := EntityLookup(v, repo, "Task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Creators) != 1 || r.Creators[0].ID != "n_do" || r.Creators[0].Line != 4 {
+		t.Fatalf("creators: %+v", r.Creators)
+	}
+	if len(r.Writers) != 1 || r.Writers[0].ID != "n_save" || r.Writers[0].Field != "status" {
+		t.Fatalf("writers: %+v", r.Writers)
+	}
+	if r.DomainDecl == nil || r.DomainDecl.Responsibility != "命令入口与调度" || r.DomainDecl.Invariants != 1 || r.DomainDecl.StateMachine != 1 {
+		t.Fatalf("domainDecl: %+v", r.DomainDecl)
+	}
+
+	v.Lifecycle = nil
+	r, err = EntityLookup(v, repo, "Task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"creators"`) || strings.Contains(string(raw), `"writers"`) {
+		t.Fatalf("无 lifecycle 时 creators/writers 应省略: %s", raw)
+	}
+	c.Domain = "d_svc/store"
+	v.Containers["k_ent"] = c
+	v.Lifecycle = nil
+	r, err = EntityLookup(v, repo, "Task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err = json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"creators"`, `"writers"`, `"domainDecl"`} {
+		if strings.Contains(string(raw), key) {
+			t.Fatalf("无 lifecycle/声明时 %s 应省略: %s", key, raw)
+		}
 	}
 }

@@ -7,26 +7,59 @@
 // 必须一致，两侧分叉就是 bug。
 package codegraph
 
-import "sort"
+import (
+	"encoding/json"
+	"sort"
+)
 
 // DomainStat 是一个领域的展示投影：元信息 + 结构位置 + 成员统计。
 //
 // 统计只算**直属容器**里的节点：父领域的数字不含子领域，读数不会重复计入。
 // Interfaces 是本领域中被其他领域调用到的节点 id（即「对外开放接口」）。
 type DomainStat struct {
-	ID         string   `json:"id"`
-	Label      string   `json:"label"`
-	Kind       string   `json:"kind"`
-	Summary    string   `json:"summary,omitempty"`
-	Desc       string   `json:"desc,omitempty"`
-	Parent     string   `json:"parent,omitempty"`
-	Children   []string `json:"children"`
-	Containers []string `json:"containers"`
-	Funcs      int      `json:"funcs"`
-	Models     int      `json:"models"`
-	Entries    int      `json:"entries"`
-	Unscanned  int      `json:"unscannedEntries"`
-	Interfaces []string `json:"interfaces"`
+	ID             string   `json:"id"`
+	Label          string   `json:"label"`
+	Kind           string   `json:"kind"`
+	Summary        string   `json:"summary,omitempty"`
+	Desc           string   `json:"desc,omitempty"`
+	Parent         string   `json:"parent,omitempty"`
+	Children       []string `json:"children"`
+	Containers     []string `json:"containers"`
+	Funcs          int      `json:"funcs"`
+	Models         int      `json:"models"`
+	Entries        int      `json:"entries"`
+	Unscanned      int      `json:"unscannedEntries"`
+	Interfaces     []string `json:"interfaces"`
+	Subsystems     []string `json:"subsystems,omitempty"`
+	CrossSubsystem bool     `json:"crossSubsystem,omitempty"`
+	targetDerived  bool
+}
+
+// MarshalJSON 只在成功加载 target 时输出派生字段；target 缺失或 v1 时保持旧 wire 形状。
+func (s DomainStat) MarshalJSON() ([]byte, error) {
+	type plain DomainStat
+	raw, err := json.Marshal(plain(s))
+	if err != nil || !s.targetDerived {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if s.Subsystems == nil {
+		s.Subsystems = []string{}
+	}
+	subsystems, err := json.Marshal(s.Subsystems)
+	if err != nil {
+		return nil, err
+	}
+	crossSubsystem, err := json.Marshal(s.CrossSubsystem)
+	if err != nil {
+		return nil, err
+	}
+	fields["subsystems"] = subsystems
+	fields["crossSubsystem"] = crossSubsystem
+	return json.Marshal(fields)
 }
 
 // DomainTree 把视图投影成领域列表，按 id 升序；列表内各切片字段也按字典序排序，
@@ -34,6 +67,15 @@ type DomainStat struct {
 //
 // 视图没有领域段时返回 nil——调用方据此降级为单领域视图，不要自行编造领域。
 func DomainTree(v *View) []DomainStat {
+	return domainTree(v, nil)
+}
+
+// DomainTreeWithTarget 在 DomainTree 的基础上按成员节点文件派生所属子系统。
+func DomainTreeWithTarget(v *View, target *Target) []DomainStat {
+	return domainTree(v, target)
+}
+
+func domainTree(v *View, target *Target) []DomainStat {
 	if len(v.Domains) == 0 {
 		return nil
 	}
@@ -72,6 +114,34 @@ func DomainTree(v *View) []DomainStat {
 			s.Models++
 		default:
 			s.Funcs++
+		}
+	}
+	if target != nil {
+		subsystems := make(map[string]map[string]bool, len(stats))
+		for id := range stats {
+			subsystems[id] = map[string]bool{}
+		}
+		for _, n := range v.Nodes {
+			if n.Status == "deleted" {
+				continue
+			}
+			id := domainOfContainer(v, n.Container)
+			stat, ok := stats[id]
+			if !ok {
+				continue
+			}
+			if subsystem := target.SubsystemOf(n.File); subsystem != "" {
+				subsystems[id][subsystem] = true
+			}
+			stat.targetDerived = true
+		}
+		for id, stat := range stats {
+			stat.targetDerived = true
+			for subsystem := range subsystems[id] {
+				stat.Subsystems = append(stat.Subsystems, subsystem)
+			}
+			sort.Strings(stat.Subsystems)
+			stat.CrossSubsystem = len(stat.Subsystems) > 1
 		}
 	}
 	// 对外接口 = 被别的领域调用到的节点。同一节点被多个领域调用只记一次。

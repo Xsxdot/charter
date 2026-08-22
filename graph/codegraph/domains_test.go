@@ -1,7 +1,9 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +65,47 @@ func TestDomainTreeSkipsDeleted(t *testing.T) {
 	}
 	if len(byID["d_svc/store"].Interfaces) != 0 {
 		t.Fatalf("deleted 端点的边不该算作对外接口: %+v", byID["d_svc/store"])
+	}
+}
+
+func TestDomainTreeDerivesSubsystems(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := LoadTarget("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]DomainStat{}
+	for _, stat := range DomainTreeWithTarget(Merge(g, nil), target) {
+		byID[stat.ID] = stat
+	}
+	if !reflect.DeepEqual(byID["d_cli"].Subsystems, []string{"d_cmd"}) || byID["d_cli"].CrossSubsystem {
+		t.Fatalf("单子系统领域派生: %+v", byID["d_cli"])
+	}
+	if !reflect.DeepEqual(byID["d_svc/store"].Subsystems, []string{"d_svc", "d_web"}) || !byID["d_svc/store"].CrossSubsystem {
+		t.Fatalf("跨子系统领域派生: %+v", byID["d_svc/store"])
+	}
+	raw, err := json.Marshal(byID["d_cli"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"crossSubsystem":false`) {
+		t.Fatalf("单子系统 false 必须出现在输出: %s", raw)
+	}
+}
+
+func TestDomainTreeWithoutTargetOmitsSubsystemFields(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(DomainTree(Merge(g, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "subsystems") || strings.Contains(string(raw), "crossSubsystem") {
+		t.Fatalf("无 target 时派生字段必须省略: %s", raw)
 	}
 }

@@ -12,6 +12,8 @@
 | T1 完成 | 双裁决通过：spec 覆盖 target 三处改名、version=2、LoadTarget 指向 `codegraph migrate`、migrate v1/v2/缺失/未知键、14 个业务子命令；代码质量通过 `git diff --check`、gofmt、build、vet、全量测试。 | T1 本次提交 |
 | T2 修复轮 1 | 补 lifecycle 的 Validate/ValidateDiff 引用与枚举检查、Absorb clone/merge、Merge View 状态、baseline/diff JSON 夹具；修复红测中新增节点端点夹具，并补删除状态断言。 | T2 工作树（待本卡提交） |
 | T2 完成 | 双裁决通过：spec 覆盖 lifecycle 四类 Validate 问题、增删/去重/死端点/空 diff 保全、Merge added/deleted 状态与 additive-only 键集；代码质量通过全量测试、build、vet、gofmt、diff check。 | T2 本次提交 |
+| T3 修复轮 1 | 落地平铺声明加载、ResolveAnchor/testRef 三查、entity lifecycle/声明摘要、domains target 派生与软依赖；补齐真实 fixture 声明/测试函数、坏锚/注释假测试/跨子系统/三键 omitempty 测试。 | T3 工作树（待本卡提交） |
+| T3 完成 | 双裁决通过：spec 覆盖声明三查、validate `[decl id]` 与 `domainDecls`、entity 三键及无数据省略、domains 单/跨子系统与 target 缺失/v1 软依赖；代码质量通过全量测试、build、vet、gofmt、diff check。 | T3 本次提交 |
 
 ## T1 验证证据
 

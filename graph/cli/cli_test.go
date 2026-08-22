@@ -27,6 +27,18 @@ func runGraph(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+func runGraphSeparate(t *testing.T, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	root := New("codegraph")
+	outBuf, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
+	root.SetOut(outBuf)
+	root.SetErr(errBuf)
+	root.SetArgs(args)
+	defer root.SetArgs(nil)
+	err = root.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
 const fixtureRepo = "../codegraph/testdata/repo"
 
 func TestGraphValidate(t *testing.T) {
@@ -126,10 +138,12 @@ func TestGraphDomains(t *testing.T) {
 	var r struct {
 		View    string `json:"view"`
 		Domains []struct {
-			ID         string   `json:"id"`
-			Children   []string `json:"children"`
-			Funcs      int      `json:"funcs"`
-			Interfaces []string `json:"interfaces"`
+			ID             string   `json:"id"`
+			Children       []string `json:"children"`
+			Funcs          int      `json:"funcs"`
+			Interfaces     []string `json:"interfaces"`
+			Subsystems     []string `json:"subsystems"`
+			CrossSubsystem bool     `json:"crossSubsystem"`
 		} `json:"domains"`
 		Warning string `json:"warning"`
 	}
@@ -142,6 +156,11 @@ func TestGraphDomains(t *testing.T) {
 	if r.Domains[1].ID != "d_svc" || len(r.Domains[1].Children) != 2 {
 		t.Fatalf("嵌套子领域没出来: %s", out)
 	}
+	for _, d := range r.Domains {
+		if d.ID == "d_svc/store" && (!d.CrossSubsystem || len(d.Subsystems) != 2) {
+			t.Fatalf("跨子系统派生: %+v", d)
+		}
+	}
 }
 
 func TestGraphValidateReportsDomainCount(t *testing.T) {
@@ -152,6 +171,47 @@ func TestGraphValidateReportsDomainCount(t *testing.T) {
 	var r map[string]any
 	if json.Unmarshal([]byte(out), &r) != nil || r["domains"].(float64) != 4 {
 		t.Fatalf("validate 要报领域计数: %s", out)
+	}
+	if r["domainDecls"].(float64) != 1 {
+		t.Fatalf("validate 要报声明计数: %s", out)
+	}
+}
+
+func TestGraphDomainsTargetIsSoftDependency(t *testing.T) {
+	for _, version := range []int{0, 1} {
+		repo := t.TempDir()
+		copyFixtureRepo(t, fixtureRepo, repo)
+		path := filepath.Join(repo, "codegraph", "target.json")
+		if version == 0 {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.WriteFile(path, []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := runGraphSeparate(t, "domains", "--repo", repo)
+		if err != nil {
+			t.Fatalf("target version=%d 时 domains 应通过: %v stdout=%s stderr=%s", version, err, stdout, stderr)
+		}
+		if bytes.Contains([]byte(stdout), []byte(`"subsystems"`)) || bytes.Contains([]byte(stdout), []byte(`"crossSubsystem"`)) {
+			t.Fatalf("target version=%d 时派生字段应省略: %s", version, stdout)
+		}
+		if !strings.Contains(stderr, "subsystems") {
+			t.Fatalf("target version=%d 时 stderr 应提示字段省略: %s", version, stderr)
+		}
+	}
+}
+
+func TestGraphValidateDomainDeclIssuePrefix(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	path := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	if err := os.WriteFile(path, []byte(`{"domain":"d_cli","responsibility":"x","lifecycle":{"from":"svc/server.go#Gone","to":"svc/server.go#Gone"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "validate", "--repo", repo)
+	if err == nil || !strings.Contains(out, "[decl d_cli]") {
+		t.Fatalf("坏声明应带领域前缀并非零: err=%v out=%s", err, out)
 	}
 }
 
@@ -305,7 +365,18 @@ func TestGraphSymMiss(t *testing.T) {
 }
 
 func TestGraphEntity(t *testing.T) {
-	out, err := runGraph(t, "entity", "Task", "--repo", fixtureRepo)
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	path := filepath.Join(repo, "codegraph", "baseline.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.Replace(raw, []byte(`"domain": "d_svc/store"`), []byte(`"domain": "d_cli"`), 1)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "entity", "Task", "--repo", repo)
 	if err != nil {
 		t.Fatalf("entity 应通过: %v\n%s", err, out)
 	}
@@ -319,6 +390,11 @@ func TestGraphEntity(t *testing.T) {
 	}
 	if r.Model["id"] != "m_task" || len(r.Typed) == 0 || len(r.Handroll) == 0 {
 		t.Fatalf("entity 输出形状: %s", out)
+	}
+	for _, key := range []string{`"creators"`, `"writers"`, `"domainDecl"`} {
+		if !bytes.Contains([]byte(out), []byte(key)) {
+			t.Fatalf("entity 输出缺 %s: %s", key, out)
+		}
 	}
 }
 

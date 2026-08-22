@@ -2,7 +2,8 @@
   "meta": { "version": 2, "project": "fixture" },
   "subsystems": [
     { "id": "d_svc", "name": "服务", "type": "logic", "paths": ["svc/**"] },
-    { "id": "d_cmd", "name": "入口", "type": "logic", "paths": ["cmd/**"] }
+    { "id": "d_cmd", "name": "入口", "type": "logic", "paths": ["cmd/**"] },
+    { "id": "d_web", "name": "前端", "type": "boundary", "paths": ["web/**"] }
   ],
   "assembly": ["cmd/run.go"],
   "contracts": [

@@ -12,20 +12,29 @@ import (
 
 // EntityResult 是一次数据实体投影链查询的完整结果。
 type EntityResult struct {
-	View        string     `json:"view"`
-	Query       string     `json:"query"`
-	Model       SymMatch   `json:"model"`
-	Twins       []SymMatch `json:"twins,omitempty"`
-	Typed       []ProjSite `json:"typed,omitempty"`
-	Handroll    []ProjSite `json:"handroll,omitempty"`
-	ProjScanned bool       `json:"projScanned"`
-	Warning     string     `json:"warning,omitempty"`
+	View        string             `json:"view"`
+	Query       string             `json:"query"`
+	Model       SymMatch           `json:"model"`
+	Twins       []SymMatch         `json:"twins,omitempty"`
+	Typed       []ProjSite         `json:"typed,omitempty"`
+	Handroll    []ProjSite         `json:"handroll,omitempty"`
+	Creators    []LifecycleSite    `json:"creators,omitempty"`
+	Writers     []LifecycleSite    `json:"writers,omitempty"`
+	DomainDecl  *DomainDeclSummary `json:"domainDecl,omitempty"`
+	ProjScanned bool               `json:"projScanned"`
+	Warning     string             `json:"warning,omitempty"`
 }
 
 // ProjSite 是投影点卡片。Via 为 direct，或标明来自哪一个 twin model。
 type ProjSite struct {
 	SymMatch
 	Via string `json:"via,omitempty"`
+}
+
+// LifecycleSite 是 entity 查询中的创建/写状态节点卡片。
+type LifecycleSite struct {
+	SymMatch
+	Field string `json:"field,omitempty"`
 }
 
 // EntityLookup 查询一个数据实体及其序列化投影链。
@@ -47,11 +56,24 @@ func EntityLookup(v *View, repoRoot, arg string) (*EntityResult, error) {
 	}
 
 	primary := v.Nodes[primaryID]
+	decls, err := LoadDomainDecls(repoRoot)
+	if err != nil {
+		return nil, err
+	}
 	r := &EntityResult{
 		View:        v.Name,
 		Query:       arg,
 		Model:       symMatchFor(v, repoRoot, primaryID),
 		ProjScanned: primary.ProjScanned,
+	}
+	if container, ok := v.Containers[primary.Container]; ok {
+		if decl, ok := decls[container.Domain]; ok {
+			r.DomainDecl = &DomainDeclSummary{
+				Responsibility: decl.Responsibility,
+				Invariants:     len(decl.Invariants),
+				StateMachine:   len(decl.StateMachine),
+			}
+		}
 	}
 	if !r.ProjScanned {
 		r.Warning = "该实体未做投影盘点——链可能不完整，勿当序列化边界清单用；盘点走扫描派发"
@@ -99,8 +121,22 @@ func EntityLookup(v *View, repoRoot, arg string) (*EntityResult, error) {
 			appendProjSite(r, p.Kind, ProjSite{SymMatch: symMatchFor(v, repoRoot, p.From), Via: "twin:" + twinID})
 		}
 	}
+	for _, ref := range v.Lifecycle {
+		if ref.Status == "deleted" || ref.Model != primaryID || !entityNodeLive(v, ref.Who) {
+			continue
+		}
+		site := LifecycleSite{SymMatch: symMatchFor(v, repoRoot, ref.Who), Field: ref.Field}
+		switch ref.Kind {
+		case "creator":
+			r.Creators = append(r.Creators, site)
+		case "writer":
+			r.Writers = append(r.Writers, site)
+		}
+	}
 	sortProjSites(r.Typed)
 	sortProjSites(r.Handroll)
+	sortLifecycleSites(r.Creators)
+	sortLifecycleSites(r.Writers)
 	return r, nil
 }
 
@@ -162,5 +198,14 @@ func sortProjSites(sites []ProjSite) {
 			return sites[i].ID < sites[j].ID
 		}
 		return sites[i].Via < sites[j].Via
+	})
+}
+
+func sortLifecycleSites(sites []LifecycleSite) {
+	sort.Slice(sites, func(i, j int) bool {
+		if sites[i].ID != sites[j].ID {
+			return sites[i].ID < sites[j].ID
+		}
+		return sites[i].Field < sites[j].Field
 	})
 }

@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	"github.com/Xsxdot/charter/graph/codegraph"
@@ -111,6 +112,21 @@ var graphValidateCmd = &cobra.Command{
 			return err
 		}
 		issues := codegraph.Validate(g)
+		decls, err := codegraph.LoadDomainDecls(graphRepo)
+		if err != nil {
+			return err
+		}
+		declView := codegraph.Merge(g, nil)
+		declIDs := make([]string, 0, len(decls))
+		for id := range decls {
+			declIDs = append(declIDs, id)
+		}
+		sort.Strings(declIDs)
+		for _, id := range declIDs {
+			for _, issue := range codegraph.ValidateDecls(declView, graphRepo, map[string]codegraph.DomainDecl{id: decls[id]}) {
+				issues = append(issues, "[decl "+id+"] "+issue)
+			}
+		}
 		edgeIssues := codegraph.CheckEdges(graphRepo, g.Nodes, g.Edges)
 		for _, ei := range edgeIssues {
 			issues = append(issues, "调用边门控: "+ei.Detail)
@@ -159,7 +175,7 @@ var graphValidateCmd = &cobra.Command{
 		out := map[string]any{
 			"nodes": len(g.Nodes), "edges": len(g.Edges),
 			"containers": len(g.Containers), "domains": len(g.Domains), "views": views,
-			"unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
+			"domainDecls": len(decls), "unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
 		}
 		if graphStale {
 			out["stale"] = stale
@@ -390,6 +406,11 @@ var graphDomainsCmd = &cobra.Command{
 			return err
 		}
 		doms := codegraph.DomainTree(v)
+		if target, targetErr := codegraph.LoadTarget(graphRepo); targetErr == nil {
+			doms = codegraph.DomainTreeWithTarget(v, target)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "target.json 不可用，subsystems/crossSubsystem 已省略: %v\n", targetErr)
+		}
 		out := map[string]any{"view": v.Name, "domains": doms}
 		if doms == nil {
 			// 明确区分「没有领域」与「查不出领域」：前者是旧数据，给可行动的提示
