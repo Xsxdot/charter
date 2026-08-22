@@ -10,6 +10,8 @@
 |---|---|---|
 | T1 修复轮 1 | 按红测修正 target v2 API、版本门、严格未知键解码、migrate 原子写；补齐 CLI 迁移/版本门/命令计数测试；将 Check 人读文案改为“子系统”。 | T1 工作树（待本卡提交） |
 | T1 完成 | 双裁决通过：spec 覆盖 target 三处改名、version=2、LoadTarget 指向 `codegraph migrate`、migrate v1/v2/缺失/未知键、14 个业务子命令；代码质量通过 `git diff --check`、gofmt、build、vet、全量测试。 | T1 本次提交 |
+| T2 修复轮 1 | 补 lifecycle 的 Validate/ValidateDiff 引用与枚举检查、Absorb clone/merge、Merge View 状态、baseline/diff JSON 夹具；修复红测中新增节点端点夹具，并补删除状态断言。 | T2 工作树（待本卡提交） |
+| T2 完成 | 双裁决通过：spec 覆盖 lifecycle 四类 Validate 问题、增删/去重/死端点/空 diff 保全、Merge added/deleted 状态与 additive-only 键集；代码质量通过全量测试、build、vet、gofmt、diff check。 | T2 本次提交 |
 
 ## T1 验证证据
 

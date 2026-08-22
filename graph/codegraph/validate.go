@@ -35,6 +35,7 @@ func Validate(g *Graph) []string {
 	for _, p := range g.Projections {
 		issues = append(issues, validateProjection(g.Nodes, p, "投影")...)
 	}
+	issues = append(issues, validateLifecycle(g.Nodes, g.Lifecycle, "lifecycle")...)
 	issues = append(issues, validateDomains(g)...)
 	sort.Strings(issues)
 	return issues
@@ -150,7 +151,29 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 	for _, p := range append(append([]Projection{}, d.ProjectionsAdded...), d.ProjectionsDeleted...) {
 		issues = append(issues, validateProjection(knownNodeMap, p, "diff 投影")...)
 	}
+	issues = append(issues, validateLifecycle(knownNodeMap, d.LifecycleAdded, "diff lifecycle")...)
+	issues = append(issues, validateLifecycle(knownNodeMap, d.LifecycleDeleted, "diff lifecycle")...)
 	sort.Strings(issues)
+	return issues
+}
+
+func validateLifecycle(nodes map[string]Node, refs []LifecycleRef, label string) []string {
+	var issues []string
+	for _, ref := range refs {
+		_, whoOK := nodes[ref.Who]
+		model, modelOK := nodes[ref.Model]
+		if !whoOK {
+			issues = append(issues, fmt.Sprintf("%s %s→%s 引用不存在的 Who 节点 %s", label, ref.Who, ref.Model, ref.Who))
+		}
+		if !modelOK {
+			issues = append(issues, fmt.Sprintf("%s %s→%s 引用不存在的 Model 节点 %s", label, ref.Who, ref.Model, ref.Model))
+		} else if model.Kind != "model" {
+			issues = append(issues, fmt.Sprintf("%s %s→%s 的 Model 节点 kind 必须为 model，实际为 %s", label, ref.Who, ref.Model, model.Kind))
+		}
+		if ref.Kind != "creator" && ref.Kind != "writer" {
+			issues = append(issues, fmt.Sprintf("%s %s→%s 的 kind 非法: %q（只认 creator/writer）", label, ref.Who, ref.Model, ref.Kind))
+		}
+	}
 	return issues
 }
 

@@ -8,5 +8,12 @@
   "nodesDeleted": ["n_save"],
   "edgesAdded": [["n_do", "n_audit"]],
   "edgesDeleted": [["n_do", "n_save"]],
-  "implementsAdded": [["n_audit", "m_notifier"]]
+  "implementsAdded": [["n_audit", "m_notifier"]],
+  "lifecycleAdded": [
+    {"who": "n_audit", "model": "m_task", "kind": "writer", "field": "status"},
+    {"who": "n_audit", "model": "m_task", "kind": "writer", "field": "status"}
+  ],
+  "lifecycleDeleted": [
+    {"who": "n_save", "model": "m_task", "kind": "writer", "field": "status"}
+  ]
 }

@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -39,6 +40,13 @@ func TestMergeWithDiff(t *testing.T) {
 	if st["n_do→n_audit"] != "added" || st["n_do→n_save"] != "deleted" {
 		t.Fatalf("边状态: %v", st)
 	}
+	lifecycleStatus := map[string]string{}
+	for _, ref := range v.Lifecycle {
+		lifecycleStatus[ref.Who+"→"+ref.Model+"→"+ref.Kind] = ref.Status
+	}
+	if lifecycleStatus["n_do→m_task→creator"] != "" || lifecycleStatus["n_audit→m_task→writer"] != "added" || lifecycleStatus["n_save→m_task→writer"] != "deleted" {
+		t.Fatalf("lifecycle 状态: %v", lifecycleStatus)
+	}
 }
 
 func TestMergeSkipsInvalidAddedEdges(t *testing.T) {
@@ -75,5 +83,28 @@ func TestMergeImplementsThroughWire(t *testing.T) {
 	}
 	if kept == 0 || added == 0 {
 		t.Fatalf("视图 implements 合并不对: kept=%d added=%d", kept, added)
+	}
+}
+
+func TestGraphJSONKeysAreAdditiveForLifecycle(t *testing.T) {
+	raw, err := json.Marshal(loadFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"meta": true, "domains": true, "containers": true, "nodes": true,
+		"edges": true, "implements": true, "projections": true, "lifecycle": true,
+	}
+	if len(fields) != len(want) {
+		t.Fatalf("Graph JSON 键数=%d，want=%d: %v", len(fields), len(want), fields)
+	}
+	for key := range fields {
+		if !want[key] {
+			t.Fatalf("Graph JSON 出现非 additive 键 %q", key)
+		}
 	}
 }
