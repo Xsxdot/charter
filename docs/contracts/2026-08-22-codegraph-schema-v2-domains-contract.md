@@ -4,6 +4,14 @@
 > module：`github.com/Xsxdot/charter/graph`，本批次发 **`graph/v0.3.0`**（breaking：target v1 拒读 + `TargetDomain`→`TargetSubsystem` 改名）。
 > 查证基线：charter master（graph/v0.2.1 后）；现状出处均为本轮工作树实读。
 
+## 修订记录（breakdown 拍板回写，2026-08-22）
+
+| # | 修订 |
+|---|---|
+| R1 | 边界澄清（拍板 P3）：§2-2 的引用完整性执法**同时覆盖 `ValidateDiff`**——`lifecycleAdded/lifecycleDeleted` 的 Who/Model 端点按「基线∪nodesAdded」校验，坏引用视图在 absorb 前置检查即拒（与 §6-8 的 Validate 条目同源，非新接缝）；冻结清单 8 按此口径读 |
+| R2 | 边缘限定（拍板 P4）：§3「文件名=Domain 字段」限**平铺**目录；领域 id 含 `/` 者判「不可声明」（LoadDomainDecls 不支持子目录递归），真要声明先改领域 id。现状：handoff 真实 19 域均无 `/`，仅 graph 夹具有此风格 |
+| R3 | migrate 策略钉死（拍板 P2）：§4-1 的 migrate 读入用 `DisallowUnknownFields`——target 含 schema 外未知键时**拒迁报错**（有未知键说明被手工加过料，先人工处理再迁），不静默丢弃 |
+
 ## §1 target.json v2（刀 1）
 
 现状（`graph/codegraph/target.go#Target`）：`Meta{Version,Project}`、`Domains []TargetDomain`、`Assignments []Assignment{Path,Domain}`、`Assembly`、`Contracts`。v2 契约：
