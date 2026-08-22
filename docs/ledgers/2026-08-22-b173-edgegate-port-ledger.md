@@ -16,8 +16,8 @@
   - 未清洗基线（4748 边）：`edgeIssues` = 106（no-import 90 + cross-language 16）——与 B173 plan §0 判据 2 逐字一致；
   - 清洗后基线（4642 边）：validate 绿、`edgeIssues` = 0、`check` = 18 fails（new-direction 4 + over-budget 14）——与 §0 判据 3 逐字一致。
 
-## 交棒（handoff 侧残余，待其合并刀 0 分支后做）
+## 交棒（2026-08-22 晚收敛后更新）
 
-1. go.mod `charter/graph` 升 v0.2.0，取门控与 absorb 拒假边行为；
-2. B173 分支只取文档/数据提交（跳过代码提交 `8dad9f07d`）；基线清洗 cherry-pick 撞冲突就用 v0.2.0 `validate` 重报假边重跑清洗（机械可复现）；
-3. target.json 重标定（4 真方向 + 14 预算）按 B173 plan 走 `charter:contract` 裁决。
+收敛已完成（handoff main = 1334ba9fb，本会话协调执行）：B173 分支在收敛前已被整体合入 main（含代码提交），故「挑提交」失效，改为**合并 extraction 时取别名版 cmd/graph.go + 显式 git rm edgegate 孤儿两文件**；go.mod 已升 v0.2.0；absorb 后 validate 全绿，check 16 红（list 16 = unique 14 + d_release→d_remote ×3），与沙箱预演逐条一致。
+
+**唯一残余**：target.json 重标定（2 唯一方向 + 12 预算）按 B173 plan 走 `charter:contract` 裁决，挂 handoff 仓 B173 卡。
