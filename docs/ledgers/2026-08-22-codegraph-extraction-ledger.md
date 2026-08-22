@@ -1,6 +1,6 @@
 # 实现账本：codegraph 搬迁（刀 0）
 
-> 流程游标：**T1~T4 全部完成；handoff 分支已收编 main（2026-08-22 晚，1334ba9fb：合并 + charter/graph 升 v0.2.0 + absorb 搬迁视图，absorb 后 validate 全绿、check 16 红=B173 尾部既有）**。真机清单余：4 无 Go 设备脚本装、7 执行机 hook、8 Web 控制台渲染（7/8 已解锁，待 handoff 升级部署后验）→ 下一步：**review 节点（diff 审查）→ acceptance → finish 收尾核对**。收敛协调过程与 B173 撞车处置见同日 b173-edgegate-port ledger。
+> 流程游标：**T1~T4 全部完成；handoff 分支已收编 main（2026-08-22 晚，1334ba9fb：合并 + charter/graph 升 v0.2.0 + absorb 搬迁视图，absorb 后 validate 全绿、check 16 红=B173 尾部既有）**。真机清单余：4 无 Go 设备脚本装、7 执行机 hook、8 Web 控制台渲染（7/8 已解锁，待 handoff 升级部署后验）→ **流程终态（2026-08-22 晚）：review（独立双轴，5 findings 全处置）→ acceptance（复跑+三重变异+补牙，本文 Acceptance 节）→ finish 已走完**（新鲜全量绿、合并/回灌/文档对齐/残余归账逐项核对；配方 schema 出处修正 handoff 069f366f1）。残余部署门 3 条 + v0.2.1 增强见 roadmap 3/4。收敛协调过程与 B173 撞车处置见同日 b173-edgegate-port ledger 与 review 卡。
 > 顺序说明：与 breakdown 建议的 T1→T4→T2→T3 有一处偏差——T4 依赖合并后的 tag（D 裁决串行、零 replace），把 T2/T3 提前到合并前可让主线只合一次；已按此执行，非漂移。
 
 ## T1：module 整体搬迁 + CLI 落新家（2026-08-22）
