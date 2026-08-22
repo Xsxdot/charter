@@ -11,6 +11,7 @@
 | R1 | 边界澄清（拍板 P3）：§2-2 的引用完整性执法**同时覆盖 `ValidateDiff`**——`lifecycleAdded/lifecycleDeleted` 的 Who/Model 端点按「基线∪nodesAdded」校验，坏引用视图在 absorb 前置检查即拒（与 §6-8 的 Validate 条目同源，非新接缝）；冻结清单 8 按此口径读 |
 | R2 | 边缘限定（拍板 P4）：§3「文件名=Domain 字段」限**平铺**目录；领域 id 含 `/` 者判「不可声明」（LoadDomainDecls 不支持子目录递归），真要声明先改领域 id。现状：handoff 真实 19 域均无 `/`，仅 graph 夹具有此风格 |
 | R3 | migrate 策略钉死（拍板 P2）：§4-1 的 migrate 读入用 `DisallowUnknownFields`——target 含 schema 外未知键时**拒迁报错**（有未知键说明被手工加过料，先人工处理再迁），不静默丢弃 |
+| R4 | 张力澄清（独立审阅 Minor-1）：§5-6「任何走 LoadTarget 的命令对 v1 必须报错」**不适用于** §4-3 的 domains 软依赖读取——软依赖对 v1/缺失一律省略字段 + stderr 提示、退出 0（冻结 14 口径优先） |
 
 ## §1 target.json v2（刀 1）
 

@@ -87,6 +87,7 @@
   3. entity 键锁：有 lifecycle+声明的夹具输出含 `creators`/`writers`/`domainDecl` 三键（按 node 带 file:line 再锚定展示）；无数据时三键省略（omitempty 双向断言，同 EdgeIssue 金样本模式）；Kind 枚举外的 lifecycle 条目 entity 宽容跳过（照 `entity.go#appendProjSite` 先例）、Validate 负责报红——同一枚举两处消费不分裂；
   4. domains 增段：夹具构造跨子系统领域 → `"subsystems"` 列出 ≥2 且 `"crossSubsystem": true`；单子系统领域 → false；**target 缺失与 target v1 两种情况**下 domains 照常出树、两键省略、退出 0（冻结 14 软依赖——版本门只在显式 LoadTarget 的命令生效）；stderr 提示按 P6 裁决；
   5. 派生零手抄（§5-7）：DomainDecl/DomainStat 的 JSON 键集合断言不含任何手抄归属字段（subsystems 只出现在派生输出、不出现在输入 schema）。
+  6. **【审阅补条 2026-08-22，独立审阅 Important-1】**三查第一查「域存在」的红测试：构造 domain 字段指向图中不存在领域的声明文件，`codegraph validate` 非零且 issue 带 `[decl <领域id>] ` 前缀（契约 §3-2① / 冻结 11——原稿①②只覆盖加载错误与锚/testRef，此查缺席则声明可指向幽灵领域静默放行）。
 - **入口指针**（有界）：`graph/codegraph/decl.go`（扩加载/校验，或新文件归 plan）、`entity.go`、`entity_test.go`、`domains.go`、`domains_test.go`、`resolve.go`（只读复用 `ResolveAnchor`）、`graph/cli/cli.go`（validate/entity/domains 三命令接线）、`cli/cli_test.go`、夹具 `testdata/repo/codegraph/domains/*.json`（新）+ 夹具仓 `svc/*_test.go`（新，供 go/parser testRef 核验——testdata 不参与编译，纯文本即可）。
 
 ### T4【S2·逻辑型】handoff 消费侧升级：v0.3.0 + migrate + 配方扩展 + 样板声明
@@ -131,7 +132,7 @@ T1 与 T2 无相互依赖（改名不碰 lifecycle 文件集，反之亦然）�
 ## 五、真机清单（归协调者/用户；「未验证，需真机」条目全集）
 
 1. **发版通道**：T1~T3 合并主线后推 tag `graph/v0.3.0`，观察 release workflow 六平台资产 + checksums 齐（刀 0 T2 通道复用，无代码改动）；协调者本机 `go install .../graph/cmd/codegraph@v0.3.0` 可用。
-2. **冻结 15 跨版本对账**：用升级前 v0.2.1 二进制（或本稿钉死的读数：fails 0 / warns 20 = 19 legacy + 1 dead-assembly）与 T4 后 v0.3.0 的 `codegraph check --repo ~/workspace/handoff` 输出做**逐条** diff，集合一致（0=0、20=20）。夹具证不了真仓，此为行为事实。
+2. **冻结 15 跨版本对账**：用升级前 v0.2.1 二进制（或本稿钉死的读数：fails 0 / warns 20 = 19 legacy + 1 dead-assembly）与 T4 后 v0.3.0 的 `codegraph check --repo ~/workspace/handoff` 输出做**逐条** diff，集合一致（0=0、20=20）。夹具证不了真仓，此为行为事实。**注意（审阅 Minor-2）**：协调者本机 `~/go/bin/codegraph` 现为 v0.1.0——走「升级前二进制」路径须先 `go install ...@graph/v0.2.1`，别拿 v0.1.0 冒充。
 3. **冻结 16 变异复验**（acceptance 纪律）：handoff 真仓样板声明坏锚变异——改坏一个锚 → `codegraph validate` 非零 → 还原 → 绿；testRef 变异——改指向不存在函数 → 非零 → 还原 → 绿（spec 故事 3）。
 4. **补扫产出落库**（P1 裁决后执行）：产物过 `codegraph validate`（引用完整性 + 边门控）→ 视图 diff → **先合并分支后 absorb** 回灌（finish 纪律）；absorb 后 `codegraph entity Task --repo ~/workspace/handoff` 显示 creators/writers/lifecycle/declaration 四段齐（spec 故事 2 的全景终验）。
 5. **故事 4 真机读数**：`codegraph domains --repo ~/workspace/handoff` 预期恰 4 个领域 `crossSubsystem: true`（d_coordination_task / d_runtime_config / d_workspace / d_runtime_maintenance——本轮用与 SubsystemOf 同逻辑的派生脚本实测）；多于或少于此数须查明（target 漂移或派生 bug），不许照单全收。
