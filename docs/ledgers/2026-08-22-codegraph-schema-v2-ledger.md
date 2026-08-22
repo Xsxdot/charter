@@ -90,3 +90,12 @@
 - **真机 4 ✅（全景终验）**：`entity Task` 出 creators/writers/domainDecl 三键齐（breakdown 措辞的「lifecycle 段」在 T3 冻结实现中即分桶进 creators/writers，语义达成，措辞差记此一笔）。
 - **全量补扫已派发**（P1=C 后半）：任务 a0764a76，codex@linux-01，分支 data/lifecycle-backfill，产物限定视图 diff + ledger、不 absorb；协调者审后合并再回灌。
 - **余项**：真机 6（Web 控制台渲染）、真机 7（执行机 hook）与部署门三条同因同解，等用户定发版窗口。
+
+### P1 全量补扫落地（2026-08-22 深夜，两派一成）
+
+- **首派 a0764a76 会话三连故障**（真崩溃 → 工作 25 分钟 → 僵死 20 分钟 → continue 无法唤醒），同机其余 codex 任务全程正常 ⇒ 会话级故障。立卡 **B188**（含时间线、与 B180 的同族相反现象：那个假死报活、这个真死不报，adapter 缺回合级心跳）。产出零丢失：9 域 73 条逐域 commit 全部 pull 保全并推 origin，任务非验收归档。
+- **重派 2019d5f2 一次跑完**（新分支 data/lifecycle-backfill-2 基于捞回分支；`--branch <被占分支>` 派发返回 500 泛错，绕法 `--new-branch + --base`，已并入 B188）。
+- **审核（协调者独立取证）**：125 条（61 creator + 64 writer）覆盖 52 model，**707 个 baseline model 全域对账、零待扫残留**（合计数与 baseline 精确吻合）；端点全真、kind 分桶规范（writer 全带 field / creator 全不带）、零内部重复、与小样零撞车；validate issues 空。**7 条跨领域跨 kind 抽查逐条对真代码属实**：`Store.AppendEvent` 返回 `proto.Event`、`pullTracker.stage` 写 `st.Stage`、`Store.ReviveCard` UPDATE status、`ring.write` 累加 `r.n`、`Pool.For` 构造 `&entry{}`、两支 React hook 真持 setState。宁缺毋滥执行到位（如 `CreateTask` 只持久化不构造，未记）。
+- **合并与回灌**：→ handoff main @8c37058c（合并后全量零 FAIL）→ absorb（+0 节点，纯 lifecycle 段）→ **baseline lifecycle 127 条**、视图消费清空、absorb 后 validate 绿 → 推 408cd9125。契约闸读数回灌前后不变（0 fails / 19 legacy + 1 dead-assembly）。
+- **真机 4 复验 ✅**：`entity m_ledger_Card` 出 creator `Store.CreateCard` + 三个 status writer；`m_proto_Event`/`m_targetclient_entry` 构造点正确；`entity Card/Event` 的同名多义提示是既有正常行为、非缺陷。
+- **刀 1+2 至此机内与数据面全部闭环**；余项只剩部署门（真机 6 Web 渲染 / 真机 7 执行机 hook + handoff 发版），等用户定窗口。
