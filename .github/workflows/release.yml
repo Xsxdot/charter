@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: graph/go.mod
+          cache-dependency-path: graph/go.sum
 
       - name: 解析版本号（graph/v0.1.0 → v0.1.0）
         id: ver

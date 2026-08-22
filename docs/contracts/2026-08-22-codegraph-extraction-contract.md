@@ -14,6 +14,7 @@
 | R3 | §3 补第 4 个消费入口：`internal/agentd/codegraph_test.go`（Diff/Graph/StaleNode 3 符号），其夹具硬编码读 `../codegraph/testdata/repo`，删包后夹具须随迁 |
 | R4 | §4 子命令数 12→**13**（新增 `version`）；「别名行为一致」语义澄清 = alias≡canonical **同版本等价**，非对搬迁前输出的逐字节冻结（summary 文案随 canonical 更名） |
 | R5 | 私仓依赖矛盾用户拍板：**charter 转公开**（时点：T1 合并、打 `graph/v0.1.0` 之前）——§6-12/15 语义不变，install 裸 curl 通道成立，无需 vendor |
+| R6 | **B173 调用边门控受控增量**（用户拍板移植，2026-08-22 晚，随 `graph/v0.2.0` 发布）：导出面 +2 符号（`CheckEdges`/`EdgeIssue`），51→**53**（23 func + 30 type）；`validate` 输出增 `edgeIssues` 字段、命中计入 issues；`absorb` 增拒收含假边视图。§2 头部、§4、§6-4 同步更新。plan of record = handoff 仓 `docs/superpowers/plans/2026-08-22-b173-edgegate.md`；逐字拷入与真机等价复验见 charter 同日 b173-edgegate-port ledger 及独立审查报告 |
 
 ## §1 module 契约
 
@@ -25,7 +26,7 @@
 - CLI 布局（R2）：`graph/cli` 可导入 CLI 包（导出面仅命令构造函数），`graph/cmd/codegraph` 与 handoff 别名同挂此构造
 - 架构形态声明：graph module = 单包（`codegraph/`）+ CLI 包（`cli/`）+ cmd 薄壳，平铺无分层
 
-## §2 导出面（原样迁移，零增删改；14 个非测试源文件，51 个导出符号：22 func + 29 type——R1）
+## §2 导出面（原样迁移，零增删改；14 个非测试源文件，51 个导出符号：22 func + 29 type——R1；R6 后 +edgegate.go：53 符号 = 23 func + 30 type，增量为 `CheckEdges`/`EdgeIssue`）
 
 搬迁等价性的可执行对账 = 包内既有测试（14 个测试文件，1244 行）随迁全绿。
 
@@ -58,6 +59,8 @@
 canonical 入口 `codegraph`，子命令与现 `handoff graph` 一致（`cmd/graph.go` 各 `Use:` 行）：
 `validate`(91) `check`(145) `absorb <view>`(173) `views`(242) `chain`(304) `who-calls`(311) `domains`(319) `sym`(341) `entity`(360) `resolve [file#Symbol]`(378) `contract set`(425,430) `summary`(467)，另新增 `version`（R4，共 13 个；`go install` 构建下版本信息优先走 `runtime/debug.ReadBuildInfo`，release 构建以 ldflags 覆盖）。
 
+行为增量（R6，`graph/v0.2.0`）：`validate` 对基线与每个视图的合成节点集跑调用边门控，输出增 `edgeIssues` 字段（JSON keys `from`/`to`/`reason`/`detail` 由金样本测试锁定）、命中计入 issues 非零退出；`absorb` 对视图 `edgesAdded` 跑门控，含假边即拒绝併入。
+
 别名契约：`handoff graph <args>` 与 `codegraph <args>` 行为一致——语义为**同版本等价**（委托同一构造，R4），非对搬迁前输出的逐字节冻结；帮助文本（Short/Long）标 deprecated，**禁用 cobra 的 Deprecated 字段**（它会向 stdout 打运行时告警，污染 JSON 消费管道与 SessionStart hook）。
 
 ## §5 不变式（冻结）
@@ -73,7 +76,7 @@ canonical 入口 `codegraph`，子命令与现 `handoff graph` 一致（`cmd/gra
 1. `graph/go.mod` 第 1 行 = `module github.com/Xsxdot/charter/graph`
 2. `graph/go.mod` go 指令 = `1.26.1`
 3. 包路径 `graph/codegraph`、包名 `codegraph`
-4. 导出面与 §2 清单逐符号相符（51 符号），零增删（`go doc ./codegraph` 对账）
+4. 导出面与 §2 清单逐符号相符——原 51 符号零删改，加 R6 增量 2 符号共 **53**（`go doc ./codegraph` 对账）
 5. `codegraph` 包 import 块仅标准库
 6. module 第三方依赖仅 cobra v1.10.2
 7. `CGO_ENABLED=0 go build ./...` 六平台矩阵通过（至少 linux/amd64、darwin/arm64、windows/amd64 三个抽查）
