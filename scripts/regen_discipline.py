@@ -30,6 +30,7 @@ compose = {
     "implement": [body("implement"), arch],
     "review":    [body("review"), arch, defect],
     "integrate": [body("integrate")],
+    "recon":     [body("recon")],
 }
 
 for name, parts in compose.items():
