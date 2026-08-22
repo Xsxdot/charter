@@ -22,4 +22,9 @@
 
 **唯一残余**：target.json 重标定（2 唯一方向 + 12 预算）按 B173 plan 走 `charter:contract` 裁决，挂 handoff 仓 B173 卡。
 
+## v0.2.1 门控增强（2026-08-22 晚，用户拍板「1 和 3 你直接做」）
+
+范围：CheckEdges 判据三（unexported，`exportedName` 只看末段不看 receiver）+ 判据四（包级函数文件粒度 import，`fileCache`/`goFileImports`；方法保持包粒度）；Reason wire 值增 `"unexported"`；契约修订 R7。
+验证（全部本轮）：TDD 双红（改写包粒度测试语义 + 新 TestCheckEdgesUnexported，实现前 FAIL）→ 实现转绿；两判据各永假化变异 → 各自测试红、还原绿；全模块测试/vet/gofmt 绿。**真机**：对 handoff main 清洗后基线（4524 边）跑出 2 条手工清洗漏网假边（update.go 的 `url.Values.Encode` 撞 `relay.Encode`；grok/resume.go 对 turn 零 import 零提及），逐条源码查证均为真假边、零误伤——B173 会话「升级后应仍 0」的预言差 2 条，差的方向是工具更强。
+
 **独立复验（B173 会话，2026-08-22 晚，handoff B173 卡 note seq 75）**：对 origin/main 数据独立跑判据，全部命中（基线 3564/4537、check 16=4 方向+12 预算、edgegate 两文件确不存在）。18→16 消失的 2 条 over-budget（d_cli→d_contract、d_controlplane→d_contract）定性为**真实结构变化**：d_contract paths 移除 `internal/codegraph/**` 后入边不再计入，两版 target.json 的 legacyBudget 数字逐条比对零改动——不是调数字修红。

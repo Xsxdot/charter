@@ -1,9 +1,11 @@
 // 本文件实现调用边合理性门控：机械排除「按裸符号名撞库」产生的假调用边。
 //
-// 职责：CheckEdges——两条判据：
+// 职责：CheckEdges——四条判据（3/4 为 v0.2.1 增量，B173 卡 note seq 83）：
 //  1. 跨语言（.go ↔ .ts/.tsx）调用边必假：TS 调不到 Go 函数，wire 关联走 projections/twins；
-//  2. Go 跨包调用边要求调用方包 import 被调方包（包粒度，排除 _test.go）：
-//     没有 import 的跨包调用不可能通过编译，这条边只能是重名误连。
+//  2. Go 跨包方法调用要求调用方包 import 被调方包（包粒度，排除 _test.go）：
+//     没有 import 的跨包调用不可能通过编译，这条边只能是重名误连；
+//  3. callee 末段标识符未导出 → 跨包引用是 Go 语言层面的不可能（不看 receiver 段）；
+//  4. 包级函数 callee 收紧到调用文件粒度 import——pkg.Func() 的 pkg 必须在该文件 import 里。
 //
 // 边界：只判「这条边有没有可能真实」，不判调用语义；不改数据，只报告。
 //
@@ -23,6 +25,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // EdgeIssue 一条被门控判定为不可能真实的调用边。
@@ -30,7 +34,7 @@ import (
 type EdgeIssue struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
-	Reason string `json:"reason"` // "cross-language" 或 "no-import"
+	Reason string `json:"reason"` // "cross-language" / "no-import" / "unexported"（v0.2.1 增）
 	Detail string `json:"detail"`
 }
 
@@ -41,6 +45,8 @@ func CheckEdges(repoRoot string, nodes map[string]Node, edges []Edge) []EdgeIssu
 	module := readModulePath(repoRoot)
 	// 包目录（仓库相对、斜杠分隔）→ import 集合；nil 表示目录无生产 .go，保守放行。
 	cache := map[string]map[string]bool{}
+	// 单文件（仓库相对）→ import 集合；nil 表示读不到/解析失败，保守放行（判据四用）。
+	fileCache := map[string]map[string]bool{}
 	var issues []EdgeIssue
 	for _, e := range edges {
 		from, okFrom := nodes[e[0]]
@@ -61,7 +67,40 @@ func CheckEdges(repoRoot string, nodes map[string]Node, edges []Edge) []EdgeIssu
 		}
 		fromDir, toDir := path.Dir(from.File), path.Dir(to.File)
 		if fromDir == toDir {
-			continue // 同包调用不需要 import
+			continue // 同包调用不需要 import，未导出也可达
+		}
+		// 判据三（v0.2.1）：callee 末段标识符未导出 → 跨包引用是 Go 语言层面的不可能。
+		// 只看方法/函数名本段，不看 receiver——未导出类型上的导出方法仍可经构造函数跨包送达。
+		if !exportedName(to.Name) {
+			issues = append(issues, EdgeIssue{
+				From: e[0], To: e[1], Reason: "unexported",
+				Detail: fmt.Sprintf("%s（%s）→ %s（%s）：callee %q 未导出，跨包调用不可能编译通过", e[0], from.File, e[1], to.File, to.Name),
+			})
+			continue
+		}
+		want := module + "/" + toDir
+		if toDir == "." {
+			want = module
+		}
+		// 判据四（v0.2.1）：包级函数（名字无 receiver 段）只能写成 pkg.Func()，
+		// 调用文件必须亲自 import 被调包——同包其他文件的 import 救不了它；
+		// 方法调用可经字段/参数类型送达，保持包粒度（反例锚：agentd/status.go 经 m.st 调 store）。
+		if !strings.Contains(to.Name, ".") {
+			fimps, seen := fileCache[from.File]
+			if !seen {
+				fimps = goFileImports(filepath.Join(repoRoot, filepath.FromSlash(from.File)))
+				fileCache[from.File] = fimps
+			}
+			if fimps == nil {
+				continue // 文件读不到/解析失败：保守放行
+			}
+			if !fimps[want] {
+				issues = append(issues, EdgeIssue{
+					From: e[0], To: e[1], Reason: "no-import",
+					Detail: fmt.Sprintf("%s（%s）→ %s（%s）：包级函数调用，调用文件未 import %s，不可能编译通过", e[0], from.File, e[1], to.File, want),
+				})
+			}
+			continue
 		}
 		imps, seen := cache[fromDir]
 		if !seen {
@@ -70,10 +109,6 @@ func CheckEdges(repoRoot string, nodes map[string]Node, edges []Edge) []EdgeIssu
 		}
 		if imps == nil {
 			continue
-		}
-		want := module + "/" + toDir
-		if toDir == "." {
-			want = module
 		}
 		if !imps[want] {
 			issues = append(issues, EdgeIssue{
@@ -95,6 +130,35 @@ func fileLang(file string) string {
 	default:
 		return ""
 	}
+}
+
+// exportedName 判 name 的末段标识符（最后一个 . 之后）是否以大写开头（Go 导出规则）。
+// 空名保守放行（返回 true）——名字缺失归引用完整性管，这里不越权判假。
+func exportedName(name string) bool {
+	last := name
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		last = name[i+1:]
+	}
+	if last == "" {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(last)
+	return unicode.IsUpper(r)
+}
+
+// goFileImports 解析单个 .go 文件的 import 集合；读不到或解析失败返回 nil（调用方保守放行）。
+func goFileImports(p string) map[string]bool {
+	f, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.ImportsOnly)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, imp := range f.Imports {
+		if s, err := strconv.Unquote(imp.Path.Value); err == nil {
+			out[s] = true
+		}
+	}
+	return out
 }
 
 // readModulePath 读 repoRoot/go.mod 的 module 行；读不到返回空串。

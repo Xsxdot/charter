@@ -14,6 +14,7 @@
 | R3 | §3 补第 4 个消费入口：`internal/agentd/codegraph_test.go`（Diff/Graph/StaleNode 3 符号），其夹具硬编码读 `../codegraph/testdata/repo`，删包后夹具须随迁 |
 | R4 | §4 子命令数 12→**13**（新增 `version`）；「别名行为一致」语义澄清 = alias≡canonical **同版本等价**，非对搬迁前输出的逐字节冻结（summary 文案随 canonical 更名） |
 | R5 | 私仓依赖矛盾用户拍板：**charter 转公开**（时点：T1 合并、打 `graph/v0.1.0` 之前）——§6-12/15 语义不变，install 裸 curl 通道成立，无需 vendor |
+| R7 | **v0.2.1 门控增强**（用户拍板，2026-08-22 晚，B173 卡 note seq 83）：CheckEdges 增判据三「callee 末段标识符未导出跨包必假」（Reason 增 `"unexported"`）与判据四「包级函数 callee 收紧到调用文件粒度 import，方法保持包粒度」。导出面符号数不变（53）。真机：对 handoff 清洗后基线再揪出 2 条手工漏网假边（`url.Values.Encode` 撞 `relay.Encode`、grok/resume 零提及 `turn.GitTurnStatus`），实证机械化必要性 |
 | R6 | **B173 调用边门控受控增量**（用户拍板移植，2026-08-22 晚，随 `graph/v0.2.0` 发布）：导出面 +2 符号（`CheckEdges`/`EdgeIssue`），51→**53**（23 func + 30 type）；`validate` 输出增 `edgeIssues` 字段、命中计入 issues；`absorb` 增拒收含假边视图。§2 头部、§4、§6-4 同步更新。plan of record = handoff 仓 `docs/superpowers/plans/2026-08-22-b173-edgegate.md`；逐字拷入与真机等价复验见 charter 同日 b173-edgegate-port ledger 及独立审查报告 |
 
 ## §1 module 契约

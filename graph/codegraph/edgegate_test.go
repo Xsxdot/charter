@@ -30,7 +30,7 @@ func edgegateRepo(t *testing.T) string {
 	root := t.TempDir()
 	writeEdgegateFile(t, root, "go.mod", "module example.com/demo\n\ngo 1.22\n")
 	writeEdgegateFile(t, root, "a/a.go", "package a\n\nimport \"example.com/demo/b\"\n\nfunc A() { b.B() }\n")
-	writeEdgegateFile(t, root, "b/b.go", "package b\n\nfunc B() {}\n")
+	writeEdgegateFile(t, root, "b/b.go", "package b\n\ntype S struct{}\n\nfunc (S) M() {}\n\nfunc (S) close() {}\n\nfunc B() {}\n\nfunc hidden() {}\n\ntype inner struct{}\n\nfunc (inner) Do() {}\n")
 	writeEdgegateFile(t, root, "c/c.go", "package c\n\nfunc C() {}\n")
 	writeEdgegateFile(t, root, "c/c_test.go", "package c\n\nimport (\n\t\"testing\"\n\n\t\"example.com/demo/b\"\n)\n\nfunc TestC(t *testing.T) { b.B() }\n")
 	writeEdgegateFile(t, root, "web/x.tsx", "export function X() {}\n")
@@ -39,10 +39,14 @@ func edgegateRepo(t *testing.T) string {
 
 func edgegateNodes() map[string]Node {
 	return map[string]Node{
-		"n_a": {Name: "A", File: "a/a.go"},
-		"n_b": {Name: "B", File: "b/b.go"},
-		"n_c": {Name: "C", File: "c/c.go"},
-		"n_w": {Name: "X", File: "web/x.tsx"},
+		"n_a":   {Name: "A", File: "a/a.go"},
+		"n_b":   {Name: "B", File: "b/b.go"},
+		"n_bm":  {Name: "S.M", File: "b/b.go"},      // 导出方法
+		"n_bc":  {Name: "S.close", File: "b/b.go"},  // 未导出方法
+		"n_bh":  {Name: "hidden", File: "b/b.go"},   // 未导出包级函数
+		"n_bid": {Name: "inner.Do", File: "b/b.go"}, // 未导出类型上的导出方法（跨包可经构造函数送达）
+		"n_c":   {Name: "C", File: "c/c.go"},
+		"n_w":   {Name: "X", File: "web/x.tsx"},
 	}
 }
 
@@ -70,13 +74,38 @@ func TestCheckEdgesFlagsNoImportAndCrossLanguage(t *testing.T) {
 }
 
 func TestCheckEdgesPackageGranularity(t *testing.T) {
-	// 包粒度语义：同包另一文件 import 了目标包，边就放行——
-	// 方法调用可经由字段类型送达，调用文件不必亲自 import（真实反例：agentd/status.go 经 m.st 调 store）。
+	// 粒度分档（v0.2.1，B173 卡 note seq 83）：
+	// 方法调用保持包粒度——可经字段/参数类型送达，调用文件不必亲自 import
+	//（真实反例：agentd/status.go 经 m.st 调 store）；
+	// 包级函数只能写成 pkg.Func()，收紧到调用文件粒度——同包其他文件的 import 救不了它
+	//（真实假边：cmd/card*.go 的 json Encode 被连成 relay.Encode）。
 	root := edgegateRepo(t)
 	writeEdgegateFile(t, root, "c/other.go", "package c\n\nimport \"example.com/demo/b\"\n\nfunc Other() { b.B() }\n")
-	issues := CheckEdges(root, edgegateNodes(), []Edge{{"n_c", "n_b"}})
-	if len(issues) != 0 {
-		t.Fatalf("包内任一生产文件 import 即放行，得到 %+v", issues)
+	issues := CheckEdges(root, edgegateNodes(), []Edge{
+		{"n_c", "n_bm"}, // 方法：包内 other.go import 即放行
+		{"n_c", "n_b"},  // 包级函数：c.go 自己没 import → 假
+	})
+	if len(issues) != 1 || issues[0].To != "n_b" || issues[0].Reason != "no-import" {
+		t.Fatalf("方法包粒度放行、包级函数文件粒度判假，得到 %+v", issues)
+	}
+}
+
+func TestCheckEdgesUnexported(t *testing.T) {
+	// 未导出判据（v0.2.1）：callee 末段标识符首字母小写 → 跨包引用是 Go 语言层面的不可能。
+	// 只看方法/函数名本段：未导出类型上的导出方法（inner.Do）可经构造函数跨包送达，不判假。
+	root := edgegateRepo(t)
+	issues := CheckEdges(root, edgegateNodes(), []Edge{
+		{"n_a", "n_bh"},  // 未导出包级函数 → 假
+		{"n_a", "n_bc"},  // 未导出方法 → 假
+		{"n_a", "n_bid"}, // 未导出类型上的导出方法 → 放行（a import 了 b）
+	})
+	if len(issues) != 2 {
+		t.Fatalf("期望 2 条 unexported，得到 %+v", issues)
+	}
+	for _, is := range issues {
+		if is.Reason != "unexported" || (is.To != "n_bh" && is.To != "n_bc") {
+			t.Fatalf("unexported 判定错位: %+v", is)
+		}
 	}
 }
 
