@@ -39,6 +39,26 @@ func TestGraphValidate(t *testing.T) {
 	}
 }
 
+// TestGraphValidateEdgeIssues 锁 validate 输出的 edgeIssues 字段（B173 调用边门控接线）：
+// 键必须存在（清洗脚本与外部消费方的 wire 契约），干净夹具上不得有假边。
+func TestGraphValidateEdgeIssues(t *testing.T) {
+	out, err := runGraph(t, "validate", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("validate 应通过: %v\n%s", err, out)
+	}
+	var r map[string]any
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatalf("JSON 解析: %v\n%s", err, out)
+	}
+	eis, ok := r["edgeIssues"]
+	if !ok {
+		t.Fatalf("validate 输出缺 edgeIssues 字段: %s", out)
+	}
+	if arr, _ := eis.([]any); len(arr) != 0 {
+		t.Fatalf("干净夹具不应有假边: %v", eis)
+	}
+}
+
 func TestGraphChainDefaultDepth(t *testing.T) {
 	out, err := runGraph(t, "chain", "e_run", "--repo", fixtureRepo)
 	if err != nil {
