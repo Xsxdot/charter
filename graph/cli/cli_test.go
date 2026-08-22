@@ -5,6 +5,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +174,50 @@ func TestGraphCheckMissingTargetFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("无 target 的 check 必须失败")
 	}
+}
+
+func TestGraphTargetVersionGate(t *testing.T) {
+	for _, version := range []int{1, 3} {
+		repo := t.TempDir()
+		copyFixtureRepo(t, fixtureRepo, repo)
+		path := filepath.Join(repo, "codegraph", "target.json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = bytes.Replace(raw, []byte(`"version": 2`), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err = runGraph(t, "check", "--repo", repo)
+		if err == nil || !strings.Contains(err.Error(), "codegraph migrate") {
+			t.Fatalf("version=%d check 应指向 migrate: %v", version, err)
+		}
+		_, err = runGraph(t, "contract", "set", "--from", "d_cmd", "--to", "d_svc", "--repo", repo)
+		if err == nil || !strings.Contains(err.Error(), "codegraph migrate") {
+			t.Fatalf("version=%d contract set 应指向 migrate: %v", version, err)
+		}
+	}
+}
+
+func TestGraphCommandCountIncludesMigrate(t *testing.T) {
+	root := New("codegraph")
+	count := 0
+	for _, command := range root.Commands() {
+		if command.Name() == "help" || command.Name() == "completion" {
+			continue
+		}
+		count++
+	}
+	if count != 14 {
+		t.Fatalf("codegraph 业务子命令数=%d，want 14", count)
+	}
+	for _, command := range root.Commands() {
+		if command.Name() == "migrate" {
+			return
+		}
+	}
+	t.Fatal("子命令列表缺 migrate")
 }
 
 func TestGraphAbsorb(t *testing.T) {
@@ -373,7 +418,7 @@ func TestGraphSummary(t *testing.T) {
 	}
 }
 
-// TestGraphVersion：契约 R4 新增的第 13 个子命令，输出非空版本标识。
+// TestGraphVersion：版本子命令输出非空版本标识。
 func TestGraphVersion(t *testing.T) {
 	out, err := runGraph(t, "version")
 	if err != nil {
@@ -381,6 +426,23 @@ func TestGraphVersion(t *testing.T) {
 	}
 	if len(bytes.TrimSpace([]byte(out))) == 0 {
 		t.Fatal("version 输出不得为空")
+	}
+}
+
+func TestGraphMigrate(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "codegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "target.json"), []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "migrate", "--repo", repo)
+	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) {
+		t.Fatalf("migrate 输出: err=%v out=%s", err, out)
+	}
+	if _, err := codegraph.LoadTarget(repo); err != nil {
+		t.Fatalf("migrate 后 target 应可加载: %v", err)
 	}
 }
 

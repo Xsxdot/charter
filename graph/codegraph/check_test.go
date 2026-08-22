@@ -23,8 +23,8 @@ func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 
 func twoDomainTarget(entries []string, budget int) *Target {
 	return &Target{
-		Meta: TargetMeta{Version: 1},
-		Domains: []TargetDomain{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
 			{ID: "d_a", Type: "logic", Paths: []string{"a/**"}},
 			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
 		},
@@ -47,7 +47,7 @@ func TestCheckTable(t *testing.T) {
 		{"走声明入口合法", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b1"}}, nil, nil, nil},
 		{"越界但有预算=warn", twoDomainTarget([]string{"b.Facade"}, 1), [][2]string{{"a1", "b2"}}, nil, nil, []string{"legacy"}},
 		{"越界超预算=fail", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b2"}}, nil, []string{"over-budget"}, nil},
-		{"无契约方向=fail", &Target{Meta: TargetMeta{Version: 1}, Domains: twoDomainTarget(nil, 0).Domains},
+		{"无契约方向=fail", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems},
 			[][2]string{{"a1", "b1"}}, nil, []string{"new-direction"}, nil},
 	}
 	for _, c := range cases {
@@ -99,8 +99,8 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"}, "out": {"x", "web/x.ts"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 1},
-		Domains: []TargetDomain{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
 			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
 			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
 			{ID: "d_dead", Type: "logic", Paths: []string{"ghost/**"}},
@@ -124,8 +124,8 @@ func TestCheckDeadAssembly(t *testing.T) {
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 1},
-		Domains: []TargetDomain{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
 			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
 			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
 		},
@@ -156,9 +156,9 @@ func TestCheckDeadAssembly(t *testing.T) {
 // 边界条件：deleted 节点只为渲染保留，不代表当前分支里还有这个文件。
 func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	tg := &Target{
-		Meta:     TargetMeta{Version: 1},
-		Domains:  []TargetDomain{{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}}},
-		Assembly: []string{"cmd/gone.go"},
+		Meta:       TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}}},
+		Assembly:   []string{"cmd/gone.go"},
 	}
 	v := mkView(map[string][2]string{"g": {"main", "cmd/gone.go"}}, nil, nil)
 	n := v.Nodes["g"]

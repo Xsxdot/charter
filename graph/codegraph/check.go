@@ -55,7 +55,7 @@ func Check(t *Target, v *View) *Report {
 			continue
 		}
 		allFiles[n.File] = true
-		d := t.DomainOf(n.File)
+		d := t.SubsystemOf(n.File)
 		nodeDomain[id] = d
 		if d == "" {
 			outside[n.File] = true
@@ -79,7 +79,7 @@ func Check(t *Target, v *View) *Report {
 		c := contracts[from+"->"+to]
 		if c == nil {
 			rep.Fails = append(rep.Fails, Finding{Kind: "new-direction", From: from, To: to,
-				Edge: &Edge{e.From, e.To}, Detail: fmt.Sprintf("跨域方向 %s→%s 无契约条目", from, to)})
+				Edge: &Edge{e.From, e.To}, Detail: fmt.Sprintf("跨子系统方向 %s→%s 无契约条目", from, to)})
 			continue
 		}
 		label := ""
@@ -109,7 +109,7 @@ func Check(t *Target, v *View) *Report {
 		if c == nil || !inList(c.Interfaces, ifaceName) {
 			rep.Fails = append(rep.Fails, Finding{Kind: "off-interface", From: ifaceDom, To: implDom,
 				Edge:   &Edge{e.From, e.To},
-				Detail: fmt.Sprintf("跨域实现未声明: %s 实现了 %s 的 %s", implDom, ifaceDom, ifaceName)})
+				Detail: fmt.Sprintf("跨子系统实现未声明: %s 实现了 %s 的 %s", implDom, ifaceDom, ifaceName)})
 		}
 	}
 	// 预算结算
@@ -127,11 +127,11 @@ func Check(t *Target, v *View) *Report {
 	for f := range outside {
 		rep.Warns = append(rep.Warns, Finding{Kind: "outside-file", Detail: "图外文件（目标图未覆盖）: " + f})
 	}
-	for _, d := range t.Domains {
+	for _, d := range t.Subsystems {
 		for _, rule := range d.Paths {
 			if !ruleHitsAny(rule, fileHit) {
 				rep.Warns = append(rep.Warns, Finding{Kind: "dead-rule", From: d.ID,
-					Detail: fmt.Sprintf("域 %s 的规则 %q 未命中视图中任何节点文件", d.ID, rule)})
+					Detail: fmt.Sprintf("子系统 %s 的规则 %q 未命中视图中任何节点文件", d.ID, rule)})
 			}
 		}
 	}

@@ -5,7 +5,7 @@
 //   - 导出唯一构造函数 New：graph/cmd/codegraph（canonical 二进制）与
 //     handoff 的 graph 别名共同挂载同一棵树——「别名行为一致」由构造保证
 //   - validate/check/absorb/views/chain/who-calls/domains/sym/entity/
-//     resolve/contract set/summary/version 共 13 个子命令
+//     resolve/contract set/summary/version/migrate 共 14 个子命令
 //
 // 边界：
 //   - 只读 --repo 指向的本地文件，不发任何网络请求、不依赖 agentd 存活
@@ -171,6 +171,19 @@ var graphValidateCmd = &cobra.Command{
 			return fmt.Errorf("发现 %d 个完整性问题、%d 个失鲜节点", len(issues), len(stale))
 		}
 		return nil
+	},
+}
+
+var graphMigrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "将 target.json 从 v1 机械迁移到 v2",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		defer graphResetState()
+		result, err := codegraph.MigrateTarget(graphRepo)
+		if err != nil {
+			return err
+		}
+		return graphPrintJSON(cmd, result)
 	},
 }
 
@@ -582,5 +595,5 @@ func init() {
 	graphContractSetCmd.Flags().StringSliceVar(&graphContractInterfaces, "interfaces", nil, "允许的跨域接口清单")
 	graphContractSetCmd.Flags().IntVar(&graphContractBudget, "budget", 0, "存量直调预算")
 	graphContractCmd.AddCommand(graphContractSetCmd)
-	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd)
+	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd)
 }
