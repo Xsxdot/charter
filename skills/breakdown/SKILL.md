@@ -41,3 +41,5 @@ description: L3 的拆解节点——跨子系统单 agent 出稿（子系统清
 ## 红线
 
 不写实现代码；不建卡、不派发、不调派发工具——扇出归协调者。
+
+**符号锚**：项目有代码图时，文档引用现状代码推荐 `file#Symbol` 符号锚（行号会漂，符号锚配 `handoff graph resolve` 查询时决议）；出稿自检跑 `handoff graph resolve --doc <本文档>`，坏锚即修。
