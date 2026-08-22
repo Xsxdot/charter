@@ -73,3 +73,20 @@
 - 任务 f60d3c19（codex@linux-01，分支 feat/codegraph-v030-consume，base 4d908dd9b，纪律块=内置:single-context）；plan 内联 T4 卡面全文（handoff 仓读不到 charter docs）+ 声明 schema + P5 领域（d_coordination_task/d_workspace）。
 - 派发前置插曲：handoff 本地 main 落后一步是 B175 会话刚合未推的 merge（4d908dd9b）——协调者本地 build+契约闸验绿后代推，再派发（基线校验通过）。
 - 待 T4 落地后：真机 2（跨版本对账，用本稿钉死读数 fails 0/warns 20）、真机 3（坏锚+testRef 变异）在协调者本地执行；真机 4~7 与补扫（P1=C 混合）依 DAG 后续。
+
+### T4 审核与真机核销（2026-08-22 深夜）
+
+- **T4 零修正归档**（任务 f60d3c19，codex 28 分钟，4 提交 @dce612c0）：验收 6 条全对上——①原子提交内 go.mod v0.3.0 + migrate（无手改 JSON）；②根全量协调者本地复跑 exit 0 零 FAIL；③前后 check JSON 留档、0 fails/20 warns；④配方 lifecycle 段+creator/writer 反裸名纪律+subsystems[].paths 改引；⑤d_coordination_task（4 不变式全带真 testRef + 12 条状态机）与 d_workspace（4 不变式）声明，validate 绿 domainDecls=2，锚逐一 grep 实证；⑥help deprecated 在场、summary 单行无污染。
+- **Minor 记账两笔**：migrate 对空 `assignments` 走 omitempty 丢键（T1 出厂行为，LoadTarget 后 nil 与空切片语义等价，非缺陷）；派发 plan 示例命令 `go run ./cmd/handoff` 有误（本仓入口在根），执行者如实纠偏并留原始 stderr——plan 出稿时没核入口路径，记一笔出稿纪律。
+- **真机 2 ✅**：v0.3.0 对升级后仓 check = 0 fails / 19 legacy + 1 dead-assembly，与本稿钉死的 v0.2.1 基准逐项一致（Counter 比对）。
+- **真机 3 ✅**：坏锚（lifecycle.from 指向不存在符号）→ validate exit 1 带 `[decl d_workspace]` 前缀 → 还原绿；假 testRef → exit 1 → 还原绿。
+- **真机 5 ✅**：`codegraph domains` crossSubsystem 恰 4 域，与预测集合逐一相符（d_coordination_task/d_runtime_config/d_runtime_maintenance/d_workspace）。
+- **合并**：feat/codegraph-v030-consume → handoff main @65011eade（合并前 main 已被 B176 会话推进，结果树全量零 FAIL 后推送）。任务尾部第三次出现 completed 后假 turn_failed（EOF），已在 B180 记录。
+
+### P1 小样 + 真机 4（同夜）
+
+- 小样两条（宁缺毋滥裁剪：`CreateTask` 只持久化传入对象不构造，弃）：creator = `n_agentd_Manager_Dispatch`（manager.go:863 字面量构造）、writer = `n_store_Store_UpdateTaskState`（field=state，全部迁移的 CAS 收口）。
+- 全链路：视图 diff → validate 绿 → **先合并后 absorb** @65011eade → baseline lifecycle 2 条 → 视图消费清空 → absorb 后 validate 仍绿 → 推送 985f37135。
+- **真机 4 ✅（全景终验）**：`entity Task` 出 creators/writers/domainDecl 三键齐（breakdown 措辞的「lifecycle 段」在 T3 冻结实现中即分桶进 creators/writers，语义达成，措辞差记此一笔）。
+- **全量补扫已派发**（P1=C 后半）：任务 a0764a76，codex@linux-01，分支 data/lifecycle-backfill，产物限定视图 diff + ledger、不 absorb；协调者审后合并再回灌。
+- **余项**：真机 6（Web 控制台渲染）、真机 7（执行机 hook）与部署门三条同因同解，等用户定发版窗口。
