@@ -228,6 +228,23 @@ func TestGraphCheck(t *testing.T) {
 	}
 }
 
+func TestGraphCheckViewAliases(t *testing.T) {
+	outputs := make(map[string]string, 2)
+	for _, view := range []string{"branch-x", "branch:x"} {
+		stdout, stderr, err := runGraphSeparate(t, "check", "--view", view, "--repo", fixtureRepo)
+		if err != nil {
+			t.Fatalf("check --view %s 应通过: %v\nstdout=%s\nstderr=%s", view, err, stdout, stderr)
+		}
+		outputs[view] = stdout
+		if view == "branch:x" && !strings.Contains(stderr, "视图 branch:x 按 view 字段匹配到文件 branch-x") {
+			t.Fatalf("字段回退应在 stderr 留痕: %s", stderr)
+		}
+	}
+	if outputs["branch-x"] != outputs["branch:x"] {
+		t.Fatalf("两种视图标识的 check 结果应一致: file=%s field=%s", outputs["branch-x"], outputs["branch:x"])
+	}
+}
+
 func TestGraphCheckMissingTargetFails(t *testing.T) {
 	// 指向一个没有 target.json 的仓：必须报错退出，不能静默通过。
 	_, err := runGraph(t, "check", "--repo", t.TempDir())

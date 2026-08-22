@@ -4,6 +4,7 @@ package codegraph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,7 +27,7 @@ func TestLoadGraphMissing(t *testing.T) {
 	}
 }
 
-func TestListViewsAndLoadDiff(t *testing.T) {
+func TestLoadDiffByFileName(t *testing.T) {
 	views, err := ListViews(filepath.Join("testdata", "repo"))
 	if err != nil || len(views) != 1 || views[0] != "branch-x" {
 		t.Fatalf("ListViews: %v %v", views, err)
@@ -40,6 +41,59 @@ func TestListViewsAndLoadDiff(t *testing.T) {
 	}
 	if d.NodesModified["n_do"].SignatureOld == "" {
 		t.Fatal("signatureOld 丢失")
+	}
+}
+
+func TestLoadDiffFallsBackToViewField(t *testing.T) {
+	repo := t.TempDir()
+	writeFixtureBaseline(t, repo)
+	writeDiffFixture(t, repo, "branch-x", "branch:x")
+
+	d, err := LoadDiff(repo, "branch:x")
+	if err != nil {
+		t.Fatalf("按 view 字段回退读取: %v", err)
+	}
+	if d.View != "branch:x" || d.Summary != "fixture" {
+		t.Fatalf("回退读取的 diff 不对: %+v", d)
+	}
+}
+
+func TestLoadDiffAmbiguousViewField(t *testing.T) {
+	repo := t.TempDir()
+	writeFixtureBaseline(t, repo)
+	writeDiffFixture(t, repo, "branch-a", "branch:x")
+	writeDiffFixture(t, repo, "branch-b", "branch:x")
+
+	_, err := LoadDiff(repo, "branch:x")
+	if err == nil || !strings.Contains(err.Error(), "branch-a") || !strings.Contains(err.Error(), "branch-b") {
+		t.Fatalf("同 view 字段应报歧义并列出文件名: %v", err)
+	}
+}
+
+func TestLoadDiffUnknownListsAvailable(t *testing.T) {
+	repo := t.TempDir()
+	writeFixtureBaseline(t, repo)
+	writeDiffFixture(t, repo, "branch-x", "branch:x")
+	writeDiffFixture(t, repo, "branch-y", "branch:y")
+
+	_, err := LoadDiff(repo, "branch:z")
+	if err == nil || !strings.Contains(err.Error(), "可用视图") ||
+		!strings.Contains(err.Error(), "branch-x") || !strings.Contains(err.Error(), "branch-y") {
+		t.Fatalf("未知视图应指路到可用清单: %v", err)
+	}
+}
+
+func TestLoadDiffPropagatesNonNotExistError(t *testing.T) {
+	repo := t.TempDir()
+	writeFixtureBaseline(t, repo)
+	path := filepath.Join(repo, "codegraph", "diffs", "branch-x.json")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadDiff(repo, "branch-x")
+	if err == nil || !strings.Contains(err.Error(), "branch-x.json") || strings.Contains(err.Error(), "可用视图") {
+		t.Fatalf("非不存在读取错误应原样走错误路径: %v", err)
 	}
 }
 
@@ -60,6 +114,18 @@ func writeFixtureBaseline(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(graphDir, "baseline.json"), []byte(`{"meta":{},"containers":{},"nodes":{},"edges":[],"diffs":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeDiffFixture(t *testing.T, repo, filename, view string) {
+	t.Helper()
+	diffsDir := filepath.Join(repo, "codegraph", "diffs")
+	if err := os.MkdirAll(diffsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"view":"` + view + `","summary":"fixture"}`
+	if err := os.WriteFile(filepath.Join(diffsDir, filename+".json"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

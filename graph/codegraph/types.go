@@ -114,4 +114,5 @@ type Diff struct {
 	ProjectionsDeleted []Projection    `json:"projectionsDeleted,omitempty"`
 	LifecycleAdded     []LifecycleRef  `json:"lifecycleAdded,omitempty"`
 	LifecycleDeleted   []LifecycleRef  `json:"lifecycleDeleted,omitempty"`
+	loadNotice         string          `json:"-"`
 }
