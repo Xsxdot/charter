@@ -59,5 +59,5 @@ codegraph 是 charter 流程的执法工具（架构法附则的 graph check 硬
 
 ## 备注
 
-- 现状读数（2026-08-22 探索 agent 实测，contract 节点对工作树复核）：`internal/codegraph` 非测试 1848 行、仅 import 标准库，包注释明写可整体搬迁（`internal/codegraph/types.go:9-11`）；`cmd/graph.go` 498 行、依赖仅 cobra + 本包（`cmd/graph.go:15-25`）；反向耦合为 agentd 130 行 2 条只读路由（`internal/agentd/server.go:499-500`）+ 契约闸测试；graph 平台相关逻辑共 3 行，零 CGO、零解析器（图数据由 AI 扫描配方产出）。
+- 现状读数（2026-08-22 探索 agent 实测，contract 节点对工作树复核；计数经 breakdown 勘误 R1：14 源文件 1828 行 + 14 测试 1244 行）：`internal/codegraph` 仅 import 标准库，包注释明写可整体搬迁（`internal/codegraph/types.go:9-11`）；`cmd/graph.go` 498 行、依赖仅 cobra + 本包（`cmd/graph.go:15-25`）；反向耦合为 agentd 130 行 2 条只读路由（`internal/agentd/server.go:499-500`）+ 契约闸测试；graph 平台相关逻辑共 3 行，零 CGO、零解析器（图数据由 AI 扫描配方产出）。
 - 图覆盖债：本 spec 引用的 handoff 侧行号出自探索 agent 的 grep 读数（未走图查询），contract 落地时以 `handoff graph resolve` / 实际读码复核。

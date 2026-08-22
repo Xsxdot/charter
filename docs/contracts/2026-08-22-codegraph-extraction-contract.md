@@ -5,18 +5,29 @@
 > 本仓（charter）无 `codegraph/target.json`——存量无图项目，**本文件即冻结物**，review 节点按 §6 冻结清单人工对账。
 > 现状事实源头：handoff 仓 **@ 573149364**（下列 文件:行 均指该提交的工作树）。
 
+## 修订记录（2026-08-22，breakdown 核对回写，随拆解拍板一并冻结）
+
+| # | 修订 |
+|---|---|
+| R1 | 事实勘误：§2 头部计数改为 **14 个非测试源文件、51 个导出符号（22 func + 29 type）、14 个测试文件**——表格本身逐行核对无误，头部计数笔误（spec 备注同源勘误） |
+| R2 | §1 增 CLI 布局条目：module 内含可导入 CLI 包 `graph/cli`（导出面仅命令构造函数），`graph/cmd/codegraph` 与 handoff 别名同挂此构造——「别名行为一致」由构造保证；§5-2「cmd 壳依赖仅 cobra」涵盖此包 |
+| R3 | §3 补第 4 个消费入口：`internal/agentd/codegraph_test.go`（Diff/Graph/StaleNode 3 符号），其夹具硬编码读 `../codegraph/testdata/repo`，删包后夹具须随迁 |
+| R4 | §4 子命令数 12→**13**（新增 `version`）；「别名行为一致」语义澄清 = alias≡canonical **同版本等价**，非对搬迁前输出的逐字节冻结（summary 文案随 canonical 更名） |
+| R5 | 私仓依赖矛盾用户拍板：**charter 转公开**（时点：T1 合并、打 `graph/v0.1.0` 之前）——§6-12/15 语义不变，install 裸 curl 通道成立，无需 vendor |
+
 ## §1 module 契约
 
 - module 路径：`github.com/Xsxdot/charter/graph`（嵌套 module，charter 仓根**不设** go.mod）
 - 包导入路径：`github.com/Xsxdot/charter/graph/codegraph`，包名 `codegraph`——消费方代码里 `codegraph.LoadGraph` 等调用点**零文本变化**，只改 import 行
 - CLI 壳：`graph/cmd/codegraph/`，二进制名 `codegraph`
 - go 指令：`1.26.1`（与 handoff `go.mod:3` 一致，消费方无 toolchain 抬升）
-- 版本面：嵌套 module tag 形如 `graph/vX.Y.Z`，handoff go.mod 钉 tag 消费
-- 架构形态声明：graph module = 单包（`codegraph/`）+ cmd 壳，平铺无分层
+- 版本面：嵌套 module tag 形如 `graph/vX.Y.Z`（首 tag `graph/v0.1.0`），handoff go.mod 钉 tag 消费，提交内零 `replace` 指令
+- CLI 布局（R2）：`graph/cli` 可导入 CLI 包（导出面仅命令构造函数），`graph/cmd/codegraph` 与 handoff 别名同挂此构造
+- 架构形态声明：graph module = 单包（`codegraph/`）+ CLI 包（`cli/`）+ cmd 薄壳，平铺无分层
 
-## §2 导出面（原样迁移，零增删改；13 个非测试源文件，46 个导出符号）
+## §2 导出面（原样迁移，零增删改；14 个非测试源文件，51 个导出符号：22 func + 29 type——R1）
 
-搬迁等价性的可执行对账 = 包内既有测试（9 个测试文件，1244 行）随迁全绿。
+搬迁等价性的可执行对账 = 包内既有测试（14 个测试文件，1244 行）随迁全绿。
 
 | 文件 | 导出符号（出处行号） |
 |---|---|
@@ -40,13 +51,14 @@
 - `internal/agentd/codegraph.go`：LoadGraph、ListViews、LoadDiff、CheckStale、`Diff`、`StaleNode`（6 符号）
 - `cmd/graph_gate_test.go`：LoadTarget、ValidateTarget、LoadGraph、Check、Merge（5 符号）
 - `cmd/graph.go`（改写为委托别名前的现状消费）：28 符号（§2 全集的子集，逐个见 `grep -o 'codegraph\.[A-Za-z]*' cmd/graph.go`）
+- `internal/agentd/codegraph_test.go`（R3）：Diff、Graph、StaleNode（3 符号）；夹具 `codegraphFixtureRepo` 硬编码读 `../codegraph/testdata/repo`，删包后夹具随迁至 agentd 自有 testdata
 
 ## §4 CLI 契约
 
 canonical 入口 `codegraph`，子命令与现 `handoff graph` 一致（`cmd/graph.go` 各 `Use:` 行）：
-`validate`(91) `check`(145) `absorb <view>`(173) `views`(242) `chain`(304) `who-calls`(311) `domains`(319) `sym`(341) `entity`(360) `resolve [file#Symbol]`(378) `contract set`(425,430) `summary`(467)。
+`validate`(91) `check`(145) `absorb <view>`(173) `views`(242) `chain`(304) `who-calls`(311) `domains`(319) `sym`(341) `entity`(360) `resolve [file#Symbol]`(378) `contract set`(425,430) `summary`(467)，另新增 `version`（R4，共 13 个；`go install` 构建下版本信息优先走 `runtime/debug.ReadBuildInfo`，release 构建以 ldflags 覆盖）。
 
-别名契约：`handoff graph <args>` 与 `codegraph <args>` 行为一致（委托同一 module），帮助文本标 deprecated。
+别名契约：`handoff graph <args>` 与 `codegraph <args>` 行为一致——语义为**同版本等价**（委托同一构造，R4），非对搬迁前输出的逐字节冻结；帮助文本（Short/Long）标 deprecated，**禁用 cobra 的 Deprecated 字段**（它会向 stdout 打运行时告警，污染 JSON 消费管道与 SessionStart hook）。
 
 ## §5 不变式（冻结）
 
@@ -61,12 +73,12 @@ canonical 入口 `codegraph`，子命令与现 `handoff graph` 一致（`cmd/gra
 1. `graph/go.mod` 第 1 行 = `module github.com/Xsxdot/charter/graph`
 2. `graph/go.mod` go 指令 = `1.26.1`
 3. 包路径 `graph/codegraph`、包名 `codegraph`
-4. 导出面与 §2 清单逐符号相符，零增删（`go doc ./codegraph` 对账）
+4. 导出面与 §2 清单逐符号相符（51 符号），零增删（`go doc ./codegraph` 对账）
 5. `codegraph` 包 import 块仅标准库
 6. module 第三方依赖仅 cobra v1.10.2
 7. `CGO_ENABLED=0 go build ./...` 六平台矩阵通过（至少 linux/amd64、darwin/arm64、windows/amd64 三个抽查）
 8. 随迁测试全绿（`go test ./...` 于 graph module）
-9. 12 个子命令名与 §4 一致（`codegraph --help` 对账）
+9. 13 个子命令名（含 version）与 §4 一致（`codegraph --help` 对账）
 10. handoff 仓 `internal/codegraph/` 目录不存在
 11. handoff `cmd/graph.go` 为委托别名且帮助文本含 deprecated 标注
 12. handoff go.mod 含 `github.com/Xsxdot/charter/graph` 钉 tag 版本
