@@ -21,3 +21,5 @@
 收敛已完成（handoff main = 1334ba9fb，本会话协调执行）：B173 分支在收敛前已被整体合入 main（含代码提交），故「挑提交」失效，改为**合并 extraction 时取别名版 cmd/graph.go + 显式 git rm edgegate 孤儿两文件**；go.mod 已升 v0.2.0；absorb 后 validate 全绿，check 16 红（list 16 = unique 14 + d_release→d_remote ×3），与沙箱预演逐条一致。
 
 **唯一残余**：target.json 重标定（2 唯一方向 + 12 预算）按 B173 plan 走 `charter:contract` 裁决，挂 handoff 仓 B173 卡。
+
+**独立复验（B173 会话，2026-08-22 晚，handoff B173 卡 note seq 75）**：对 origin/main 数据独立跑判据，全部命中（基线 3564/4537、check 16=4 方向+12 预算、edgegate 两文件确不存在）。18→16 消失的 2 条 over-budget（d_cli→d_contract、d_controlplane→d_contract）定性为**真实结构变化**：d_contract paths 移除 `internal/codegraph/**` 后入边不再计入，两版 target.json 的 legacyBudget 数字逐条比对零改动——不是调数字修红。
