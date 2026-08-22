@@ -47,8 +47,8 @@
 | 1 | 别名 vs canonical 输出比对 | ✅ sym/entity 逐字节一致；check 集合等价（顺序抖动为 check 自身既有非确定性，已落 roadmap 第 2 条） |
 | 2 | tag 后 go mod download 可解析 | ✅ `go get charter/graph@v0.1.0` 成功 |
 | 3 | release workflow 六平台 + 资产 | ✅ run 32566617996 success（1m6s），六资产 + checksums.txt 齐、命名与契约逐字一致 |
-| 4 | 无 Go 无 handoff 设备 install 脚本 | ⬜ 未执行（需另一台设备） |
+| 4 | 无 Go 无 handoff 设备 install 脚本 | ✅ 2026-08-22 晚 subagent 于 linux-01 干净环境（env -i 无 Go PATH）实测：装出 v0.2.1、version 正常、sha256 校验为强制路径（取不到 checksums 即硬失败也实证过） |
 | 5 | go install 通道 | ✅ `go install ...@v0.1.0` 后 `codegraph version` 输出 v0.1.0、sym 查询正常 |
 | 6 | ~/.claude/CLAUDE.md 两处改名 | ✅ 已改（canonical + 别名注记） |
-| 7 | 执行机 SessionStart hook | ⬜ 未执行（待 handoff 分支合并 + 全网升级后验） |
-| 8 | Web 控制台 codegraph 页渲染 | ⬜ 未执行（待 handoff 分支合并后起 agentd 验） |
+| 7 | 执行机 SessionStart hook | ⬜ **阻塞在发版通道**（2026-08-22 晚实测）：linux-01 现装 v0.3.9-dev.806ca3ff6 的 graph 别名无 summary/sym，hook 静默注空；`handoff upgrade` 只发 GitHub latest release v0.3.9（落后 main 128 提交，升级即降级）。解法 = 从 ≥c283a3ae6 的 main 发新 tag → `handoff upgrade --now --target linux-01`，**发 tag 归用户** |
+| 8 | Web 控制台 codegraph 页渲染 | ✅ 现版 agentd 实测：codegraph API 返回 3564/4522/19 与基线逐项一致、控制台 200；「升级后复验」与 #7 同因同解 |
