@@ -31,6 +31,14 @@
 验证（全部本轮）：build/vet OK；根全量测试除既有 B173 门禁红外全绿（**基线先跑证实该红在动手前已存在**）；check fails 集合前后逐条一致（33=33，零新增零消失）；`test ! -d internal/codegraph`、旧 import 零命中、`grep -c '^replace' go.mod`=0；别名 help 含 deprecated、`graph sym` 输出 `python3 -m json.tool` 解析通过。
 修正一笔：首次提交误含其他会话两个 untracked 文档，amend 摘出后 force push。
 
+## Acceptance（2026-08-22 晚，复跑 → 变异 → 真机核销）
+
+- **复跑（全部本轮新鲜）**：charter graph 全测绿 + vet/gofmt 零输出 + 三平台 CGO=0 build OK + 53 符号 + 13 子命令；handoff main 全量测试唯一红 = 契约闸，fails **多重集与收敛时钉死的 16 条逐条一致**（排序比对含重数）。
+- **变异复验（保编译，红→还原绿）**：①跨语言判据永假化 → 包侧两支测试齐红；②validate 输出键改名 → TestGraphValidateEdgeIssues 红；③absorb 拒假边门永假化 → 新补的 TestGraphAbsorbRejectsFakeEdges 红（假边被吸收实证）；④deps 版本锁（review M2 时已验：钉死值变异红）。
+- **补牙**：R6 冻结的 absorb 拒假边行为原无测试守护，acceptance 就地补 `TestGraphAbsorbRejectsFakeEdges`（拒绝 + diff 保留 + 基线无假边三断言）。
+- **review findings 核销**：C1/I1/M1/M2/M3 五条全部按 review 卡处置完毕，本轮 grep 复核在场（R6×4、集合口径×1、17 支勘误×1、pinned×2、cache-dependency-path×1）。M3 生效验证留待下次 tag 触发。
+- **真机余 3 条为部署门**：4 需另一台无 Go 设备；7/8 需 handoff 二进制升级部署（fleet/agentd 重启归用户），见 roadmap。
+
 ## 真机清单执行状态（2026-08-22）
 
 | # | 条目 | 状态 |

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Xsxdot/charter/graph/codegraph"
@@ -196,6 +197,36 @@ func TestGraphAbsorb(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "codegraph", "diffs", "branch-x.json")); !os.IsNotExist(err) {
 		t.Fatalf("diff 应在写盘成功后删除，stat=%v", err)
+	}
+}
+
+// TestGraphAbsorbRejectsFakeEdges 锁 R6 的 absorb 拒假边门（acceptance 补牙）：
+// 视图带跨语言调用边（Go n_do → TS m_task_ts）必须拒绝併入，基线与 diff 文件均不得动。
+func TestGraphAbsorbRejectsFakeEdges(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	view := `{"view":"branch:fake","base":"abc1234","summary":"含假边","edgesAdded":[["n_do","m_task_ts"]]}`
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "diffs", "branch-fake.json"), []byte(view), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "absorb", "branch-fake", "--repo", repo, "--commit", "abc123", "--branch", "main")
+	if err == nil {
+		t.Fatalf("含假边视图应被拒绝併入: %s", out)
+	}
+	if !strings.Contains(err.Error(), "不可能真实的调用边") {
+		t.Fatalf("拒绝理由应指向调用边门控: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, "codegraph", "diffs", "branch-fake.json")); statErr != nil {
+		t.Fatalf("拒收后 diff 文件应保留: %v", statErr)
+	}
+	g, err := codegraph.LoadGraph(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range g.Edges {
+		if e[0] == "n_do" && e[1] == "m_task_ts" {
+			t.Fatal("假边被写入基线")
+		}
 	}
 }
 
