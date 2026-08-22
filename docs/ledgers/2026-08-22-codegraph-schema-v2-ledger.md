@@ -27,17 +27,25 @@
 
 | # | 状态 | 证据指针 |
 |---:|---|---|
-| 1 | 待终审 | T1/T2 |
-| 2 | 待终审 | T1 |
-| 3 | 待终审 | T1 |
-| 4 | 待终审 | T1 |
-| 5 | 待终审 | T2 |
-| 6 | 待终审 | T2 |
-| 7 | 待终审 | T2 |
-| 8 | 待终审 | T2 |
-| 9 | 待终审 | T2 |
-| 10 | 待终审 | T3 |
-| 11 | 待终审 | T3 |
-| 12 | 待终审 | T1 |
-| 13 | 待终审 | T3 |
-| 14 | 待终审 | T3 |
+| 1 | ✓ | `target.json` v2 + `migrate_test.go` 字节金样本 |
+| 2 | ✓ | `target.go#LoadTarget` + T1 版本门 CLI 测试 |
+| 3 | ✓ | `rg TargetDomain|DomainOf graph --glob '*.go'` 无命中 |
+| 4 | ✓ | `check_test.go` 保持 `new-direction`/`over-budget` kind |
+| 5 | ✓ | `decl.go#LifecycleRef` + `validateLifecycle` 枚举/Model 检查 |
+| 6 | ✓ | `types.go#Graph/Diff` lifecycle json tag + wire 测试 |
+| 7 | ✓ | `merge_test.go#TestGraphJSONKeysAreAdditiveForLifecycle` |
+| 8 | ✓ | `validate_test.go#TestValidateLifecycleRefs/TestValidateDiffLifecycleRefs` |
+| 9 | ✓ | `absorb_test.go` 与 `merge_test.go` 增删/死端点/状态/保全断言 |
+| 10 | ✓ | `decl.go` 类型 + `decls.go#LoadDomainDecls` 三类加载错误测试 |
+| 11 | ✓ | `decls.go#ValidateDecls` + CLI `[decl id]`/`domainDecls` 测试 |
+| 12 | ✓ | `migrate.go` 三态/未知键/原子写测试 + 14 业务命令断言 |
+| 13 | ✓ | `entity.go` lifecycle 分桶/声明摘要/omitempty 测试 |
+| 14 | ✓ | `domains.go` 单/跨子系统派生 + target 缺失/v1 软依赖测试 |
+
+## 整分支终审
+
+- 审查范围：起点 `31bf88b788007ab78f56960b3b107e8e6a01e401` 到 T1/T2/T3 全部提交；未发现超出 T1~T3 范围的代码变更。
+- `cd graph && go test ./... -count=1`：`cli`、`codegraph` 全部 `ok`，cmd 无测试。
+- `cd graph && go build ./...`、`go vet ./...`、`gofmt -l .`：成功；gofmt 无输出。
+- 交叉构建：`CGO_ENABLED=0` 下 linux/amd64、darwin/arm64、windows/amd64 均成功且无输出。
+- 终审结论：无需修复波次，T1~T3 完成；未执行 push。
