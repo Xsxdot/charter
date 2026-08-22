@@ -1,7 +1,7 @@
 // 本文件实现目标图 target.json 的模型、加载与校验（spec
 // docs/superpowers/specs/2026-08-21-codegraph-target-check-design.md §4）。
 //
-// 职责：类型定义、LoadTarget、ValidateTarget、归域 DomainOf（Task 2）
+// 职责：类型定义、LoadTarget、ValidateTarget、子系统映射（Task 2）
 // 边界：不做对照（check.go）；不写文件——target 是人写的，程序只读
 package codegraph
 
@@ -19,8 +19,8 @@ type TargetMeta struct {
 	Project string `json:"project"`
 }
 
-// TargetDomain 一个声明的域。Type 二选一：logic / boundary（分域协议的域类型标注）。
-type TargetDomain struct {
+// TargetSubsystem 一个声明的子系统。Type 二选一：logic / boundary（分区协议的类型标注）。
+type TargetSubsystem struct {
 	ID    string   `json:"id"`
 	Name  string   `json:"name"`
 	Type  string   `json:"type"`
@@ -28,10 +28,10 @@ type TargetDomain struct {
 	Note  string   `json:"note,omitempty"`
 }
 
-// Assignment 例外文件的显式归域，优先级高于 paths 规则。
+// Assignment 例外文件的显式归属，优先级高于 paths 规则。
 type Assignment struct {
-	Path   string `json:"path"`
-	Domain string `json:"domain"`
+	Path      string `json:"path"`
+	Subsystem string `json:"subsystem"`
 }
 
 // Contract 一个允许的跨域依赖方向 from → to。
@@ -48,11 +48,11 @@ type Contract struct {
 
 // Target 是 codegraph/target.json 的顶层结构：事前基准。
 type Target struct {
-	Meta        TargetMeta     `json:"meta"`
-	Domains     []TargetDomain `json:"domains"`
-	Assignments []Assignment   `json:"assignments,omitempty"`
-	Assembly    []string       `json:"assembly,omitempty"`
-	Contracts   []Contract     `json:"contracts,omitempty"`
+	Meta        TargetMeta        `json:"meta"`
+	Subsystems  []TargetSubsystem `json:"subsystems"`
+	Assignments []Assignment      `json:"assignments,omitempty"`
+	Assembly    []string          `json:"assembly,omitempty"`
+	Contracts   []Contract        `json:"contracts,omitempty"`
 }
 
 // LoadTarget 读取 repoRoot/codegraph/target.json。
@@ -67,6 +67,9 @@ func LoadTarget(repoRoot string) (*Target, error) {
 	var t Target
 	if err := json.Unmarshal(raw, &t); err != nil {
 		return nil, fmt.Errorf("解析目标图 %s: %w", p, err)
+	}
+	if t.Meta.Version != 2 {
+		return nil, fmt.Errorf("目标图 %s 使用不支持的 schema version %d；请先运行 codegraph migrate", p, t.Meta.Version)
 	}
 	return &t, nil
 }
@@ -86,30 +89,30 @@ func validPathRule(rule string) bool {
 // ValidateTarget 校验目标图内部一致性，返回问题清单（空 = 合法）。
 func ValidateTarget(t *Target) []string {
 	var issues []string
-	ids := make(map[string]bool, len(t.Domains))
-	for _, d := range t.Domains {
+	ids := make(map[string]bool, len(t.Subsystems))
+	for _, d := range t.Subsystems {
 		if ids[d.ID] {
-			issues = append(issues, fmt.Sprintf("域 id %q 重复", d.ID))
+			issues = append(issues, fmt.Sprintf("子系统 id %q 重复", d.ID))
 		}
 		ids[d.ID] = true
 		if d.Type != "logic" && d.Type != "boundary" {
-			issues = append(issues, fmt.Sprintf("域 %s 的 type 取值非法: %q（只认 logic/boundary）", d.ID, d.Type))
+			issues = append(issues, fmt.Sprintf("子系统 %s 的 type 取值非法: %q（只认 logic/boundary）", d.ID, d.Type))
 		}
 		for _, p := range d.Paths {
 			if !validPathRule(p) {
-				issues = append(issues, fmt.Sprintf("域 %s 的 paths 规则 %q 语法非法（只支持精确路径或 dir/**）", d.ID, p))
+				issues = append(issues, fmt.Sprintf("子系统 %s 的 paths 规则 %q 语法非法（只支持精确路径或 dir/**）", d.ID, p))
 			}
 		}
 	}
 	for _, a := range t.Assignments {
-		if !ids[a.Domain] {
-			issues = append(issues, fmt.Sprintf("assignments %s 指向不存在的域 %q", a.Path, a.Domain))
+		if !ids[a.Subsystem] {
+			issues = append(issues, fmt.Sprintf("assignments %s 指向不存在的子系统 %q", a.Path, a.Subsystem))
 		}
 	}
 	for _, c := range t.Contracts {
 		for _, ref := range []string{c.From, c.To} {
 			if !ids[ref] {
-				issues = append(issues, fmt.Sprintf("契约 %s→%s 引用不存在的域 %q", c.From, c.To, ref))
+				issues = append(issues, fmt.Sprintf("契约 %s→%s 引用不存在的子系统 %q", c.From, c.To, ref))
 			}
 		}
 		if c.LegacyBudget < 0 {
@@ -119,16 +122,16 @@ func ValidateTarget(t *Target) []string {
 	return issues
 }
 
-// DomainOf 返回 file 的归属域 id，"" 表示图外。
-// 三级优先：assignments 精确指派 > 域 paths 规则 > 图外（spec §4）。
+// SubsystemOf 返回 file 的归属子系统 id，"" 表示图外。
+// 三级优先：assignments 精确指派 > 子系统 paths 规则 > 图外（spec §4）。
 // file 与规则都是 '/' 分隔的仓内相对路径——图数据即此形态，不做 filepath 转换。
-func (t *Target) DomainOf(file string) string {
+func (t *Target) SubsystemOf(file string) string {
 	for _, a := range t.Assignments {
 		if a.Path == file {
-			return a.Domain
+			return a.Subsystem
 		}
 	}
-	for _, d := range t.Domains {
+	for _, d := range t.Subsystems {
 		for _, rule := range d.Paths {
 			if rule == file {
 				return d.ID

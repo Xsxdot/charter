@@ -30,6 +30,15 @@ type ViewProjection struct {
 	Status string `json:"status,omitempty"`
 }
 
+// ViewLifecycle 是一条带 diff 状态的生命周期关系。
+type ViewLifecycle struct {
+	Who    string `json:"who"`
+	Model  string `json:"model"`
+	Kind   string `json:"kind"`
+	Field  string `json:"field,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
 // View 是合并后的图视图。
 type View struct {
 	Name string `json:"view"`
@@ -40,6 +49,7 @@ type View struct {
 	Edges       []ViewEdge           `json:"edges"`
 	Implements  []ViewEdge           `json:"implements"`
 	Projections []ViewProjection     `json:"projections"`
+	Lifecycle   []ViewLifecycle      `json:"lifecycle"`
 }
 
 // Merge 把基线与一个 diff 合并成视图。d 为 nil 时返回纯基准视图（Name="baseline"）。
@@ -57,6 +67,9 @@ func Merge(g *Graph, d *Diff) *View {
 	}
 	for _, p := range g.Projections {
 		v.Projections = append(v.Projections, ViewProjection{From: p[0], To: p[1], Kind: p[2]})
+	}
+	for _, ref := range g.Lifecycle {
+		v.Lifecycle = append(v.Lifecycle, ViewLifecycle{Who: ref.Who, Model: ref.Model, Kind: ref.Kind, Field: ref.Field})
 	}
 	if d == nil {
 		return v
@@ -131,5 +144,33 @@ func Merge(g *Graph, d *Diff) *View {
 		}
 		v.Projections = append(v.Projections, ViewProjection{From: p[0], To: p[1], Kind: p[2], Status: "added"})
 	}
+	delLifecycle := map[string]bool{}
+	for _, ref := range d.LifecycleDeleted {
+		delLifecycle[lifecycleKey(ref)] = true
+	}
+	for i := range v.Lifecycle {
+		ref := LifecycleRef{
+			Who: v.Lifecycle[i].Who, Model: v.Lifecycle[i].Model,
+			Kind: v.Lifecycle[i].Kind, Field: v.Lifecycle[i].Field,
+		}
+		if delLifecycle[lifecycleKey(ref)] {
+			v.Lifecycle[i].Status = "deleted"
+		}
+	}
+	for _, ref := range d.LifecycleAdded {
+		if _, ok := v.Nodes[ref.Who]; !ok {
+			continue
+		}
+		if _, ok := v.Nodes[ref.Model]; !ok {
+			continue
+		}
+		v.Lifecycle = append(v.Lifecycle, ViewLifecycle{
+			Who: ref.Who, Model: ref.Model, Kind: ref.Kind, Field: ref.Field, Status: "added",
+		})
+	}
 	return v
+}
+
+func lifecycleKey(ref LifecycleRef) string {
+	return ref.Who + "\x00" + ref.Model + "\x00" + ref.Kind + "\x00" + ref.Field
 }

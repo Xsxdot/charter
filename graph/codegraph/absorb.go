@@ -28,6 +28,7 @@ func Absorb(g *Graph, d *Diff) *Graph {
 		Edges:       slices.Clone(g.Edges),
 		Implements:  slices.Clone(g.Implements),
 		Projections: slices.Clone(g.Projections),
+		Lifecycle:   slices.Clone(g.Lifecycle),
 	}
 	for id, n := range d.NodesAdded {
 		out.Nodes[id] = n
@@ -44,6 +45,7 @@ func Absorb(g *Graph, d *Diff) *Graph {
 	out.Edges = mergeEdges(out.Edges, d.EdgesAdded, d.EdgesDeleted, dead)
 	out.Implements = mergeEdges(out.Implements, d.ImplementsAdded, d.ImplementsDeleted, dead)
 	out.Projections = mergeProjections(out.Projections, d.ProjectionsAdded, d.ProjectionsDeleted, dead)
+	out.Lifecycle = mergeLifecycle(out.Lifecycle, d.LifecycleAdded, d.LifecycleDeleted, dead)
 	return out
 }
 
@@ -82,6 +84,27 @@ func mergeProjections(base, added, deleted []Projection, dead map[string]bool) [
 		}
 		seen[p] = true
 		out = append(out, p)
+	}
+	return out
+}
+
+// mergeLifecycle 併入生命周期关系：加 added、剔 deleted、剔任一端指向已删节点，顺带去重。
+func mergeLifecycle(base, added, deleted []LifecycleRef, dead map[string]bool) []LifecycleRef {
+	if len(base) == 0 && len(added) == 0 {
+		return nil
+	}
+	drop := make(map[LifecycleRef]bool, len(deleted))
+	for _, ref := range deleted {
+		drop[ref] = true
+	}
+	seen := make(map[LifecycleRef]bool, len(base)+len(added))
+	out := make([]LifecycleRef, 0, len(base)+len(added))
+	for _, ref := range append(slices.Clone(base), added...) {
+		if drop[ref] || dead[ref.Who] || dead[ref.Model] || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
 	}
 	return out
 }

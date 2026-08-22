@@ -121,3 +121,70 @@ func TestValidateNoDomainsSectionIsClean(t *testing.T) {
 		t.Fatalf("无领域段应零问题: %q", got)
 	}
 }
+
+func TestValidateLifecycleRefs(t *testing.T) {
+	base := loadFixture(t)
+	cases := []struct {
+		name string
+		ref  LifecycleRef
+		want string
+	}{
+		{"Who 缺失", LifecycleRef{Who: "n_ghost", Model: "m_task", Kind: "creator"}, "Who"},
+		{"Model 缺失", LifecycleRef{Who: "n_do", Model: "m_ghost", Kind: "creator"}, "Model"},
+		{"Model 非 model", LifecycleRef{Who: "n_do", Model: "n_save", Kind: "creator"}, "model"},
+		{"Kind 非法", LifecycleRef{Who: "n_do", Model: "m_task", Kind: "reader"}, "kind"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := *base
+			g.Lifecycle = []LifecycleRef{tc.ref}
+			issues := Validate(&g)
+			found := false
+			for _, issue := range issues {
+				if strings.Contains(issue, tc.want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("lifecycle 问题 %q 未报告: %v", tc.want, issues)
+			}
+		})
+	}
+}
+
+func TestValidateDiffLifecycleRefs(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		NodesAdded: map[string]Node{
+			"n_audit":       {Kind: "func", Container: "k_ent", File: "svc/audit.go"},
+			"n_added_model": {Kind: "model", Container: "k_ent", File: "svc/added.go"},
+		},
+		LifecycleAdded:   []LifecycleRef{{Who: "n_audit", Model: "m_task", Kind: "writer", Field: "status"}},
+		LifecycleDeleted: []LifecycleRef{{Who: "n_added_model", Model: "m_task", Kind: "creator"}},
+	}
+	if issues := ValidateDiff(g, d); len(issues) != 0 {
+		t.Fatalf("基线和新增节点组成的端点应合法: %v", issues)
+	}
+	for _, tc := range []struct {
+		name string
+		ref  LifecycleRef
+		want string
+	}{
+		{"Who 缺失", LifecycleRef{Who: "n_ghost", Model: "m_task", Kind: "creator"}, "n_ghost"},
+		{"Model 缺失", LifecycleRef{Who: "n_audit", Model: "m_ghost", Kind: "creator"}, "m_ghost"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d.LifecycleAdded = []LifecycleRef{tc.ref}
+			issues := ValidateDiff(g, d)
+			found := false
+			for _, issue := range issues {
+				if strings.Contains(issue, tc.want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("lifecycle diff 问题 %q 未报告: %v", tc.want, issues)
+			}
+		})
+	}
+}

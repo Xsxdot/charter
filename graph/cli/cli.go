@@ -5,7 +5,7 @@
 //   - 导出唯一构造函数 New：graph/cmd/codegraph（canonical 二进制）与
 //     handoff 的 graph 别名共同挂载同一棵树——「别名行为一致」由构造保证
 //   - validate/check/absorb/views/chain/who-calls/domains/sym/entity/
-//     resolve/contract set/summary/version 共 13 个子命令
+//     resolve/contract set/summary/version/migrate 共 14 个子命令
 //
 // 边界：
 //   - 只读 --repo 指向的本地文件，不发任何网络请求、不依赖 agentd 存活
@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	"github.com/Xsxdot/charter/graph/codegraph"
@@ -111,6 +112,21 @@ var graphValidateCmd = &cobra.Command{
 			return err
 		}
 		issues := codegraph.Validate(g)
+		decls, err := codegraph.LoadDomainDecls(graphRepo)
+		if err != nil {
+			return err
+		}
+		declView := codegraph.Merge(g, nil)
+		declIDs := make([]string, 0, len(decls))
+		for id := range decls {
+			declIDs = append(declIDs, id)
+		}
+		sort.Strings(declIDs)
+		for _, id := range declIDs {
+			for _, issue := range codegraph.ValidateDecls(declView, graphRepo, map[string]codegraph.DomainDecl{id: decls[id]}) {
+				issues = append(issues, "[decl "+id+"] "+issue)
+			}
+		}
 		edgeIssues := codegraph.CheckEdges(graphRepo, g.Nodes, g.Edges)
 		for _, ei := range edgeIssues {
 			issues = append(issues, "调用边门控: "+ei.Detail)
@@ -159,7 +175,7 @@ var graphValidateCmd = &cobra.Command{
 		out := map[string]any{
 			"nodes": len(g.Nodes), "edges": len(g.Edges),
 			"containers": len(g.Containers), "domains": len(g.Domains), "views": views,
-			"unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
+			"domainDecls": len(decls), "unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
 		}
 		if graphStale {
 			out["stale"] = stale
@@ -171,6 +187,19 @@ var graphValidateCmd = &cobra.Command{
 			return fmt.Errorf("发现 %d 个完整性问题、%d 个失鲜节点", len(issues), len(stale))
 		}
 		return nil
+	},
+}
+
+var graphMigrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "将 target.json 从 v1 机械迁移到 v2",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		defer graphResetState()
+		result, err := codegraph.MigrateTarget(graphRepo)
+		if err != nil {
+			return err
+		}
+		return graphPrintJSON(cmd, result)
 	},
 }
 
@@ -377,6 +406,11 @@ var graphDomainsCmd = &cobra.Command{
 			return err
 		}
 		doms := codegraph.DomainTree(v)
+		if target, targetErr := codegraph.LoadTarget(graphRepo); targetErr == nil {
+			doms = codegraph.DomainTreeWithTarget(v, target)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "target.json 不可用，subsystems/crossSubsystem 已省略: %v\n", targetErr)
+		}
 		out := map[string]any{"view": v.Name, "domains": doms}
 		if doms == nil {
 			// 明确区分「没有领域」与「查不出领域」：前者是旧数据，给可行动的提示
@@ -582,5 +616,5 @@ func init() {
 	graphContractSetCmd.Flags().StringSliceVar(&graphContractInterfaces, "interfaces", nil, "允许的跨域接口清单")
 	graphContractSetCmd.Flags().IntVar(&graphContractBudget, "budget", 0, "存量直调预算")
 	graphContractCmd.AddCommand(graphContractSetCmd)
-	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd)
+	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd)
 }

@@ -62,3 +62,23 @@ func TestAbsorbDoesNotMutateInput(t *testing.T) {
 		t.Fatal("Absorb 改了入参 Graph")
 	}
 }
+
+func TestAbsorbLifecycleMergeAndPreserve(t *testing.T) {
+	g := loadFixture(t)
+	mergedEmpty := Absorb(g, &Diff{})
+	if !reflect.DeepEqual(mergedEmpty.Lifecycle, g.Lifecycle) {
+		t.Fatalf("空 diff 不得清空 lifecycle: got=%v want=%v", mergedEmpty.Lifecycle, g.Lifecycle)
+	}
+	d, err := LoadDiff("testdata/repo", "branch-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := Absorb(g, d)
+	want := []LifecycleRef{
+		{Who: "n_do", Model: "m_task", Kind: "creator"},
+		{Who: "n_audit", Model: "m_task", Kind: "writer", Field: "status"},
+	}
+	if !reflect.DeepEqual(merged.Lifecycle, want) {
+		t.Fatalf("lifecycle 增删/死端点/去重不对: got=%v want=%v", merged.Lifecycle, want)
+	}
+}

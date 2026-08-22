@@ -32,5 +32,9 @@
   "implements": [["n_do", "m_notifier"]],
   "projections": [["n_save", "m_task", "typed"], ["n_do", "m_task", "handroll"],
                   ["m_task", "m_task_ts", "twin"], ["m_task_ts", "m_task_ts", "handroll"]],
+  "lifecycle": [
+    {"who": "n_do", "model": "m_task", "kind": "creator"},
+    {"who": "n_save", "model": "m_task", "kind": "writer", "field": "status"}
+  ],
   "diffs": {}
 }

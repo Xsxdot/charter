@@ -10,8 +10,8 @@ func TestLoadTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载目标图: %v", err)
 	}
-	if tg.Meta.Version != 1 || len(tg.Domains) == 0 {
-		t.Fatalf("meta/domains 解析不对: %+v", tg.Meta)
+	if tg.Meta.Version != 2 || len(tg.Subsystems) == 0 {
+		t.Fatalf("meta/subsystems 解析不对: %+v", tg.Meta)
 	}
 }
 
@@ -24,12 +24,12 @@ func TestLoadTargetMissingIsError(t *testing.T) {
 
 func TestValidateTarget(t *testing.T) {
 	bad := &Target{
-		Meta: TargetMeta{Version: 1},
-		Domains: []TargetDomain{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
 			{ID: "d_a", Name: "A", Type: "logic", Paths: []string{"pkg/**"}},
 			{ID: "d_a", Name: "重复", Type: "magic", Paths: []string{"[bad"}},
 		},
-		Assignments: []Assignment{{Path: "x.go", Domain: "d_nope"}},
+		Assignments: []Assignment{{Path: "x.go", Subsystem: "d_nope"}},
 		Contracts:   []Contract{{From: "d_a", To: "d_nope", LegacyBudget: -1}},
 	}
 	issues := ValidateTarget(bad)
@@ -54,13 +54,13 @@ func TestContractBudgetDefaultZero(t *testing.T) {
 	}
 }
 
-func TestDomainOf(t *testing.T) {
+func TestSubsystemOf(t *testing.T) {
 	tg := &Target{
-		Domains: []TargetDomain{
+		Subsystems: []TargetSubsystem{
 			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
 			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/run.go"}},
 		},
-		Assignments: []Assignment{{Path: "svc/mirror.go", Domain: "d_cmd"}},
+		Assignments: []Assignment{{Path: "svc/mirror.go", Subsystem: "d_cmd"}},
 	}
 	cases := []struct{ file, want string }{
 		{"svc/task.go", "d_svc"},   // 前缀规则
@@ -70,8 +70,8 @@ func TestDomainOf(t *testing.T) {
 		{"svcx/task.go", ""},       // 前缀必须整段匹配，svcx 不是 svc/
 	}
 	for _, c := range cases {
-		if got := tg.DomainOf(c.file); got != c.want {
-			t.Errorf("DomainOf(%q) = %q, want %q", c.file, got, c.want)
+		if got := tg.SubsystemOf(c.file); got != c.want {
+			t.Errorf("SubsystemOf(%q) = %q, want %q", c.file, got, c.want)
 		}
 	}
 }
