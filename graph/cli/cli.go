@@ -60,7 +60,7 @@ func New(use string) *cobra.Command {
 }
 
 // graphLoadView 加载基线并按 --view 叠加 diff，返回合并视图。
-func graphLoadView() (*codegraph.View, *codegraph.Graph, error) {
+func graphLoadView(cmd *cobra.Command) (*codegraph.View, *codegraph.Graph, error) {
 	g, err := codegraph.LoadGraph(graphRepo)
 	if err != nil {
 		return nil, nil, err
@@ -69,6 +69,9 @@ func graphLoadView() (*codegraph.View, *codegraph.Graph, error) {
 	if graphView != "" {
 		if d, err = codegraph.LoadDiff(graphRepo, graphView); err != nil {
 			return nil, nil, err
+		}
+		if notice := d.LoadNotice(); notice != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), notice)
 		}
 		if issues := codegraph.ValidateDiff(g, d); len(issues) > 0 {
 			return nil, nil, fmt.Errorf("视图 %s 引用不完整: %v", graphView, issues)
@@ -216,7 +219,7 @@ var graphCheckCmd = &cobra.Command{
 		if issues := codegraph.ValidateTarget(t); len(issues) > 0 {
 			return fmt.Errorf("目标图自身不合法: %v", issues)
 		}
-		v, _, err := graphLoadView()
+		v, _, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
@@ -244,6 +247,9 @@ var graphAbsorbCmd = &cobra.Command{
 		d, err := codegraph.LoadDiff(graphRepo, args[0])
 		if err != nil {
 			return err
+		}
+		if notice := d.LoadNotice(); notice != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), notice)
 		}
 		if issues := codegraph.ValidateDiff(g, d); len(issues) > 0 {
 			return fmt.Errorf("视图 %s 引用不完整，拒绝併入: %v", args[0], issues)
@@ -346,7 +352,7 @@ type graphQueryOutput struct {
 func graphQueryRunE(down, up bool) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
-		v, g, err := graphLoadView()
+		v, g, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
@@ -401,7 +407,7 @@ var graphDomainsCmd = &cobra.Command{
 	Short: "列出领域树（职责、成员统计、对外接口）",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
-		v, _, err := graphLoadView()
+		v, _, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
@@ -429,7 +435,7 @@ var graphSymCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
-		v, _, err := graphLoadView()
+		v, _, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
@@ -448,7 +454,7 @@ var graphEntityCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
-		v, _, err := graphLoadView()
+		v, _, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
@@ -477,7 +483,7 @@ var graphResolveCmd = &cobra.Command{
 		if graphResolveDoc == "" && len(args) == 0 {
 			return fmt.Errorf("resolve 必须指定 --doc 或 file#Symbol")
 		}
-		v, _, err := graphLoadView()
+		v, _, err := graphLoadView(cmd)
 		if err != nil {
 			return err
 		}
