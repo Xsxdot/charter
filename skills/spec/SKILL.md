@@ -12,8 +12,8 @@ description: 把想法/需求通过对话炼成 spec。除 bug 外一切开发�
 - **需求名词现状核查**：需求原话里的每个终端、执行主体、通道（「移动端」「客户端」「后台」……），动问之前先查现状代码确认它今天以什么形态存在。不存在的、或与既有契约冲突的，作为承重接缝**第一批上桌**——同一个名词在不同人脑中是不同的东西，这是 spec 阶段最贵的一类歧义。
 - **对侧既有承诺盘点**：契约对侧已存在时（跨仓/跨进程），对侧的 README 配置示例、集成测试骨架、包注释就是**对侧单方面写好的验收清单**。发 spec 前逐条盘点；要砍掉其中任何一条承诺，必须显式写进 Out of Scope 并说明对侧哪些既有测试/文档会因此失效，不得默默砍。
 
-- **有图先查图**：项目有 `codegraph/`（入库代码图）时，符号定位、签名/字段、调用关系优先走图查询（`handoff graph sym / who-calls / chain / domains`），未命中再 grep/读码，并把未命中符号记入本节点产出物的「图覆盖债」小节，由后续重扫消化。
-- **符号锚**：spec 引用现状代码时同 contract/breakdown 一样推荐 `file#Symbol` 符号锚（行号必漂，符号锚由 `handoff graph resolve` 查询时决议）；出稿自检可跑 `handoff graph resolve --doc <本文档>`。
+- **有图先查图**：项目有 `codegraph/`（入库代码图）时，符号定位、签名/字段、调用关系优先走图查询（`codegraph sym / who-calls / chain / domains`），未命中再 grep/读码，并把未命中符号记入本节点产出物的「图覆盖债」小节，由后续重扫消化。
+- **符号锚**：spec 引用现状代码时同 contract/breakdown 一样推荐 `file#Symbol` 符号锚（行号必漂，符号锚由 `codegraph resolve` 查询时决议）；出稿自检可跑 `codegraph resolve --doc <本文档>`。
 
 ## 对话纪律
 

@@ -1,0 +1,78 @@
+# codegraph release 流水线（刀 0 · T2）。
+# 职责：graph/v* tag 推送时六平台交叉编译 codegraph、断言产物命名、出 checksums、发 GitHub Release。
+# 边界：CGO_ENABLED=0（契约 §5-3）；darwin 首版不做 codesign/notarize（spec 实现决定，
+#       Gatekeeper 绕行见 install.sh 提示）；permissions 仅 contents:write（最小权限）。
+name: release-graph
+
+on:
+  push:
+    tags: ['graph/v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: graph
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: graph/go.mod
+
+      - name: 解析版本号（graph/v0.1.0 → v0.1.0）
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#graph/}" >> "$GITHUB_OUTPUT"
+
+      - name: 测试与静态检查
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
+      - name: 六平台构建（CGO=0）
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          mkdir -p build dist
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            GOOS=${p%/*}; GOARCH=${p#*/}
+            bin=codegraph; [ "$GOOS" = windows ] && bin=codegraph.exe
+            GOOS=$GOOS GOARCH=$GOARCH go build -trimpath \
+              -ldflags "-s -w -X github.com/Xsxdot/charter/graph/cli.buildVersion=$VERSION" \
+              -o "build/$bin" ./cmd/codegraph
+            asset="codegraph_${VERSION}_${GOOS}_${GOARCH}"
+            if [ "$GOOS" = windows ]; then
+              (cd build && zip -q "../dist/${asset}.zip" "$bin")
+            else
+              tar -czf "dist/${asset}.tar.gz" -C build "$bin"
+            fi
+            rm -f "build/$bin"
+          done
+
+      - name: 产物命名断言 + checksums
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          cd dist
+          for want in \
+            "codegraph_${VERSION}_linux_amd64.tar.gz" \
+            "codegraph_${VERSION}_linux_arm64.tar.gz" \
+            "codegraph_${VERSION}_darwin_amd64.tar.gz" \
+            "codegraph_${VERSION}_darwin_arm64.tar.gz" \
+            "codegraph_${VERSION}_windows_amd64.zip" \
+            "codegraph_${VERSION}_windows_arm64.zip"; do
+            [ -f "$want" ] || { echo "缺少产物 $want（命名契约见 docs/contracts/2026-08-22-codegraph-extraction-contract.md）"; exit 1; }
+          done
+          sha256sum -- * > checksums.txt
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: codegraph ${{ steps.ver.outputs.version }}
+          files: graph/dist/*
