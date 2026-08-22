@@ -13,7 +13,7 @@
 - 契约对账：51 导出符号（22 func + 29 type）与 §2 逐一相符；13 子命令 = absorb chain check contract domains entity resolve summary sym validate version views who-calls；`version` 输出 `devel` 非空
 - `CGO_ENABLED=0` linux/amd64、darwin/arm64、windows/amd64 三平台 build OK
 - 依赖锁变异复验：go.mod 加伪依赖 → TestModuleDependencyAllowlist FAIL；还原 → ok
-- 测试清单对齐：包测试与原版 diff 为空；CLI 测试 = 原 18 支 + TestGraphVersion（新行为新测试），零删减
+- 测试清单对齐：包测试与原版 diff 为空；CLI 测试 = 原 **17** 支 + TestGraphVersion（新行为新测试），零删减（原记 18 为计数误差，review M1 勘误；B173 移植后再 +TestGraphValidateEdgeIssues，现 19）
 
 ## T2：release 通道（2026-08-22，机内部分完成）
 

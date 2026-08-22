@@ -19,6 +19,8 @@ func TestModuleDependencyAllowlist(t *testing.T) {
 		"github.com/spf13/pflag":               true, // cobra 传递依赖
 		"github.com/inconshreveable/mousetrap": true, // cobra 传递依赖（Windows）
 	}
+	// §5-2 冻结的是「cobra v1.10.2」整体，不只路径——升版同样要走契约变更（review M2 回写）。
+	pinned := map[string]string{"github.com/spf13/cobra": "v1.10.2"}
 	inBlock := false
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
@@ -37,9 +39,13 @@ func TestModuleDependencyAllowlist(t *testing.T) {
 		default:
 			continue
 		}
-		path := strings.Fields(dep)[0]
+		fields := strings.Fields(dep)
+		path := fields[0]
 		if !allow[path] {
 			t.Errorf("go.mod 出现契约外依赖 %s——§5-1/2 冻结：codegraph 仅标准库，CLI 壳仅 cobra", path)
+		}
+		if want := pinned[path]; want != "" && len(fields) > 1 && fields[1] != want {
+			t.Errorf("依赖 %s 版本 %s ≠ 冻结版本 %s——§5-2 版本冻结，升版走契约变更", path, fields[1], want)
 		}
 	}
 }
