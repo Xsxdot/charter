@@ -1,6 +1,6 @@
 # Spec：codegraph 刀 3+4（图 diff 对账 anti-漏建 + fitness 判据进 check）
 
-> 状态：**待用户批准**（2026-08-23）
+> 状态：**已批准**（2026-08-23，用户批准）
 > 级别与档位：**L3 轻档**（动 wire 契约：target.json 新增字段 + check 报告新增 finding kind）→ contract → breakdown → 单轮 implement → review → acceptance → finish
 > 来源：`docs/roadmap.md` 第 1 条；上游 `handoff/docs/2026-08-22-codegraph-batch-handover.md`（四刀批次交接文档）待拍板第 6 条
 
