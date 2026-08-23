@@ -399,3 +399,82 @@ codegraph domains --repo . --edges
 承重的数字偏偏不是判据；真取舍：否决「把跨领域边数做成带预算的 fail 判据」——那等于
 给每条边界设一个数字上限，而边界该不该存在是架构判断，不是阈值判断；真正的执法已经
 由 `new-direction`（方向未声明即红）承担，它比任何计数阈值都准。
+
+---
+
+## §12 回写（2026-08-24）：breakdown 裁决落点
+
+breakdown（`docs/breakdowns/2026-08-23-codegraph-best-graph-breakdown.md`）挖出一处
+**契约内部自相矛盾**与十条边界空白。裁决已定（待拍板 1 由用户拍板，其余由协调者拍板），
+本节是对 §6 的增量，编号续 61 起。**上文各节除下列显式取代外一律不改。**
+
+### 12-1 取代：`container-misplaced` 收窄（修自相矛盾）
+
+**矛盾**：§4 的判定是 baseline 容器 `Domain` 与 best 归属的**字符串比较**，而 §5-2 让初版
+best 的领域 id 取自 v2 子系统 id、baseline 容器的 `Domain` 取自扫描领域 id——**两个 id
+空间必然不等**，初版下每个已归域容器各报一条（handoff 233 条）。而 §5-2 写着「初版下
+恒为 0」。**那句话在原判定下是假的。**
+
+**裁决（用户）**：收窄判定——只有当容器的 baseline 域 id **也是 `Best.Domains` 的一个 key**
+时才比较。词汇未对齐即不判。§5-2「初版下恒为 0」由此自然成立且诚实：无从比较，不是没问题。
+
+沉默路径必须堵：跳过的容器数要显式报出（条 63）。
+
+### 12-2 取代：条 48 等价性测试的形态
+
+条 48 原文要求「对 handoff **全部节点**给出相同答案」。charter 仓没有 handoff 数据，
+且自家夹具 3 个容器有 2 个跨子系统（`k_svc`、`k_ent`），天然违反前提。
+
+**裁决**：拆成两半。CI 里是**属性测试**（证一般性质：容器子系统纯 ⇒ 两套归属等价，
+并含负例：不纯容器 ⇒ 等价性破裂）；handoff 全量节点的等价性是**一次性真机验证**，
+挪进 acceptance 真机清单。条 48 按此取代。
+
+否决快照进仓（MB 级 blob 会过期——B223 当天就让基线变过一次）与 env+skip
+（可跳过的测试在 CI 里是稳定假绿，正是 C4 记的族）。
+
+### 12-3 冻结清单增量
+
+61. `container-misplaced` 只在容器的 baseline 域 id ∈ `Best.Domains` 时判定；不在时不产出该 finding。
+62. 判定被跳过的容器**不产出任何其他 finding 顶替**（不得改报 `container-unplaced`）。
+63. `check` 输出显式报出因词汇未对齐跳过错位判定的容器数；该数 > 0 时不得静默。
+64. `outside-file` 的判定改为「节点的 `Container` 不在视图 `Containers` 里」；容器存在但未获 best 归属**只**产出 `container-unplaced`，不再产出 `outside-file`。
+65. `check` 输出归属覆盖读数：已归属容器数 / 视图容器数，以及参与契约执法的跨域边数。该读数**不是 Finding**，不进 `Fails`/`Warns`。
+66. `b != nil` 但归属覆盖为 0 时，条 65 的读数必须出现且显示 0，不得静默通过。
+67. `ValidateBest` 的调用方是 `check` 与 `validate` 两条命令：`check` 在调用 `Check` 前跑，不通过即**拒绝执行**并非零退出（与 `ValidateTarget` 的既有处置同形）；`validate` 把 best 的问题并进 `issues`。
+68. `LoadBest` 返回 nil 时不跑 `ValidateBest`，也不因此报错。
+69. `migrate` 写盘前对自己生成的 best 跑 `ValidateBest`，不通过即中止且不留下半份产物。
+70. `migrate` 的写序是**先写 `best.json`，再改 `target.json`**。
+71. `best.json` 已存在时 `migrate` 拒绝执行并报错，不覆盖。
+72. `baseline.json` 缺失或不可解析时 `migrate` 报错，不产出 `Containers` 为空的 best。
+73. `migrate` 保留 v1→v2→v3 两跳；v1 输入仍可迁移。
+74. `migrate.go` 自带**私有、冻结**的 v2 结构体与 v2 路径决议（含后缀解析），它**永不参与执法**、不得被 `Check` 或其调用链引用。
+75. 条 39、条 40 的作用域限定为**执法路径**：`Check` 及其调用链上不再存在按文件路径决议子系统的函数；条 74 的迁移专用私有副本不在此限。
+76. `migrate` 决议容器归属时取「该容器全部非 deleted 节点中，**节点 id 字典序最小**的那一个」的文件，不依赖 map 遍历序。
+77. 条 47 的三条限制提示落在 `MigrateResult.Notes []string`，CLI 再打到 stderr；Notes 内容可被测试断言。
+78. `dead-rule` kind 与 `ruleHitsAny` 随 `Subsystems[].Paths` 一并删除；`check.go` 的 `Finding` 文档注释同步。
+79. `DomainTreeWithTarget` 改名 `DomainTreeWithBest(v *View, b *Best)`；CLI 的降级提示文案改为 best.json 口径。
+80. `DomainStat.MarshalJSON` 的 presence 开关语义从「target 加载成功」改为「best 加载成功」。
+81. `LoadTarget` 拒载非 v3 的文案同时说明 `migrate` 需要 `baseline.json` 在位。
+82. 归属等价性在 CI 里是属性测试：先断言前提（容器子系统纯），再断言两套归属逐节点相同，并含「不纯容器 ⇒ 等价性破裂」的负例。
+83. `ValidateTarget` 瘦身后不再校验 `contracts[].from/to` 的存在性；一支**反向断言**测试把这一点钉死，防后人当漏实现补回。
+84. `contract set` **不**加载 best.json 校验 `from`/`to`。
+85. `DomainStat.Subsystems` / `CrossSubsystem` 两个 wire 字段**保留不动**（确属零消费者死字段，但删 wire 字段超出本刀范围，已落 roadmap）。
+86. 不新增「容器节点横跨多个最优子系统」告警——容器实测 100% 纯，为不存在的问题造判据。
+
+### 12-4 拍板记录
+
+**七、migrate 保留一份永不执法的 v2 决议副本。** 难逆转：它是条 39/40「路径规则全删」这条
+纪律的**唯一豁免**，豁免一旦开口，后人很容易把它接回执法路径；无上下文会惊讶：包里明明
+写着「不再存在按路径决议子系统的函数」，却躺着一个；真取舍：否决「用 baseline 现状领域
+代替 v2 决议」——§5-4 的实测反证已证明那条路会让跨子系统边 692→377、等价性直接失败。
+**豁免的边界写死为「永不被 `Check` 或其调用链引用」**，这是可 grep 可执法的形式。
+
+**八、`outside-file` 与 `container-unplaced` 不重复报同一个事实。** 反过来写不会有任何测试
+变红（两条判据各自都对，只是加起来吵），故必须记：容器才是可行动单位，同一个未归属容器
+再按文件铺 N 条，CLI 输出会差一个数量级，而多出来的那一个数量级不含任何新信息。
+
+**九、等价性执法用属性测试，不用真实数据快照。** 难逆转：快照一旦进仓就会被当成基准，
+而它固化的是某一刻的 handoff；无上下文会惊讶：条 48 字面写着「handoff 全部节点」，CI 里
+却找不到 handoff 的数据；真取舍：否决快照（会过期，B223 当天就让基线变过一次）与
+env+skip（稳定假绿）。**handoff 全量的那一次验证不取消，它挪到 acceptance 真机清单**——
+换的是执法位置，不是执法本身。
