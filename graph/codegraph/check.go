@@ -35,7 +35,13 @@ type Report struct {
 
 // Check 把合并视图 v 套在目标图 t 上对照。算法四步见 spec §5。
 // deleted 状态的节点/边不参与——它们只为渲染保留。
-func Check(t *Target, v *View) *Report {
+//
+// decls 是领域声明（`codegraph/domains/*.json`），由 CLI 层加载后传入；
+// 为 nil 或空时锚判据整体跳过，输出与本入参引入前逐字节相同（契约 §4-12）。
+// 本函数**保持纯函数**：锚只走 resolveGraphAnchor 这条只读 View 的路径，
+// 绝不调用会读盘的 ResolveAnchor（契约 §3-2、§4-13）。
+func Check(t *Target, v *View, decls map[string]DomainDecl) *Report {
+	_ = decls // Ticket 0 骨架：签名先立、判据待 implement 接入
 	rep := &Report{Fails: []Finding{}, Warns: []Finding{}, LegacyHits: map[string]int{}}
 	assembly := make(map[string]bool, len(t.Assembly))
 	for _, f := range t.Assembly {

@@ -102,7 +102,7 @@ func TestFitnessFindingsAreWarnings(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		files = append(files, fmt.Sprintf("large/file%02d.go", i))
 	}
-	rep := Check(&Target{}, viewWithFiles(files...))
+	rep := checkNoDecls(&Target{}, viewWithFiles(files...))
 	if !hasFinding(rep.Warns, KindPrefixFamily) || !hasFinding(rep.Warns, KindOversizedPackage) {
 		t.Fatalf("两类 fitness finding 都应进 warns: %+v", rep)
 	}
@@ -277,7 +277,7 @@ func TestApplyBudgetRatchetKeepsUnplacedOverBudgetInFails(t *testing.T) {
 	cur := domainSubsystemTarget("d_svc", 1, "竖切迁移中", true)
 	base := domainSubsystemTarget("d_svc", 0, "", true)
 	// d_svc/api 之外的两个文件未落位 > 预算 1 → over-budget。
-	rep := Check(cur, viewWithFiles("d_svc/api/a.go", "d_svc/loose1.go", "d_svc/loose2.go"))
+	rep := checkNoDecls(cur, viewWithFiles("d_svc/api/a.go", "d_svc/loose1.go", "d_svc/loose2.go"))
 	if !hasFinding(rep.Fails, KindUnplacedOverBudget) {
 		t.Fatalf("前置条件不成立，应先有 unplaced-over-budget: %+v", rep)
 	}

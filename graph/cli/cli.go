@@ -223,7 +223,7 @@ var graphCheckCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rep := codegraph.Check(t, v)
+		rep := codegraph.Check(t, v, nil) // decls 接入待 C1.2 implement
 		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
 		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {

@@ -9,6 +9,13 @@ import (
 )
 
 // mkView 拼一个最小视图：nodes 映射 id→(container,file)，edges/impls 是边表。
+
+// checkNoDecls 是「不带领域声明」的调用快捷方式。本刀之前的全部用例都不涉及
+// decls，用它保持这些用例的调用形态不变——20 处 ", nil" 只会把真实 diff 淹掉。
+// 它同时正是契约 §4-12「decls 为 nil 时输出与入参引入前逐字节相同」的执行面：
+// 这批存量用例全绿即该条成立。带 decls 的用例一律直呼 Check。
+func checkNoDecls(t *Target, v *View) *Report { return Check(t, v, nil) }
+
 func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}
 	for id, cf := range nodes {
@@ -55,7 +62,7 @@ func TestCheckTable(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rep := Check(c.tg, mkView(nodes, c.edges, c.impls))
+			rep := checkNoDecls(c.tg, mkView(nodes, c.edges, c.impls))
 			assertKinds(t, "fail", rep.Fails, c.wantFailKinds)
 			assertKinds(t, "warn", rep.Warns, c.wantWarnKinds)
 		})
@@ -87,12 +94,12 @@ func TestCheckImplements(t *testing.T) {
 	}
 	tg := twoDomainTarget(nil, 0)
 	tg.Contracts[0].Interfaces = []string{"iface"}
-	rep := Check(tg, mkView(nodes, nil, [][2]string{{"impl", "iface"}}))
+	rep := checkNoDecls(tg, mkView(nodes, nil, [][2]string{{"impl", "iface"}}))
 	if len(rep.Fails) != 0 {
 		t.Fatalf("已声明接口应合法: %+v", rep.Fails)
 	}
 	tg.Contracts[0].Interfaces = nil
-	rep = Check(tg, mkView(nodes, nil, [][2]string{{"impl", "iface"}}))
+	rep = checkNoDecls(tg, mkView(nodes, nil, [][2]string{{"impl", "iface"}}))
 	assertKinds(t, "fail", rep.Fails, []string{"off-interface"})
 }
 
@@ -112,7 +119,7 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 	}
 	v := mkView(nodes, [][2]string{{"main", "b1"}}, nil)
 	v.Edges = append(v.Edges, ViewEdge{From: "b1", To: "out", Status: "deleted"})
-	rep := Check(tg, v)
+	rep := checkNoDecls(tg, v)
 	if len(rep.Fails) != 0 {
 		t.Fatalf("组装豁免/deleted 边不应 fail: %+v", rep.Fails)
 	}
@@ -133,7 +140,7 @@ func TestCheckDeadRuleRespectsDirectoryBoundary(t *testing.T) {
 			{ID: "d_api", Type: "logic", Paths: []string{"app/api/**"}},
 		},
 	}
-	rep := Check(tg, mkView(nodes, nil, nil))
+	rep := checkNoDecls(tg, mkView(nodes, nil, nil))
 	dead := findingsOfKind(rep.Warns, "dead-rule")
 	if len(dead) != 1 {
 		t.Fatalf("app/api/** 命中不到任何文件，应报 1 条 dead-rule，实际 %d 条: %+v", len(dead), rep.Warns)
@@ -158,7 +165,7 @@ func TestCheckDeadAssembly(t *testing.T) {
 		},
 		Assembly: []string{"cmd/main.go", "cmd/ghost.go"},
 	}
-	rep := Check(tg, mkView(nodes, [][2]string{{"main", "b1"}}, nil))
+	rep := checkNoDecls(tg, mkView(nodes, [][2]string{{"main", "b1"}}, nil))
 
 	var hits []Finding
 	for _, w := range rep.Warns {
@@ -192,7 +199,7 @@ func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	n.Status = "deleted"
 	v.Nodes["g"] = n
 
-	rep := Check(tg, v)
+	rep := checkNoDecls(tg, v)
 	found := false
 	for _, w := range rep.Warns {
 		if w.Kind == "dead-assembly" {
@@ -261,7 +268,7 @@ func TestCheckDeadEntryReconciliation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tg := twoDomainTarget([]string{tc.entry}, 0)
-			rep := Check(tg, mkView(tc.nodes, nil, nil))
+			rep := checkNoDecls(tg, mkView(tc.nodes, nil, nil))
 			var found *Finding
 			for i := range rep.Fails {
 				if rep.Fails[i].Kind == KindDeadEntry {
@@ -285,12 +292,12 @@ func TestCheckDeadEntryReconciliation(t *testing.T) {
 func TestCheckDeadInterfaceReconciliation(t *testing.T) {
 	tg := twoDomainTarget(nil, 0)
 	tg.Contracts[0].Interfaces = []string{"a.Notifier"}
-	missing := Check(tg, mkView(map[string][2]string{
+	missing := checkNoDecls(tg, mkView(map[string][2]string{
 		"b1": {"b.Facade", "b/f.go"},
 	}, nil, nil))
 	assertFinding(t, missing.Fails, KindDeadInterface, "a.Notifier", "d_b", "d_a→d_b")
 
-	valid := Check(tg, mkView(map[string][2]string{
+	valid := checkNoDecls(tg, mkView(map[string][2]string{
 		"a.Notifier": {"a.Notifier", "a/n.go"},
 	}, nil, nil))
 	if hasFinding(valid.Fails, KindDeadInterface) {
@@ -324,7 +331,7 @@ func TestCheckDeadContractReconciliationCountsAllLiveEdges(t *testing.T) {
 				"impl": {"b.Impl", "b/impl.go"}, "iface": {"a.Iface", "a/iface.go"},
 				"caller": {"a.Caller", "a/assembly.go"}, "callee": {"b.Callee", "b/callee.go"},
 			}
-			rep := Check(tg, mkView(nodes, tc.edges, tc.impls))
+			rep := checkNoDecls(tg, mkView(nodes, tc.edges, tc.impls))
 			hasDead := hasFinding(rep.Fails, KindDeadContract)
 			if hasDead != tc.want {
 				t.Fatalf("dead-contract=%v want=%v: %+v", hasDead, tc.want, rep.Fails)
@@ -336,7 +343,7 @@ func TestCheckDeadContractReconciliationCountsAllLiveEdges(t *testing.T) {
 func TestCheckReconciliationFindingsAreFails(t *testing.T) {
 	tg := twoDomainTarget([]string{"missing.Entry"}, 0)
 	tg.Contracts[0].Interfaces = []string{"missing.Interface"}
-	rep := Check(tg, mkView(map[string][2]string{}, nil, nil))
+	rep := checkNoDecls(tg, mkView(map[string][2]string{}, nil, nil))
 	for _, kind := range []string{KindDeadEntry, KindDeadInterface, KindDeadContract} {
 		if !hasFinding(rep.Fails, kind) {
 			t.Fatalf("%s 应进 fails: %+v", kind, rep)
@@ -368,7 +375,7 @@ func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
 		Assembly:  []string{"cmd/run.go"},
 		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"new.Entry"}}},
 	}
-	rep := Check(tg, v)
+	rep := checkNoDecls(tg, v)
 	if hasFinding(rep.Fails, KindDeadEntry) {
 		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
 	}
@@ -527,7 +534,7 @@ func TestCheckTargetDomainGap(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rep := Check(tc.target, tc.view)
+			rep := checkNoDecls(tc.target, tc.view)
 			for kind, want := range tc.wantFails {
 				if got := len(findingsOfKind(rep.Fails, kind)); got != want {
 					t.Errorf("fails 中 %s 应有 %d 条，实际 %d 条: %+v", kind, want, got, rep.Fails)
@@ -583,7 +590,7 @@ func TestCheckTargetDomainExcludesDeletedNodes(t *testing.T) {
 			v.Nodes[id] = node
 		}
 	}
-	rep := Check(target, v)
+	rep := checkNoDecls(target, v)
 	if got := len(findingsOfKind(rep.Fails, KindUnplacedOverBudget)); got != 0 {
 		t.Errorf("deleted 文件不应撑起未落位计数: %+v", rep.Fails)
 	}
@@ -609,7 +616,7 @@ func TestCheckTargetDomainUnplacedDropsAfterRealMerge(t *testing.T) {
 		t.Fatalf("迁移回归用的目标图自身必须合法: %v", issues)
 	}
 
-	before := Check(target, Merge(g, nil))
+	before := checkNoDecls(target, Merge(g, nil))
 	beforeGap := findingsOfKind(before.Warns, KindUnplaced)
 	if len(beforeGap) != 1 || !strings.Contains(beforeGap[0].Detail, "3/99") {
 		t.Fatalf("迁移前 svc/** 应有 3 个未落位文件: %+v", before.Warns)
@@ -619,7 +626,7 @@ func TestCheckTargetDomainUnplacedDropsAfterRealMerge(t *testing.T) {
 	moved.File = "svc/api/server.go"
 	movedSave := g.Nodes["n_save"]
 	movedSave.File = "svc/api/server.go"
-	after := Check(target, Merge(g, &Diff{View: "branch-migrate", NodesModified: map[string]Node{"n_do": moved, "n_save": movedSave}}))
+	after := checkNoDecls(target, Merge(g, &Diff{View: "branch-migrate", NodesModified: map[string]Node{"n_do": moved, "n_save": movedSave}}))
 	afterGap := findingsOfKind(after.Warns, KindUnplaced)
 	if len(afterGap) != 1 || !strings.Contains(afterGap[0].Detail, "2/99") {
 		t.Fatalf("把 svc/server.go 搬进 svc/api/ 后未落位应降到 2/99: %+v", after.Warns)
@@ -631,7 +638,7 @@ func TestCheckTargetDomainUnplacedDropsAfterRealMerge(t *testing.T) {
 
 // 三种新 kind 必须能原样穿过 Report 的 JSON 编解码——查看器与 CLI 消费的就是这层 wire。
 func TestCheckTargetDomainFindingsSurviveReportJSON(t *testing.T) {
-	rep := Check(gapTarget(0, gapDomains()...), gapView("app/loose.go"))
+	rep := checkNoDecls(gapTarget(0, gapDomains()...), gapView("app/loose.go"))
 	raw, err := json.Marshal(rep)
 	if err != nil {
 		t.Fatalf("编码 Report: %v", err)
