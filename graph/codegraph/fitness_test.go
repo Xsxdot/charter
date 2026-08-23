@@ -109,3 +109,75 @@ func TestFitnessFindingsAreWarnings(t *testing.T) {
 		t.Fatalf("两类 fitness finding 不应进 fails: %+v", rep)
 	}
 }
+
+func TestCheckBudgetRatchetNilBase(t *testing.T) {
+	if got := CheckBudgetRatchet(&Target{}, nil); got != nil {
+		t.Fatalf("base=nil 应返回 nil，实际: %+v", got)
+	}
+}
+
+func TestCheckBudgetRatchetRaisesExistingContract(t *testing.T) {
+	base := twoDomainTarget(nil, 2)
+	cur := twoDomainTarget(nil, 3)
+	findings := CheckBudgetRatchet(cur, base)
+	if len(findings) != 1 || findings[0].Kind != KindBudgetRaised {
+		t.Fatalf("预算 2→3 应产生一条 budget-raised: %+v", findings)
+	}
+	if !strings.Contains(findings[0].Detail, "d_a→d_b") || !strings.Contains(findings[0].Detail, "2") || !strings.Contains(findings[0].Detail, "3") || !strings.Contains(findings[0].Detail, "上涨") {
+		t.Fatalf("既有契约棘轮 Detail 缺方向、数值或上涨措辞: %+v", findings[0])
+	}
+}
+
+func TestCheckBudgetRatchetIgnoresEqualAndLower(t *testing.T) {
+	for _, budget := range []int{5, 2} {
+		base := twoDomainTarget(nil, 5)
+		cur := twoDomainTarget(nil, budget)
+		if got := CheckBudgetRatchet(cur, base); len(got) != 0 {
+			t.Fatalf("预算 5→%d 不应产生 finding: %+v", budget, got)
+		}
+	}
+}
+
+func TestCheckBudgetRatchetReportsNewContractDebt(t *testing.T) {
+	base := &Target{}
+	cur := twoDomainTarget(nil, 4)
+	findings := CheckBudgetRatchet(cur, base)
+	if len(findings) != 1 || findings[0].Kind != KindBudgetRaised {
+		t.Fatalf("基准缺席且当前预算 4 应产生 finding: %+v", findings)
+	}
+	if !strings.Contains(findings[0].Detail, "新增契约携带存量预算") || strings.Contains(findings[0].Detail, "上涨") {
+		t.Fatalf("新增契约应使用独立措辞: %+v", findings[0])
+	}
+	existing := CheckBudgetRatchet(twoDomainTarget(nil, 3), twoDomainTarget(nil, 2))
+	if len(existing) != 1 || strings.Contains(existing[0].Detail, "新增契约携带存量预算") {
+		t.Fatalf("既有契约措辞不应包含新增契约措辞: %+v", existing)
+	}
+}
+
+func TestCheckBudgetRatchetIgnoresNewContractWithZeroBudget(t *testing.T) {
+	base := &Target{}
+	cur := twoDomainTarget(nil, 0)
+	if got := CheckBudgetRatchet(cur, base); len(got) != 0 {
+		t.Fatalf("基准缺席且当前预算 0 不应产生 finding: %+v", got)
+	}
+}
+
+func TestCheckBudgetRatchetPreservesCurrentContractOrder(t *testing.T) {
+	cur := &Target{Contracts: []Contract{
+		{From: "d_second", To: "d_target", LegacyBudget: 3},
+		{From: "d_first", To: "d_target", LegacyBudget: 2},
+	}}
+	base := &Target{Contracts: []Contract{
+		{From: "d_second", To: "d_target", LegacyBudget: 1},
+		{From: "d_first", To: "d_target", LegacyBudget: 1},
+	}}
+	findings := CheckBudgetRatchet(cur, base)
+	if len(findings) != 2 || findings[0].From != "d_second" || findings[1].From != "d_first" {
+		t.Fatalf("产出顺序必须跟随 cur.Contracts: %+v", findings)
+	}
+	for _, finding := range findings {
+		if finding.Kind != KindBudgetRaised {
+			t.Fatalf("棘轮 finding Kind 必须固定为 budget-raised: %+v", findings)
+		}
+	}
+}

@@ -32,9 +32,36 @@ const (
 )
 
 // CheckBudgetRatchet 逐契约比对当前与基准 target 的 legacyBudget，上涨即产出 finding。
-// 基准由调用方注入；本包不碰 git。分档由 CLI 按当前契约的理由字段决定。
+// 基准缺席的契约按预算 0 处理，因为新增契约携带的存量债同样需要留下理由（契约
+// §7-R4）。本函数只产 findings，不在这里判档；分档必须由调用方读取当前契约的
+// LegacyBudgetNote 并写入 Report（契约 §7-R6）。
 func CheckBudgetRatchet(cur, base *Target) []Finding {
-	return nil
+	if base == nil {
+		return nil
+	}
+	baseBudgets := make(map[string]int, len(base.Contracts))
+	for _, c := range base.Contracts {
+		baseBudgets[c.From+"->"+c.To] = c.LegacyBudget
+	}
+	var findings []Finding
+	for _, c := range cur.Contracts {
+		key := c.From + "->" + c.To
+		oldBudget, exists := baseBudgets[key]
+		if !exists {
+			oldBudget = 0
+		}
+		if c.LegacyBudget <= oldBudget {
+			continue
+		}
+		detail := fmt.Sprintf("契约 %s 新增契约携带存量预算 %d（基准中缺席，按预算 0 处理）", c.From+"→"+c.To, c.LegacyBudget)
+		if exists {
+			detail = fmt.Sprintf("契约 %s 预算 %d→%d 上涨", c.From+"→"+c.To, oldBudget, c.LegacyBudget)
+		}
+		findings = append(findings, Finding{
+			Kind: KindBudgetRaised, From: c.From, To: c.To, Detail: detail,
+		})
+	}
+	return findings
 }
 
 // prefixFamilyFindings 在视图文件集内按目录和文件名前四个字符分组。阈值选四个字符

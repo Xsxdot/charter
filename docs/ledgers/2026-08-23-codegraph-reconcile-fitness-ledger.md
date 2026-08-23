@@ -32,3 +32,11 @@
 - 验证：真实最长公共前缀、成员不足、前三字符、跨目录、40+子目录、39 文件和 Warn/Fails 分流测试均通过；`rg` 未发现 `os.ReadDir`、`filepath.Walk`、git 或 `os/exec`；夹具 check 仍为 `fails: []`、`warns: []`；`go test ./codegraph ./cli -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
 - 双裁决：规格符合（仅消费非 deleted 视图文件集、使用 `/` 路径和真实 LCP，阈值不可配置）；代码质量通过（排序确定、无文件系统副作用、Detail 含目录/数量/阈值及架构法回答提示）。
 - commit 范围：`1a64905c003d`（T2 实现，ledger amend 后纳入本卡提交）。
+
+## T3：棘轮纯函数
+
+- 范围：`fitness.go`、`fitness_test.go`、`target.go`；实现 `CheckBudgetRatchet(cur, base *Target) []Finding`，补 `LegacyBudgetNote` 冻结字段。
+- 红因：stub 在预算上涨、基准缺席新契约和当前顺序测试中返回空切片；失败为功能缺失。等值/下降、nil 基准、零预算和 Kind/措辞断言随后通过。
+- 验证：既有契约与新增契约两种 Detail 互不包含，产出顺序跟随 `cur.Contracts`；`go test ./codegraph -count=1`、`go test ./cli -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
+- 双裁决：规格符合（base 缺席按 0、只产 findings、不读 Note/不判档、签名逐字保持）；代码质量通过（按方向建基准索引、Detail 含方向与数值、无 git/fs 依赖）。
+- commit 范围：`f11a4eed7a7`（T3 实现，ledger amend 后纳入本卡提交）。
