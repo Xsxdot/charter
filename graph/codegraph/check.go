@@ -230,8 +230,10 @@ func inList(list []string, s string) bool {
 }
 
 // ruleHitsAny 判断一条 paths 规则是否命中过任何已归域的节点文件。
+// 后缀解析走 cutTargetRule 这一处定义（见 target.go），并把它提到循环外——
+// 判定语义与 targetRuleMatchesFile 一致，只是这里对文件集做存在量词。
 func ruleHitsAny(rule string, fileHit map[string]bool) bool {
-	prefix, isPrefix := strings.CutSuffix(rule, "/**")
+	prefix, isPrefix := cutTargetRule(rule)
 	for f := range fileHit {
 		if f == rule || (isPrefix && strings.HasPrefix(f, prefix+"/")) {
 			return true

@@ -95,13 +95,21 @@ func targetDomainFindings(t *Target, v *View) (fails, warns []Finding) {
 	return fails, warns
 }
 
-// targetRuleMatchesFile 复用 SubsystemOf 的同一套字面规则：精确路径或 dir/**。
+// targetRuleMatchesFile 判断一个文件是否落在一条归域规则内：精确路径相等，或者
+// 文件在 dir/** 的目录子树里。
+//
+// 它与 target.go 的 SubsystemOf、targetPathCovers、targetPathsOverlap 是**同一套
+// 字面约定下语义不同的四个判定**——分别是「文件对规则」「文件归哪个子系统」「父规则
+// 是否覆盖子规则」「两条规则是否相交」。它们共享的只有 cutTargetRule 那一层后缀解析，
+// **不共享判定逻辑**；合并成一个函数会得到一个四不像。
+//
 // 不引 glob 库是拍板记录二的直接后果——目标域归属只按路径规则，第二套匹配语义
-// 会让目标图与代码位置分叉。
+// 会让目标图与代码位置分叉。dir/** 按「目录整段」匹配而非字符串前缀：拼回分隔符
+// 才能保证 internal/task/** 不会把 internal/taskrunner/ 一起吞掉。
 func targetRuleMatchesFile(file, rule string) bool {
 	if file == rule {
 		return true
 	}
-	prefix, ok := strings.CutSuffix(rule, "/**")
+	prefix, ok := cutTargetRule(rule)
 	return ok && strings.HasPrefix(file, prefix+"/")
 }

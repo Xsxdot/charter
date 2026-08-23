@@ -301,6 +301,52 @@ func TestContractBudgetDefaultZero(t *testing.T) {
 	}
 }
 
+// TestCutTargetRuleParsesSuffixConvention 锁住 dir/** 后缀约定的**单点定义**。
+// 四个匹配点（SubsystemOf、targetRuleMatchesFile、targetPathCovers、
+// targetPathsOverlap）语义各不相同，但「什么算前缀规则、去掉后缀剩什么」必须只有
+// 这一份答案；散成四份 CutSuffix 字面量的话，改约定时漏改一处不会有任何测试变红。
+func TestCutTargetRuleParsesSuffixConvention(t *testing.T) {
+	cases := []struct {
+		rule       string
+		wantPrefix string
+		wantIsRule bool
+	}{
+		{"a/**", "a", true},
+		{"a/b/**", "a/b", true},
+		{"a/b.go", "a/b.go", false}, // 精确路径原样返回，调用方据 false 走精确分支
+		{"**", "**", false},         // 裸 ** 不是前缀规则（validPathRule 另行拒绝）
+		{"a/**/b", "a/**/b", false}, // 后缀必须在末尾
+		{"", "", false},
+	}
+	for _, c := range cases {
+		prefix, isRule := cutTargetRule(c.rule)
+		if prefix != c.wantPrefix || isRule != c.wantIsRule {
+			t.Errorf("cutTargetRule(%q) = (%q, %v), want (%q, %v)", c.rule, prefix, isRule, c.wantPrefix, c.wantIsRule)
+		}
+	}
+}
+
+// TestTargetRuleMatchesFileAgreesWithSubsystemOf 交叉验证「文件对规则」这一个语义在
+// 两处实现里得出同一答案。gap.go 的目标域归属与 target.go 的子系统归属是两个不同的
+// 判定对象，但用的是同一套字面约定——一处收紧另一处没跟上，目标域就会圈进子系统之外
+// 的文件，而这种分叉今天只能靠人眼发现。
+func TestTargetRuleMatchesFileAgreesWithSubsystemOf(t *testing.T) {
+	rules := []string{"app/api/**", "app/api/x.go", "app/**", "a/**"}
+	files := []string{
+		"app/api/x.go", "app/api/deep/y.go", "app/apix.go", "app/api-v2/x.go",
+		"app/api", "app/loose.go", "other/z.go", "a/x.go",
+	}
+	for _, rule := range rules {
+		tg := &Target{Subsystems: []TargetSubsystem{{ID: "d_only", Type: "logic", Paths: []string{rule}}}}
+		for _, file := range files {
+			want := tg.SubsystemOf(file) == "d_only"
+			if got := targetRuleMatchesFile(file, rule); got != want {
+				t.Errorf("规则 %q 对文件 %q：targetRuleMatchesFile=%v，SubsystemOf 口径=%v", rule, file, got, want)
+			}
+		}
+	}
+}
+
 func TestSubsystemOf(t *testing.T) {
 	tg := &Target{
 		Subsystems: []TargetSubsystem{

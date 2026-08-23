@@ -90,14 +90,34 @@ func LoadTarget(repoRoot string) (*Target, error) {
 	return &t, nil
 }
 
+// targetPrefixRuleSuffix 是「目录子树」规则的唯一后缀字面量。归域规则只有精确路径与
+// dir/** 两种形态，这个后缀是区分它们的全部依据；它必须只有一处定义，否则收紧或放宽
+// 约定时漏改一处不会有任何测试变红。
+const targetPrefixRuleSuffix = "/**"
+
+// cutTargetRule 解析一条归域规则的形态，是上述后缀约定的唯一实现。
+//
+// 参数：rule 为一条 paths 规则（未必已通过 validPathRule）。
+// 返回：isPrefixRule 为 true 时 prefix 是去掉 "/**" 后的目录名（不含尾部斜杠），
+// 调用方须自行按「目录整段」语义拼回分隔符；为 false 时 rule 是精确路径，prefix
+// 原样返回。
+//
+// 注意：本函数只管**形态解析**，不做任何匹配判定。四个调用点（SubsystemOf、
+// targetRuleMatchesFile、targetPathCovers、targetPathsOverlap）的判定语义各不相同，
+// 共享的只有这一层解析。
+func cutTargetRule(rule string) (prefix string, isPrefixRule bool) {
+	return strings.CutSuffix(rule, targetPrefixRuleSuffix)
+}
+
 // validPathRule 判断归域规则语法：精确路径或 "dir/**" 前缀，仅此两种（spec §4）。
 func validPathRule(rule string) bool {
 	if rule == "" || strings.ContainsAny(rule, "[]?{}") {
 		return false
 	}
 	// "dir/**" 之外不允许出现 *；裸 "**" 会把整个仓库圈进一个域，禁止。
-	if i := strings.Index(rule, "*"); i >= 0 {
-		return strings.HasSuffix(rule, "/**") && !strings.Contains(strings.TrimSuffix(rule, "/**"), "*")
+	if strings.Contains(rule, "*") {
+		prefix, isPrefixRule := cutTargetRule(rule)
+		return isPrefixRule && !strings.Contains(prefix, "*")
 	}
 	return true
 }
@@ -106,8 +126,8 @@ func validPathRule(rule string) bool {
 // 两个入参都必须已通过 validPathRule——本函数只认「精确路径」和「dir/**」两种字面
 // 形态，不做 glob 匹配，因为归域规则本身就只有这两种（契约 §2-1 第 4 条）。
 func targetPathCovers(parent, child string) bool {
-	parentPrefix, parentIsPrefix := strings.CutSuffix(parent, "/**")
-	childPrefix, childIsPrefix := strings.CutSuffix(child, "/**")
+	parentPrefix, parentIsPrefix := cutTargetRule(parent)
+	childPrefix, childIsPrefix := cutTargetRule(child)
 	if !parentIsPrefix {
 		// 精确路径只覆盖同一个文件；它盖不住任何目录子树。
 		return !childIsPrefix && parent == child
@@ -125,8 +145,8 @@ func targetPathsOverlap(left, right string) bool {
 	if left == right {
 		return true
 	}
-	leftPrefix, leftIsPrefix := strings.CutSuffix(left, "/**")
-	rightPrefix, rightIsPrefix := strings.CutSuffix(right, "/**")
+	leftPrefix, leftIsPrefix := cutTargetRule(left)
+	rightPrefix, rightIsPrefix := cutTargetRule(right)
 	if !leftIsPrefix && !rightIsPrefix {
 		return false
 	}
@@ -245,7 +265,7 @@ func (t *Target) SubsystemOf(file string) string {
 			if rule == file {
 				return d.ID
 			}
-			if prefix, ok := strings.CutSuffix(rule, "/**"); ok && strings.HasPrefix(file, prefix+"/") {
+			if prefix, ok := cutTargetRule(rule); ok && strings.HasPrefix(file, prefix+"/") {
 				return d.ID
 			}
 		}
