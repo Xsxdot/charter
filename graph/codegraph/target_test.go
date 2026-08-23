@@ -11,8 +11,8 @@ func TestLoadTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载目标图: %v", err)
 	}
-	if tg.Meta.Version != 2 || len(tg.Subsystems) == 0 {
-		t.Fatalf("meta/subsystems 解析不对: %+v", tg.Meta)
+	if tg.Meta.Version != 3 || len(tg.Contracts) == 0 {
+		t.Fatalf("meta/contracts 解析不对: %+v", tg)
 	}
 }
 
@@ -23,260 +23,44 @@ func TestLoadTargetMissingIsError(t *testing.T) {
 	}
 }
 
-func TestTargetDomainJSONGolden(t *testing.T) {
+func TestTargetV3JSONGolden(t *testing.T) {
 	target := Target{
-		Meta: TargetMeta{Version: 2, Project: "handoff"},
-		Subsystems: []TargetSubsystem{{
-			ID: "d_controlplane", Name: "Control Plane", Type: "logic", Paths: []string{"internal/**"},
-			Domains: []TargetDomain{{
-				ID: "d_task", Name: "Task", Responsibility: "owns task lifecycle", Paths: []string{"internal/task/**"},
-			}},
-		}, {ID: "d_empty", Name: "Empty", Type: "logic", Paths: []string{"pkg/**"}}},
+		Meta:      TargetMeta{Version: 3, Project: "handoff"},
+		Assembly:  []string{"cmd/run.go"},
+		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"svc.Server"}, LegacyBudget: 2}},
 	}
 	raw, err := json.Marshal(target)
 	if err != nil {
-		t.Fatalf("编码目标领域样本: %v", err)
+		t.Fatalf("编码 v3 目标图: %v", err)
 	}
-	want := `{"meta":{"version":2,"project":"handoff"},"subsystems":[{"id":"d_controlplane","name":"Control Plane","type":"logic","paths":["internal/**"],"domains":[{"id":"d_task","name":"Task","responsibility":"owns task lifecycle","paths":["internal/task/**"]}]},{"id":"d_empty","name":"Empty","type":"logic","paths":["pkg/**"]}]}`
+	want := `{"meta":{"version":3,"project":"handoff"},"assembly":["cmd/run.go"],"contracts":[{"from":"d_cmd","to":"d_svc","entries":["svc.Server"],"legacyBudget":2}]}`
 	if string(raw) != want {
-		t.Fatalf("目标领域 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
+		t.Fatalf("v3 目标图 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
+	}
+	for _, forbidden := range []string{`"subsystems"`, `"assignments"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("v3 wire 不得包含 %s: %s", forbidden, raw)
+		}
 	}
 	var decoded Target
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("解码目标领域样本: %v", err)
+		t.Fatalf("解码 v3 目标图: %v", err)
 	}
-	if len(decoded.Subsystems) != 2 || len(decoded.Subsystems[0].Domains) != 1 || len(decoded.Subsystems[1].Domains) != 0 {
-		t.Fatalf("目标领域 JSON 回读结构错误: %+v", decoded)
+	if decoded.Meta.Version != 3 || len(decoded.Contracts) != 1 || decoded.Contracts[0].LegacyBudget != 2 {
+		t.Fatalf("v3 目标图回读结构错误: %+v", decoded)
 	}
 }
 
 func TestValidateTarget(t *testing.T) {
-	bad := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_a", Name: "A", Type: "logic", Paths: []string{"pkg/**"}},
-			{ID: "d_a", Name: "重复", Type: "magic", Paths: []string{"[bad"}},
-		},
-		Assignments: []Assignment{{Path: "x.go", Subsystem: "d_nope"}},
-		Contracts:   []Contract{{From: "d_a", To: "d_nope", LegacyBudget: -1}},
-	}
+	bad := &Target{Contracts: []Contract{{From: "d_a", To: "d_b", LegacyBudget: -1}}}
 	issues := ValidateTarget(bad)
-	for _, want := range []string{"重复", "type", "paths", "d_nope", "legacyBudget"} {
-		found := false
-		for _, is := range issues {
-			if strings.Contains(is, want) {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("缺少对 %q 的校验报告，实际: %v", want, issues)
-		}
-	}
-}
-
-// TestValidateTargetDomainRules 逐族锁住目标领域结构门（契约 §4 冻结 10-15）。
-// 每个用例只放一族违规，避免一条实现顺手把多族一起报了还看不出漏哪族。
-func TestValidateTargetDomainRules(t *testing.T) {
-	subsystem := func(id string, paths []string, domains ...TargetDomain) TargetSubsystem {
-		return TargetSubsystem{ID: id, Name: id, Type: "logic", Paths: paths, Domains: domains}
-	}
-	cases := []struct {
-		name     string
-		target   *Target
-		want     []string // 每条都必须出现在某条 issue 里
-		unwanted []string // 不得出现在任何 issue 里
-	}{
-		{
-			name: "目标领域 id 在整个文档内重复",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "dup", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}}),
-				subsystem("d_b", []string{"b/**"}, TargetDomain{ID: "dup", Name: "Y", Responsibility: "r", Paths: []string{"b/y/**"}}),
-			}},
-			want: []string{`目标领域 id "dup" 重复`},
-		},
-		{
-			name: "responsibility 纯空白等同缺失",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_blank", Name: "X", Responsibility: "  \t ", Paths: []string{"a/x/**"}}),
-			}},
-			want: []string{"responsibility", "d_blank"},
-		},
-		{
-			name: "非法 wildcard 只报语法不报覆盖",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_bad", Name: "X", Responsibility: "r", Paths: []string{"a/*/x.go"}}),
-			}},
-			want:     []string{"语法非法", "d_bad"},
-			unwanted: []string{"未被"},
-		},
-		{
-			name: "目标领域路径不被父子系统覆盖",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_out", Name: "X", Responsibility: "r", Paths: []string{"b/x.go"}}),
-			}},
-			want: []string{"未被", "d_out", `"b/x.go"`},
-		},
-		{
-			name: "同一子系统内两个目标领域路径重叠",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"},
-					TargetDomain{ID: "d_wide", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
-					TargetDomain{ID: "d_narrow", Name: "Y", Responsibility: "r", Paths: []string{"a/x/y.go"}}),
-			}},
-			want: []string{"重叠", "d_wide", "d_narrow"},
-		},
-		{
-			name: "跨子系统的目标领域路径重叠不由本门执法",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"shared/**"}, TargetDomain{ID: "d_left", Name: "X", Responsibility: "r", Paths: []string{"shared/x/**"}}),
-				subsystem("d_b", []string{"shared/**"}, TargetDomain{ID: "d_right", Name: "Y", Responsibility: "r", Paths: []string{"shared/x/**"}}),
-			}},
-			unwanted: []string{"重叠"},
-		},
-		{
-			name: "合法的精确路径与前缀路径全部放行",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"},
-					TargetDomain{ID: "d_pre", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
-					TargetDomain{ID: "d_exact", Name: "Y", Responsibility: "r", Paths: []string{"a/y.go", "a/z/**"}}),
-			}},
-		},
-		{
-			name: "缺失 domains 的子系统不被结构门当错误",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}),
-			}},
-		},
-		{
-			// 覆盖判定按目录整段走，不按字符串前缀：a/x/** 盖不住兄弟目录 a/xy 里的
-			// 任何东西。这里同时放精确路径与前缀规则两种 child，是因为 targetPathCovers
-			// 对这两种 child 走的是不同分支，只测一种会漏掉另一条。
-			name: "兄弟目录不算被父子系统覆盖",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/x/**"},
-					TargetDomain{ID: "d_sib_file", Name: "X", Responsibility: "r", Paths: []string{"a/xy/z.go"}},
-					TargetDomain{ID: "d_sib_dir", Name: "Y", Responsibility: "r", Paths: []string{"a/xyz/**"}}),
-			}},
-			want: []string{`未被`, `d_sib_file`, `"a/xy/z.go"`, `d_sib_dir`, `"a/xyz/**"`},
-		},
-		{
-			// 重叠判定同理：a/x/** 与 a/xy/** 是两棵互不相交的子树，报重叠会逼人去
-			// 改一个根本不存在的冲突。短名在前（x, xy）与长名在前（pq, p）两种声明
-			// 顺序都要放，因为祖先关系是双向判的，只测一种会漏掉反方向那一条。
-			name: "兄弟目录的两条前缀规则不重叠",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"},
-					TargetDomain{ID: "d_x", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
-					TargetDomain{ID: "d_xy", Name: "Y", Responsibility: "r", Paths: []string{"a/xy/**"}},
-					TargetDomain{ID: "d_pq", Name: "PQ", Responsibility: "r", Paths: []string{"a/pq/**"}},
-					TargetDomain{ID: "d_p", Name: "P", Responsibility: "r", Paths: []string{"a/p/**"}}),
-			}},
-			unwanted: []string{"重叠"},
-		},
-		{
-			name: "祖先目录与后代目录的前缀规则重叠",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"},
-					TargetDomain{ID: "d_outer", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
-					TargetDomain{ID: "d_inner", Name: "Y", Responsibility: "r", Paths: []string{"a/x/y/**"}}),
-			}},
-			want: []string{"重叠", "d_outer", "d_inner"},
-		},
-		{
-			// a/x.go 这个文件与 a/x/ 这个目录同名却毫无关系。两种声明顺序都放进来，
-			// 是因为重叠判定对「左精确右前缀」和「左前缀右精确」走的是不同分支。
-			name: "精确路径与同名目录的前缀规则不重叠",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"},
-					TargetDomain{ID: "d_dir_first", Name: "A", Responsibility: "r", Paths: []string{"a/x/**"}},
-					TargetDomain{ID: "d_file_second", Name: "B", Responsibility: "r", Paths: []string{"a/x.go"}},
-					TargetDomain{ID: "d_file_first", Name: "C", Responsibility: "r", Paths: []string{"a/y.go"}},
-					TargetDomain{ID: "d_dir_second", Name: "D", Responsibility: "r", Paths: []string{"a/y/**"}}),
-			}},
-			unwanted: []string{"重叠"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			issues := ValidateTarget(tc.target)
-			if len(tc.want) == 0 && len(tc.unwanted) == 0 && len(issues) != 0 {
-				t.Fatalf("合法目标图不应有 issue: %v", issues)
-			}
-			for _, want := range tc.want {
-				found := false
-				for _, issue := range issues {
-					if strings.Contains(issue, want) {
-						found = true
-					}
-				}
-				if !found {
-					t.Errorf("缺少含 %q 的 issue，实际: %v", want, issues)
-				}
-			}
-			for _, unwanted := range tc.unwanted {
-				for _, issue := range issues {
-					if strings.Contains(issue, unwanted) {
-						t.Errorf("不应出现含 %q 的 issue: %v", unwanted, issues)
-					}
-				}
-			}
-		})
-	}
-}
-
-// TestTargetDomainJSONPresenceAndRoundTrip 锁住 domains 的显式空数组与字段缺失形态。
-func TestTargetDomainJSONPresenceAndRoundTrip(t *testing.T) {
-	wire := []byte(`{"meta":{"version":2,"project":"p"},"subsystems":[` +
-		`{"id":"d_zero","name":"Zero","type":"logic","paths":["a/**"],"domains":[]},` +
-		`{"id":"d_absent","name":"Absent","type":"logic","paths":["b/**"]}]}`)
-
-	var shape struct {
-		Subsystems []map[string]json.RawMessage `json:"subsystems"`
-	}
-	if err := json.Unmarshal(wire, &shape); err != nil {
-		t.Fatalf("解析 wire 形状: %v", err)
-	}
-	if len(shape.Subsystems) != 2 {
-		t.Fatalf("wire 形状应有两个子系统: %+v", shape.Subsystems)
-	}
-	for _, key := range []string{"domains"} {
-		if _, ok := shape.Subsystems[0][key]; !ok {
-			t.Errorf("输入 wire 里显式写了 %s，presence 断言必须看得到", key)
-		}
-		if _, ok := shape.Subsystems[1][key]; ok {
-			t.Errorf("输入 wire 里没写 %s，presence 断言不得凭空多出来", key)
-		}
-	}
-	if got := string(shape.Subsystems[0]["domains"]); got != "[]" {
-		t.Errorf("显式空数组 wire 值应为 []，实际 %s", got)
+	if len(issues) != 1 || !strings.Contains(issues[0], "legacyBudget") {
+		t.Fatalf("只应报告负 legacyBudget: %v", issues)
 	}
 
-	var decoded Target
-	if err := json.Unmarshal(wire, &decoded); err != nil {
-		t.Fatalf("回读 target: %v", err)
-	}
-	zero, absent := decoded.Subsystems[0], decoded.Subsystems[1]
-	if zero.Domains == nil || len(zero.Domains) != 0 {
-		t.Fatalf("显式 domains:[] 应回读成非 nil 空 slice: %#v", zero.Domains)
-	}
-	if absent.Domains != nil {
-		t.Fatalf("缺失 domains 应回读成 nil slice: %#v", absent.Domains)
-	}
-
-	raw, err := json.Marshal(decoded)
-	if err != nil {
-		t.Fatalf("重新编码 target: %v", err)
-	}
-	shape.Subsystems = nil
-	if err := json.Unmarshal(raw, &shape); err != nil {
-		t.Fatalf("解析回写形状: %v", err)
-	}
-	for i, subsystem := range shape.Subsystems {
-		for _, key := range []string{"domains"} {
-			if _, ok := subsystem[key]; ok {
-				t.Errorf("omitempty 应省略子系统 %d 的零值键 %s: %s", i, key, raw)
-			}
-		}
+	// 归属完整性已下沉到 Best；Target 不得再以未知域名拒绝契约。
+	if issues := ValidateTarget(&Target{Contracts: []Contract{{From: "d_ghost", To: "d_ghost"}}}); len(issues) != 0 {
+		t.Fatalf("未知域名不属于 target 结构门: %v", issues)
 	}
 }
 
@@ -285,73 +69,5 @@ func TestContractBudgetDefaultZero(t *testing.T) {
 	var c Contract
 	if c.LegacyBudget != 0 {
 		t.Fatal("缺省预算必须是 0（硬拦）")
-	}
-}
-
-// TestCutTargetRuleParsesSuffixConvention 锁住 dir/** 后缀约定的**单点定义**。
-// 四个匹配点（SubsystemOf、targetRuleMatchesFile、targetPathCovers、
-// targetPathsOverlap）语义各不相同，但「什么算前缀规则、去掉后缀剩什么」必须只有
-// 这一份答案；散成四份 CutSuffix 字面量的话，改约定时漏改一处不会有任何测试变红。
-func TestCutTargetRuleParsesSuffixConvention(t *testing.T) {
-	cases := []struct {
-		rule       string
-		wantPrefix string
-		wantIsRule bool
-	}{
-		{"a/**", "a", true},
-		{"a/b/**", "a/b", true},
-		{"a/b.go", "a/b.go", false}, // 精确路径原样返回，调用方据 false 走精确分支
-		{"**", "**", false},         // 裸 ** 不是前缀规则（validPathRule 另行拒绝）
-		{"a/**/b", "a/**/b", false}, // 后缀必须在末尾
-		{"", "", false},
-	}
-	for _, c := range cases {
-		prefix, isRule := cutTargetRule(c.rule)
-		if prefix != c.wantPrefix || isRule != c.wantIsRule {
-			t.Errorf("cutTargetRule(%q) = (%q, %v), want (%q, %v)", c.rule, prefix, isRule, c.wantPrefix, c.wantIsRule)
-		}
-	}
-}
-
-// TestTargetRuleMatchesFileAgreesWithSubsystemOf 交叉验证「文件对规则」这一个语义在
-// 两处实现里得出同一答案。gap.go 的目标域归属与 target.go 的子系统归属是两个不同的
-// 判定对象，但用的是同一套字面约定——一处收紧另一处没跟上，目标域就会圈进子系统之外
-// 的文件，而这种分叉今天只能靠人眼发现。
-func TestTargetRuleMatchesFileAgreesWithSubsystemOf(t *testing.T) {
-	rules := []string{"app/api/**", "app/api/x.go", "app/**", "a/**"}
-	files := []string{
-		"app/api/x.go", "app/api/deep/y.go", "app/apix.go", "app/api-v2/x.go",
-		"app/api", "app/loose.go", "other/z.go", "a/x.go",
-	}
-	for _, rule := range rules {
-		tg := &Target{Subsystems: []TargetSubsystem{{ID: "d_only", Type: "logic", Paths: []string{rule}}}}
-		for _, file := range files {
-			want := tg.SubsystemOf(file) == "d_only"
-			if got := targetRuleMatchesFile(file, rule); got != want {
-				t.Errorf("规则 %q 对文件 %q：targetRuleMatchesFile=%v，SubsystemOf 口径=%v", rule, file, got, want)
-			}
-		}
-	}
-}
-
-func TestSubsystemOf(t *testing.T) {
-	tg := &Target{
-		Subsystems: []TargetSubsystem{
-			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/run.go"}},
-		},
-		Assignments: []Assignment{{Path: "svc/mirror.go", Subsystem: "d_cmd"}},
-	}
-	cases := []struct{ file, want string }{
-		{"svc/task.go", "d_svc"},   // 前缀规则
-		{"svc/mirror.go", "d_cmd"}, // assignments 优先于 paths
-		{"cmd/run.go", "d_cmd"},    // 精确规则
-		{"web/x.ts", ""},           // 图外
-		{"svcx/task.go", ""},       // 前缀必须整段匹配，svcx 不是 svc/
-	}
-	for _, c := range cases {
-		if got := tg.SubsystemOf(c.file); got != c.want {
-			t.Errorf("SubsystemOf(%q) = %q, want %q", c.file, got, c.want)
-		}
 	}
 }

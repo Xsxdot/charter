@@ -40,14 +40,15 @@ func TestSetContractCreateAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := SetContract(repo, Contract{From: "d_svc", To: "d_ghost", Entries: []string{"bad"}}); err == nil {
-		t.Fatal("非法目标域必须拒绝")
+	beforeGhost, afterGhost, err := SetContract(repo, Contract{From: "d_svc", To: "d_ghost", Entries: []string{"bad"}})
+	if err != nil || beforeGhost != nil || afterGhost == nil || afterGhost.To != "d_ghost" {
+		t.Fatalf("契约引用完整性已下沉，未知目标域仍应写入: before=%+v after=%+v err=%v", beforeGhost, afterGhost, err)
 	}
 	afterRaw, err := os.ReadFile(targetPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(beforeRaw) != string(afterRaw) {
-		t.Fatal("ValidateTarget 失败不应写回文件")
+	if string(beforeRaw) == string(afterRaw) {
+		t.Fatal("未知目标域契约应写回 target")
 	}
 }

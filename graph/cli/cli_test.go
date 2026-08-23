@@ -411,7 +411,7 @@ func gitTrueV1BaseRepo(t *testing.T, budget int, note string) (string, string) {
 
 	// 基准提交落定后再把工作区换成 v2，并只修改契约预算。
 	copyFixtureRepo(t, fixtureRepo, repo)
-	writeTargetVersionBudget(t, repo, 2, budget, 0, 0, note)
+	writeTargetVersionBudget(t, repo, 3, budget, 3, 0, note)
 	return repo, base
 }
 
@@ -502,14 +502,14 @@ func gitTargetRepoNested(t *testing.T, repoSub string, baseBudget, currentBudget
 		t.Fatal(err)
 	}
 	copyFixtureRepo(t, fixtureRepo, repo)
-	writeTargetVersionBudget(t, repo, 2, baseBudget, 2, 0, "")
+	writeTargetVersionBudget(t, repo, 2, baseBudget, 3, 0, "")
 	runGit(t, gitRoot, "init", "-q")
 	runGit(t, gitRoot, "config", "user.email", "codegraph-test@example.com")
 	runGit(t, gitRoot, "config", "user.name", "codegraph-test")
 	runGit(t, gitRoot, "add", ".")
 	runGit(t, gitRoot, "commit", "-q", "-m", "base target")
 	base := strings.TrimSpace(runGit(t, gitRoot, "rev-parse", "HEAD"))
-	writeTargetVersionBudget(t, repo, 2, currentBudget, 2, baseBudget, note)
+	writeTargetVersionBudget(t, repo, 3, currentBudget, 2, baseBudget, note)
 	return repo, base
 }
 
@@ -542,14 +542,14 @@ func gitTargetRepoWithVersion(t *testing.T, oldBudget, currentBudget int, note s
 	t.Helper()
 	repo := t.TempDir()
 	copyFixtureRepo(t, fixtureRepo, repo)
-	writeTargetVersionBudget(t, repo, oldVersion, oldBudget, 2, 0, "")
+	writeTargetVersionBudget(t, repo, oldVersion, oldBudget, 3, 0, "")
 	runGit(t, repo, "init", "-q")
 	runGit(t, repo, "config", "user.email", "codegraph-test@example.com")
 	runGit(t, repo, "config", "user.name", "codegraph-test")
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-q", "-m", "base target")
 	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
-	writeTargetVersionBudget(t, repo, 2, currentBudget, oldVersion, oldBudget, note)
+	writeTargetVersionBudget(t, repo, 3, currentBudget, oldVersion, oldBudget, note)
 	return repo, base
 }
 
@@ -583,7 +583,7 @@ func runGit(t *testing.T, repo string, args ...string) string {
 }
 
 func TestGraphTargetVersionGate(t *testing.T) {
-	for _, version := range []int{1, 3} {
+	for _, version := range []int{1, 2} {
 		repo := t.TempDir()
 		copyFixtureRepo(t, fixtureRepo, repo)
 		path := filepath.Join(repo, "codegraph", "target.json")
@@ -591,7 +591,7 @@ func TestGraphTargetVersionGate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw = bytes.Replace(raw, []byte(`"version": 2`), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
+		raw = bytes.Replace(raw, []byte(`"version": 3`), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
 		if err := os.WriteFile(path, raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -863,8 +863,12 @@ func TestGraphMigrate(t *testing.T) {
 	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) {
 		t.Fatalf("migrate 输出: err=%v out=%s", err, out)
 	}
-	if _, err := codegraph.LoadTarget(repo); err != nil {
-		t.Fatalf("migrate 后 target 应可加载: %v", err)
+	raw, readErr := os.ReadFile(filepath.Join(repo, "codegraph", "target.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Contains(raw, []byte(`"version": 2`)) {
+		t.Fatalf("T7 的 v1→v2 过渡迁移应写出 v2 target: %s", raw)
 	}
 }
 

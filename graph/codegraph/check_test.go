@@ -15,31 +15,43 @@ import (
 func checkNoDecls(t *Target, v *View) *Report { return Check(t, bestFixtureForTarget(t, v), v, nil) }
 
 func bestFixtureForTarget(t *Target, v *View) *Best {
+	ids := make([]string, 0, len(t.Contracts)*2)
+	seen := map[string]bool{}
+	for _, contract := range t.Contracts {
+		for _, id := range []string{contract.From, contract.To} {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Strings(ids)
+	return bestFixtureForDomains(v, ids...)
+}
+
+func bestFixtureForDomains(v *View, ids ...string) *Best {
 	b := &Best{
 		Meta:       BestMeta{Version: 1, Project: "test"},
 		Domains:    map[string]BestDomain{},
 		Containers: map[string]string{},
 	}
-	for _, subsystem := range t.Subsystems {
-		b.Domains[subsystem.ID] = BestDomain{
-			Label:          subsystem.Name,
+	for _, id := range ids {
+		b.Domains[id] = BestDomain{
+			Label:          id,
 			Responsibility: "fixture",
-			Type:           subsystem.Type,
+			Type:           "logic",
 		}
 	}
-	nodeIDs := make([]string, 0, len(v.Nodes))
-	for id := range v.Nodes {
-		nodeIDs = append(nodeIDs, id)
-	}
-	sort.Strings(nodeIDs)
 	for containerID := range v.Containers {
-		for _, nodeID := range nodeIDs {
-			n := v.Nodes[nodeID]
-			if n.Status == "deleted" || n.Container != containerID {
-				continue
+		for _, id := range ids {
+			prefix := strings.TrimPrefix(id, "d_")
+			for _, n := range v.Nodes {
+				if n.Status != "deleted" && n.Container == containerID && (n.File == prefix || strings.HasPrefix(n.File, prefix+"/")) {
+					b.Containers[containerID] = id
+					break
+				}
 			}
-			if subsystem := t.SubsystemOf(n.File); subsystem != "" {
-				b.Containers[containerID] = subsystem
+			if _, ok := b.Containers[containerID]; ok {
 				break
 			}
 		}
@@ -64,13 +76,13 @@ func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 
 func twoDomainTarget(entries []string, budget int) *Target {
 	return &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_a", Type: "logic", Paths: []string{"a/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-		},
+		Meta:      TargetMeta{Version: 3},
 		Contracts: []Contract{{From: "d_a", To: "d_b", Entries: entries, LegacyBudget: budget}},
 	}
+}
+
+func twoDomainBest(v *View) *Best {
+	return bestFixtureForDomains(v, "d_a", "d_b")
 }
 
 func TestCheckTable(t *testing.T) {
@@ -80,20 +92,25 @@ func TestCheckTable(t *testing.T) {
 	cases := []struct {
 		name          string
 		tg            *Target
+		best          *Best
 		edges, impls  [][2]string
 		wantFailKinds []string
 		wantWarnKinds []string
 	}{
-		{"域内边不检查", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems}, [][2]string{{"b1", "b2"}}, nil, nil, nil},
-		{"走声明入口合法", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b1"}}, nil, nil, nil},
-		{"越界但有预算=warn", twoDomainTarget([]string{"b.Facade"}, 1), [][2]string{{"a1", "b2"}}, nil, nil, []string{"legacy"}},
-		{"越界超预算=fail", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b2"}}, nil, []string{"over-budget"}, nil},
-		{"无契约方向=fail", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems},
-			[][2]string{{"a1", "b1"}}, nil, []string{"new-direction"}, nil},
+		{name: "域内边不检查", tg: &Target{Meta: TargetMeta{Version: 3}}, best: twoDomainBest(mkView(nodes, [][2]string{{"b1", "b2"}}, nil)), edges: [][2]string{{"b1", "b2"}}},
+		{name: "走声明入口合法", tg: twoDomainTarget([]string{"b.Facade"}, 0), edges: [][2]string{{"a1", "b1"}}},
+		{name: "越界但有预算=warn", tg: twoDomainTarget([]string{"b.Facade"}, 1), edges: [][2]string{{"a1", "b2"}}, wantWarnKinds: []string{"legacy"}},
+		{name: "越界超预算=fail", tg: twoDomainTarget([]string{"b.Facade"}, 0), edges: [][2]string{{"a1", "b2"}}, wantFailKinds: []string{"over-budget"}},
+		{name: "无契约方向=fail", tg: &Target{Meta: TargetMeta{Version: 3}}, best: twoDomainBest(mkView(nodes, [][2]string{{"a1", "b1"}}, nil)), edges: [][2]string{{"a1", "b1"}}, wantFailKinds: []string{"new-direction"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rep := checkNoDecls(c.tg, mkView(nodes, c.edges, c.impls))
+			view := mkView(nodes, c.edges, c.impls)
+			best := c.best
+			if best == nil {
+				best = bestFixtureForTarget(c.tg, view)
+			}
+			rep := Check(c.tg, best, view, nil)
 			assertKinds(t, "fail", rep.Fails, c.wantFailKinds)
 			assertKinds(t, "warn", rep.Warns, c.wantWarnKinds)
 		})
@@ -158,17 +175,12 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"}, "out": {"x", "web/x.ts"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-			{ID: "d_dead", Type: "logic", Paths: []string{"ghost/**"}},
-		},
+		Meta:     TargetMeta{Version: 3},
 		Assembly: []string{"cmd/main.go"},
 	}
 	v := mkView(nodes, [][2]string{{"main", "b1"}}, nil)
 	v.Edges = append(v.Edges, ViewEdge{From: "b1", To: "out", Status: "deleted"})
-	rep := checkNoDecls(tg, v)
+	rep := Check(tg, bestFixtureForDomains(v, "d_cmd", "d_b", "d_dead"), v, nil)
 	if len(rep.Fails) != 0 {
 		t.Fatalf("组装豁免/deleted 边不应 fail: %+v", rep.Fails)
 	}
@@ -183,11 +195,7 @@ func TestCheckDeadAssembly(t *testing.T) {
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-		},
+		Meta:     TargetMeta{Version: 3},
 		Assembly: []string{"cmd/main.go", "cmd/ghost.go"},
 	}
 	rep := checkNoDecls(tg, mkView(nodes, [][2]string{{"main", "b1"}}, nil))
@@ -215,9 +223,8 @@ func TestCheckDeadAssembly(t *testing.T) {
 // 边界条件：deleted 节点只为渲染保留，不代表当前分支里还有这个文件。
 func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	tg := &Target{
-		Meta:       TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}}},
-		Assembly:   []string{"cmd/gone.go"},
+		Meta:     TargetMeta{Version: 3},
+		Assembly: []string{"cmd/gone.go"},
 	}
 	v := mkView(map[string][2]string{"g": {"main", "cmd/gone.go"}}, nil, nil)
 	n := v.Nodes["g"]
@@ -392,11 +399,7 @@ func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
 	}
 	v := Merge(g, d)
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
-		},
+		Meta:      TargetMeta{Version: 3},
 		Assembly:  []string{"cmd/run.go"},
 		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"new.Entry"}}},
 	}
