@@ -97,8 +97,16 @@ func bestCoverage(v *View, b *Best) *BestCoverage {
 	if v == nil || b == nil {
 		return coverage
 	}
-	coverage.ViewContainers = len(v.Containers)
-	for containerID := range v.Containers {
+	liveContainers := make(map[string]bool, len(v.Containers))
+	for _, node := range v.Nodes {
+		if node.Status != "deleted" {
+			if _, ok := v.Containers[node.Container]; ok {
+				liveContainers[node.Container] = true
+			}
+		}
+	}
+	coverage.ViewContainers = len(liveContainers)
+	for containerID := range liveContainers {
 		if b.SubsystemOf(b.DomainOfContainer(containerID)) != "" {
 			coverage.AssignedContainers++
 		}

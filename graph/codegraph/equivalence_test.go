@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestV2ResolverAndBestOwnershipEquivalenceProperty proves the general rule
-// behind the v2→best migration: a container whose nodes all resolve to one
-// v2 subsystem has the same ownership through the generated Best graph.
+// TestV2ResolverAndBestOwnershipEquivalenceProperty 验证 v2→best 迁移背后的通用规则：
+// 容器内所有节点都解析到同一 v2 子系统时，
+// 通过生成的 Best 图得到的归属应与之相同。
 func TestV2ResolverAndBestOwnershipEquivalenceProperty(t *testing.T) {
 	rng := rand.New(rand.NewSource(20260824))
 	target := &migrateV2Target{
@@ -35,8 +35,8 @@ func TestV2ResolverAndBestOwnershipEquivalenceProperty(t *testing.T) {
 		case 3:
 			file = "c/root.go"
 		}
-		// Two nodes per container exercise the deterministic first-node rule
-		// while keeping every generated container subsystem-pure.
+		// 每个容器放两个节点，用于覆盖确定性的首节点规则，
+		// 同时保证每个生成容器都保持子系统纯度。
 		graph.Nodes[fmt.Sprintf("n_%03d_z", i)] = Node{Container: containerID, File: file}
 		graph.Nodes[fmt.Sprintf("n_%03d_a", i)] = Node{Container: containerID, File: file}
 	}

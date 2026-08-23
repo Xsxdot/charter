@@ -144,8 +144,8 @@ func TestDomainEdgeMatrixFiltersDirectionsAndSorts(t *testing.T) {
 		{From: "d_a", To: "d_b", Count: 3},
 		{From: "d_c", To: "d_b", Count: 1},
 	}
-	// The first two counts deliberately tie; the count-descending rule puts
-	// d_b→d_a before d_c→d_a, then from/to order resolves any remaining tie.
+	// 前两条记录刻意设置为相同计数；计数降序后，再由 from/to 顺序决定
+	// d_b→d_a 排在 d_c→d_a 之前，并解决其余并列情况。
 	want[0], want[1] = want[1], want[0]
 	got := DomainEdgeMatrix(v)
 	if !reflect.DeepEqual(got, want) {

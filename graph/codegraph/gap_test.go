@@ -14,6 +14,7 @@ func TestCheckBestGapFindingsAreWarnsAndContainerScoped(t *testing.T) {
 			"c_legacy":   {Domain: "d_legacy"},
 			"c_deleted":  {Domain: "d_a"},
 			"c_empty":    {},
+			"c_zombie":   {Domain: "d_a"},
 		},
 		Nodes: map[string]ViewNode{
 			"n_good":     {Node: Node{Container: "c_good", File: "good.go"}},
@@ -49,12 +50,22 @@ func TestCheckBestGapFindingsAreWarnsAndContainerScoped(t *testing.T) {
 	assertFindingCount(t, rep.Warns, KindDomainEmpty, 2)
 	assertFindingCount(t, rep.Warns, KindBestDangling, 2)
 	assertFindingCount(t, rep.Warns, "outside-file", 1)
+	for _, finding := range rep.Warns {
+		if finding.Kind == "outside-file" && !strings.Contains(finding.Detail, "不存在的容器") {
+			t.Fatalf("outside-file 应指向悬空容器引用: %+v", finding)
+		}
+	}
 
 	if rep.BestCoverage == nil {
 		t.Fatal("best 非 nil 时必须输出归属覆盖读数")
 	}
-	if got := *rep.BestCoverage; got.AssignedContainers != 2 || got.ViewContainers != 5 || got.MisplacedSkipped != 1 {
+	if got := *rep.BestCoverage; got.AssignedContainers != 1 || got.ViewContainers != 4 || got.MisplacedSkipped != 1 {
 		t.Fatalf("归属覆盖读数错误: %+v", got)
+	}
+	for _, finding := range rep.Warns {
+		if finding.From == "c_zombie" {
+			t.Fatalf("零节点容器不得进入覆盖读数或 gap finding: %+v", rep.Warns)
+		}
 	}
 	if !hasFindingFrom(rep.Warns, KindContainerMisplaced, "c_good") {
 		t.Fatalf("应报告 best 与 baseline 词汇已对齐的错位容器: %+v", rep.Warns)

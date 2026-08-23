@@ -40,8 +40,8 @@ type migrateV1Target struct {
 	Contracts   []Contract            `json:"contracts,omitempty"`
 }
 
-// migrateV2Domain / migrateV2Subsystem / migrateV2Target are a private frozen
-// decoder for the pre-v3 shape. They intentionally never cross into Check.
+// migrateV2Domain / migrateV2Subsystem / migrateV2Target 是迁移专用、冻结的
+// v3 前结构解码器；它们有意不进入 Check 链路。
 type migrateV2Domain struct {
 	ID             string   `json:"id"`
 	Name           string   `json:"name"`
@@ -218,8 +218,8 @@ func migrationNotes() []string {
 	}
 }
 
-// migrateV2SubsystemOf is the private v2 resolver retained solely for migration.
-// assignments win over exact/prefix path rules; prefix matches are directory-bounded.
+// migrateV2SubsystemOf 是仅为迁移保留的私有 v2 归属解析器。
+// assignments 优先于精确/前缀路径规则；前缀匹配受目录边界约束。
 func migrateV2SubsystemOf(target *migrateV2Target, file string) string {
 	for _, assignment := range target.Bindings {
 		if assignment.Path == file {

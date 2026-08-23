@@ -16,7 +16,7 @@ import (
 // fail 侧：new-direction（无契约方向）/ off-entry 归并进 legacy 或 over-budget /
 // off-interface（未声明的跨域实现）/ over-budget（legacy 超预算）/ dead-entry /
 // dead-interface / dead-contract（契约声明的缝未在视图中建成）
-// warn 侧：legacy（预算内直调计数）/ outside-file（图外文件）/
+// warn 侧：legacy（预算内直调计数）/ outside-file（节点引用了不存在的容器）/
 // dead-assembly（组装点条目未命中任何节点文件）
 type Finding struct {
 	Kind   string `json:"kind"`
@@ -192,9 +192,9 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 			}
 		}
 	}
-	// 图外文件
+	// 容器引用悬空
 	for f := range outside {
-		rep.Warns = append(rep.Warns, Finding{Kind: "outside-file", Detail: "图外文件（目标图未覆盖）: " + f})
+		rep.Warns = append(rep.Warns, Finding{Kind: "outside-file", Detail: "图节点引用了视图中不存在的容器: " + f})
 	}
 	// 组装点死配置：assembly 条目在视图里找不到任何节点文件。
 	// 在此之前 assembly 写错文件名是零信号：ValidateTarget 完全不看 Assembly，

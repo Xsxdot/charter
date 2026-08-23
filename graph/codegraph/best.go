@@ -176,9 +176,9 @@ func (b *Best) DomainOfContainer(containerID string) string {
 	return b.Containers[containerID]
 }
 
-// bestSubsystemOfNode follows the only enforcement ownership chain:
-// node.Container → Best.Containers → Best.Domains.Parent → top-level domain.
-// Any missing link, deleted node, or nil best is graph-outside and returns "".
+// bestSubsystemOfNode 沿唯一的执法归属链路决议：
+// 节点容器 → Best.Containers → Best.Domains.Parent → 顶层领域。
+// 任一链接缺失、节点已删除或 best 为空，都按图外处理并返回 ""。
 func bestSubsystemOfNode(b *Best, v *View, nodeID string) string {
 	if b == nil || v == nil {
 		return ""
