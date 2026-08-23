@@ -163,69 +163,6 @@ func TestCheckBudgetRatchetIgnoresNewContractWithZeroBudget(t *testing.T) {
 	}
 }
 
-// domainSubsystemTarget 造一个「声明了目标领域」的子系统；只有这种子系统参与
-// 未落位预算棘轮（契约 §3-3）。
-func domainSubsystemTarget(id string, budget int, note string, declareDomains bool) *Target {
-	subsystem := TargetSubsystem{ID: id, Name: id, Type: "logic", Paths: []string{id + "/**"},
-		UnplacedBudget: budget, UnplacedBudgetNote: note}
-	if declareDomains {
-		subsystem.Domains = []TargetDomain{{ID: id + "_api", Name: "API", Responsibility: "r", Paths: []string{id + "/api/**"}}}
-	}
-	return &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{subsystem}}
-}
-
-func TestCheckBudgetRatchetRaisesSubsystemUnplacedBudget(t *testing.T) {
-	findings := CheckBudgetRatchet(
-		domainSubsystemTarget("d_svc", 3, "", true),
-		domainSubsystemTarget("d_svc", 2, "", true))
-	if len(findings) != 1 || findings[0].Kind != KindBudgetRaised {
-		t.Fatalf("未落位预算 2→3 应产生一条 budget-raised: %+v", findings)
-	}
-	// 冻结 30：目标领域预算上涨用 From=子系统 id，To 省略。
-	if findings[0].From != "d_svc" || findings[0].To != "" {
-		t.Fatalf("目标领域棘轮 From/To 形状不对: %+v", findings[0])
-	}
-	for _, want := range []string{"d_svc", "2", "3", "上涨"} {
-		if !strings.Contains(findings[0].Detail, want) {
-			t.Fatalf("Detail 缺 %q: %+v", want, findings[0])
-		}
-	}
-}
-
-func TestCheckBudgetRatchetSubsystemBaseAbsentCountsAsZero(t *testing.T) {
-	findings := CheckBudgetRatchet(domainSubsystemTarget("d_svc", 2, "", true), &Target{})
-	if len(findings) != 1 || findings[0].From != "d_svc" || findings[0].To != "" {
-		t.Fatalf("基准缺席该子系统时当前预算 2 应报一条: %+v", findings)
-	}
-	if !strings.Contains(findings[0].Detail, "基准中未声明目标领域") || strings.Contains(findings[0].Detail, "上涨") {
-		t.Fatalf("基准缺席应使用独立措辞: %+v", findings[0])
-	}
-	if got := CheckBudgetRatchet(domainSubsystemTarget("d_svc", 0, "", true), &Target{}); len(got) != 0 {
-		t.Fatalf("基准缺席且当前预算 0 不应报: %+v", got)
-	}
-	// 基准里同名子系统但没声明目标领域，等同于「基准没有这个目标领域预算」。
-	undeclared := CheckBudgetRatchet(domainSubsystemTarget("d_svc", 2, "", true), domainSubsystemTarget("d_svc", 5, "", false))
-	if len(undeclared) != 1 || !strings.Contains(undeclared[0].Detail, "基准中未声明目标领域") {
-		t.Fatalf("基准未声明目标领域时不得借用它的预算数: %+v", undeclared)
-	}
-}
-
-func TestCheckBudgetRatchetSubsystemIgnoresEqualLowerAndUndeclared(t *testing.T) {
-	for _, budget := range []int{5, 2} {
-		if got := CheckBudgetRatchet(
-			domainSubsystemTarget("d_svc", budget, "", true),
-			domainSubsystemTarget("d_svc", 5, "", true)); len(got) != 0 {
-			t.Fatalf("未落位预算 5→%d 不应报: %+v", budget, got)
-		}
-	}
-	// 当前子系统没声明目标领域就整体跳过执法，预算涨了也不报（契约 §3-1 第 1 条）。
-	if got := CheckBudgetRatchet(
-		domainSubsystemTarget("d_svc", 9, "", false),
-		domainSubsystemTarget("d_svc", 1, "", true)); len(got) != 0 {
-		t.Fatalf("当前未声明目标领域的子系统不参与棘轮: %+v", got)
-	}
-}
-
 func TestApplyBudgetRatchetGradesByCurrentNote(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -238,12 +175,7 @@ func TestApplyBudgetRatchetGradesByCurrentNote(t *testing.T) {
 		{name: "纯空白理由不算理由", note: " \t\n ", wantFails: 1},
 	}
 	for _, tc := range cases {
-		t.Run("子系统/"+tc.name, func(t *testing.T) {
-			rep := &Report{}
-			ApplyBudgetRatchet(rep, domainSubsystemTarget("d_svc", 3, tc.note, true), domainSubsystemTarget("d_svc", 2, "", true))
-			assertRatchetGrade(t, rep, tc.wantFails, tc.wantWarns)
-		})
-		t.Run("契约/"+tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			cur, base := twoDomainTarget(nil, 3), twoDomainTarget(nil, 2)
 			cur.Contracts[0].LegacyBudgetNote = tc.note
 			rep := &Report{}
@@ -295,11 +227,9 @@ func TestApplyBudgetRatchetReordersWholeReport(t *testing.T) {
 		Fails: []Finding{{Kind: "over-budget", From: "d_svc", To: "d_target", Detail: "z 超预算"}},
 		Warns: []Finding{{Kind: "outside-file", Detail: "图外文件: z.go"}},
 	}
-	cur := &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-		{ID: "d_zzz", Type: "logic", Paths: []string{"z/**"}, UnplacedBudget: 2,
-			Domains: []TargetDomain{{ID: "z_api", Responsibility: "r", Paths: []string{"z/api/**"}}}},
-		{ID: "d_aaa", Type: "logic", Paths: []string{"a/**"}, UnplacedBudget: 2, UnplacedBudgetNote: "有理由",
-			Domains: []TargetDomain{{ID: "a_api", Responsibility: "r", Paths: []string{"a/api/**"}}}},
+	cur := &Target{Contracts: []Contract{
+		{From: "d_zzz", To: "d_target", LegacyBudget: 2},
+		{From: "d_aaa", To: "d_target", LegacyBudget: 2, LegacyBudgetNote: "有理由"},
 	}}
 	ApplyBudgetRatchet(rep, cur, &Target{})
 

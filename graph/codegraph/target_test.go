@@ -28,7 +28,6 @@ func TestTargetDomainJSONGolden(t *testing.T) {
 		Meta: TargetMeta{Version: 2, Project: "handoff"},
 		Subsystems: []TargetSubsystem{{
 			ID: "d_controlplane", Name: "Control Plane", Type: "logic", Paths: []string{"internal/**"},
-			UnplacedBudget: 61, UnplacedBudgetNote: "vertical slice pending",
 			Domains: []TargetDomain{{
 				ID: "d_task", Name: "Task", Responsibility: "owns task lifecycle", Paths: []string{"internal/task/**"},
 			}},
@@ -38,7 +37,7 @@ func TestTargetDomainJSONGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编码目标领域样本: %v", err)
 	}
-	want := `{"meta":{"version":2,"project":"handoff"},"subsystems":[{"id":"d_controlplane","name":"Control Plane","type":"logic","paths":["internal/**"],"unplacedBudget":61,"unplacedBudgetNote":"vertical slice pending","domains":[{"id":"d_task","name":"Task","responsibility":"owns task lifecycle","paths":["internal/task/**"]}]},{"id":"d_empty","name":"Empty","type":"logic","paths":["pkg/**"]}]}`
+	want := `{"meta":{"version":2,"project":"handoff"},"subsystems":[{"id":"d_controlplane","name":"Control Plane","type":"logic","paths":["internal/**"],"domains":[{"id":"d_task","name":"Task","responsibility":"owns task lifecycle","paths":["internal/task/**"]}]},{"id":"d_empty","name":"Empty","type":"logic","paths":["pkg/**"]}]}`
 	if string(raw) != want {
 		t.Fatalf("目标领域 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
 	}
@@ -46,7 +45,7 @@ func TestTargetDomainJSONGolden(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("解码目标领域样本: %v", err)
 	}
-	if len(decoded.Subsystems) != 2 || len(decoded.Subsystems[0].Domains) != 1 || decoded.Subsystems[1].UnplacedBudget != 0 || len(decoded.Subsystems[1].Domains) != 0 {
+	if len(decoded.Subsystems) != 2 || len(decoded.Subsystems[0].Domains) != 1 || len(decoded.Subsystems[1].Domains) != 0 {
 		t.Fatalf("目标领域 JSON 回读结构错误: %+v", decoded)
 	}
 }
@@ -78,8 +77,8 @@ func TestValidateTarget(t *testing.T) {
 // TestValidateTargetDomainRules 逐族锁住目标领域结构门（契约 §4 冻结 10-15）。
 // 每个用例只放一族违规，避免一条实现顺手把多族一起报了还看不出漏哪族。
 func TestValidateTargetDomainRules(t *testing.T) {
-	subsystem := func(id string, paths []string, budget int, domains ...TargetDomain) TargetSubsystem {
-		return TargetSubsystem{ID: id, Name: id, Type: "logic", Paths: paths, UnplacedBudget: budget, Domains: domains}
+	subsystem := func(id string, paths []string, domains ...TargetDomain) TargetSubsystem {
+		return TargetSubsystem{ID: id, Name: id, Type: "logic", Paths: paths, Domains: domains}
 	}
 	cases := []struct {
 		name     string
@@ -90,22 +89,22 @@ func TestValidateTargetDomainRules(t *testing.T) {
 		{
 			name: "目标领域 id 在整个文档内重复",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0, TargetDomain{ID: "dup", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}}),
-				subsystem("d_b", []string{"b/**"}, 0, TargetDomain{ID: "dup", Name: "Y", Responsibility: "r", Paths: []string{"b/y/**"}}),
+				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "dup", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}}),
+				subsystem("d_b", []string{"b/**"}, TargetDomain{ID: "dup", Name: "Y", Responsibility: "r", Paths: []string{"b/y/**"}}),
 			}},
 			want: []string{`目标领域 id "dup" 重复`},
 		},
 		{
 			name: "responsibility 纯空白等同缺失",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0, TargetDomain{ID: "d_blank", Name: "X", Responsibility: "  \t ", Paths: []string{"a/x/**"}}),
+				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_blank", Name: "X", Responsibility: "  \t ", Paths: []string{"a/x/**"}}),
 			}},
 			want: []string{"responsibility", "d_blank"},
 		},
 		{
 			name: "非法 wildcard 只报语法不报覆盖",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0, TargetDomain{ID: "d_bad", Name: "X", Responsibility: "r", Paths: []string{"a/*/x.go"}}),
+				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_bad", Name: "X", Responsibility: "r", Paths: []string{"a/*/x.go"}}),
 			}},
 			want:     []string{"语法非法", "d_bad"},
 			unwanted: []string{"未被"},
@@ -113,14 +112,14 @@ func TestValidateTargetDomainRules(t *testing.T) {
 		{
 			name: "目标领域路径不被父子系统覆盖",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0, TargetDomain{ID: "d_out", Name: "X", Responsibility: "r", Paths: []string{"b/x.go"}}),
+				subsystem("d_a", []string{"a/**"}, TargetDomain{ID: "d_out", Name: "X", Responsibility: "r", Paths: []string{"b/x.go"}}),
 			}},
 			want: []string{"未被", "d_out", `"b/x.go"`},
 		},
 		{
 			name: "同一子系统内两个目标领域路径重叠",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0,
+				subsystem("d_a", []string{"a/**"},
 					TargetDomain{ID: "d_wide", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
 					TargetDomain{ID: "d_narrow", Name: "Y", Responsibility: "r", Paths: []string{"a/x/y.go"}}),
 			}},
@@ -129,22 +128,15 @@ func TestValidateTargetDomainRules(t *testing.T) {
 		{
 			name: "跨子系统的目标领域路径重叠不由本门执法",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"shared/**"}, 0, TargetDomain{ID: "d_left", Name: "X", Responsibility: "r", Paths: []string{"shared/x/**"}}),
-				subsystem("d_b", []string{"shared/**"}, 0, TargetDomain{ID: "d_right", Name: "Y", Responsibility: "r", Paths: []string{"shared/x/**"}}),
+				subsystem("d_a", []string{"shared/**"}, TargetDomain{ID: "d_left", Name: "X", Responsibility: "r", Paths: []string{"shared/x/**"}}),
+				subsystem("d_b", []string{"shared/**"}, TargetDomain{ID: "d_right", Name: "Y", Responsibility: "r", Paths: []string{"shared/x/**"}}),
 			}},
 			unwanted: []string{"重叠"},
 		},
 		{
-			name: "unplacedBudget 为负",
-			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, -1, TargetDomain{ID: "d_ok", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}}),
-			}},
-			want: []string{"unplacedBudget", "d_a"},
-		},
-		{
 			name: "合法的精确路径与前缀路径全部放行",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 3,
+				subsystem("d_a", []string{"a/**"},
 					TargetDomain{ID: "d_pre", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
 					TargetDomain{ID: "d_exact", Name: "Y", Responsibility: "r", Paths: []string{"a/y.go", "a/z/**"}}),
 			}},
@@ -152,7 +144,7 @@ func TestValidateTargetDomainRules(t *testing.T) {
 		{
 			name: "缺失 domains 的子系统不被结构门当错误",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0),
+				subsystem("d_a", []string{"a/**"}),
 			}},
 		},
 		{
@@ -161,7 +153,7 @@ func TestValidateTargetDomainRules(t *testing.T) {
 			// 对这两种 child 走的是不同分支，只测一种会漏掉另一条。
 			name: "兄弟目录不算被父子系统覆盖",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/x/**"}, 0,
+				subsystem("d_a", []string{"a/x/**"},
 					TargetDomain{ID: "d_sib_file", Name: "X", Responsibility: "r", Paths: []string{"a/xy/z.go"}},
 					TargetDomain{ID: "d_sib_dir", Name: "Y", Responsibility: "r", Paths: []string{"a/xyz/**"}}),
 			}},
@@ -173,7 +165,7 @@ func TestValidateTargetDomainRules(t *testing.T) {
 			// 顺序都要放，因为祖先关系是双向判的，只测一种会漏掉反方向那一条。
 			name: "兄弟目录的两条前缀规则不重叠",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0,
+				subsystem("d_a", []string{"a/**"},
 					TargetDomain{ID: "d_x", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
 					TargetDomain{ID: "d_xy", Name: "Y", Responsibility: "r", Paths: []string{"a/xy/**"}},
 					TargetDomain{ID: "d_pq", Name: "PQ", Responsibility: "r", Paths: []string{"a/pq/**"}},
@@ -184,7 +176,7 @@ func TestValidateTargetDomainRules(t *testing.T) {
 		{
 			name: "祖先目录与后代目录的前缀规则重叠",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0,
+				subsystem("d_a", []string{"a/**"},
 					TargetDomain{ID: "d_outer", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
 					TargetDomain{ID: "d_inner", Name: "Y", Responsibility: "r", Paths: []string{"a/x/y/**"}}),
 			}},
@@ -195,7 +187,7 @@ func TestValidateTargetDomainRules(t *testing.T) {
 			// 是因为重叠判定对「左精确右前缀」和「左前缀右精确」走的是不同分支。
 			name: "精确路径与同名目录的前缀规则不重叠",
 			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
-				subsystem("d_a", []string{"a/**"}, 0,
+				subsystem("d_a", []string{"a/**"},
 					TargetDomain{ID: "d_dir_first", Name: "A", Responsibility: "r", Paths: []string{"a/x/**"}},
 					TargetDomain{ID: "d_file_second", Name: "B", Responsibility: "r", Paths: []string{"a/x.go"}},
 					TargetDomain{ID: "d_file_first", Name: "C", Responsibility: "r", Paths: []string{"a/y.go"}},
@@ -232,12 +224,10 @@ func TestValidateTargetDomainRules(t *testing.T) {
 	}
 }
 
-// TestTargetDomainJSONPresenceAndZeroRoundTrip 把 wire 层的「显式零值 / 显式空数组 /
-// 字段缺失」三种形态与 Go 侧回读语义分开锁：wire presence 用 RawMessage 判键在不在，
-// Go 侧用 nil slice 判显式 [] 与缺失的差别，编码回去两者都必须被 omitempty 省掉。
-func TestTargetDomainJSONPresenceAndZeroRoundTrip(t *testing.T) {
+// TestTargetDomainJSONPresenceAndRoundTrip 锁住 domains 的显式空数组与字段缺失形态。
+func TestTargetDomainJSONPresenceAndRoundTrip(t *testing.T) {
 	wire := []byte(`{"meta":{"version":2,"project":"p"},"subsystems":[` +
-		`{"id":"d_zero","name":"Zero","type":"logic","paths":["a/**"],"unplacedBudget":0,"unplacedBudgetNote":"","domains":[]},` +
+		`{"id":"d_zero","name":"Zero","type":"logic","paths":["a/**"],"domains":[]},` +
 		`{"id":"d_absent","name":"Absent","type":"logic","paths":["b/**"]}]}`)
 
 	var shape struct {
@@ -249,7 +239,7 @@ func TestTargetDomainJSONPresenceAndZeroRoundTrip(t *testing.T) {
 	if len(shape.Subsystems) != 2 {
 		t.Fatalf("wire 形状应有两个子系统: %+v", shape.Subsystems)
 	}
-	for _, key := range []string{"unplacedBudget", "unplacedBudgetNote", "domains"} {
+	for _, key := range []string{"domains"} {
 		if _, ok := shape.Subsystems[0][key]; !ok {
 			t.Errorf("输入 wire 里显式写了 %s，presence 断言必须看得到", key)
 		}
@@ -266,9 +256,6 @@ func TestTargetDomainJSONPresenceAndZeroRoundTrip(t *testing.T) {
 		t.Fatalf("回读 target: %v", err)
 	}
 	zero, absent := decoded.Subsystems[0], decoded.Subsystems[1]
-	if zero.UnplacedBudget != 0 || zero.UnplacedBudgetNote != "" || absent.UnplacedBudget != 0 || absent.UnplacedBudgetNote != "" {
-		t.Fatalf("显式零值与缺失在 Go 侧都应是零值: %+v / %+v", zero, absent)
-	}
 	if zero.Domains == nil || len(zero.Domains) != 0 {
 		t.Fatalf("显式 domains:[] 应回读成非 nil 空 slice: %#v", zero.Domains)
 	}
@@ -285,7 +272,7 @@ func TestTargetDomainJSONPresenceAndZeroRoundTrip(t *testing.T) {
 		t.Fatalf("解析回写形状: %v", err)
 	}
 	for i, subsystem := range shape.Subsystems {
-		for _, key := range []string{"unplacedBudget", "unplacedBudgetNote", "domains"} {
+		for _, key := range []string{"domains"} {
 			if _, ok := subsystem[key]; ok {
 				t.Errorf("omitempty 应省略子系统 %d 的零值键 %s: %s", i, key, raw)
 			}

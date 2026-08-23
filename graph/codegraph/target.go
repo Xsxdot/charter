@@ -30,14 +30,12 @@ type TargetDomain struct {
 
 // TargetSubsystem 一个声明的子系统。Type 二选一：logic / boundary（分区协议的类型标注）。
 type TargetSubsystem struct {
-	ID                 string         `json:"id"`
-	Name               string         `json:"name"`
-	Type               string         `json:"type"`
-	Paths              []string       `json:"paths"`
-	Note               string         `json:"note,omitempty"`
-	UnplacedBudget     int            `json:"unplacedBudget,omitempty"`
-	UnplacedBudgetNote string         `json:"unplacedBudgetNote,omitempty"`
-	Domains            []TargetDomain `json:"domains,omitempty"`
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Paths   []string       `json:"paths"`
+	Note    string         `json:"note,omitempty"`
+	Domains []TargetDomain `json:"domains,omitempty"`
 }
 
 // Assignment 例外文件的显式归属，优先级高于 paths 规则。
@@ -163,7 +161,7 @@ func targetPathsOverlap(left, right string) bool {
 
 // ValidateTarget 校验目标图内部一致性，返回问题清单（空 = 合法）。
 // 目标领域部分只做结构不变式（契约 §3-2）：id 全局唯一、responsibility 非空、
-// 路径语法合法且被父子系统覆盖、同级不重叠、预算非负。它不读 baseline、不读视图、
+// 路径语法合法且被父子系统覆盖、同级不重叠。它不读 baseline、不读视图、
 // 不碰文件系统——「目标域在当前代码里有没有命中」是 Check 的事，不是结构门的事。
 func ValidateTarget(t *Target) []string {
 	var issues []string
@@ -186,9 +184,6 @@ func ValidateTarget(t *Target) []string {
 				continue
 			}
 			subsystemRules = append(subsystemRules, p)
-		}
-		if d.UnplacedBudget < 0 {
-			issues = append(issues, fmt.Sprintf("子系统 %s 的 unplacedBudget 不能为负", d.ID))
 		}
 		// legalRules[i] 是第 i 个目标领域里语法合法的规则；重叠检查只在这些规则
 		// 之间做——对语法已经非法的规则再报一次「覆盖/重叠」是噪声，只会让人去修

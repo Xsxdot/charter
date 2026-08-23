@@ -50,22 +50,13 @@ const (
 	oversizedPackageFiles  = 40
 )
 
-// ratchetBudget 记一个基准子系统的未落位预算。declared 与「值为 0」必须分开：
-// 基准里根本没声明目标领域，和基准声明了目标领域但预算写 0，措辞不同——前者是
-// 「本轮新引入目标领域」，后者是「已有的零容忍被放宽」。
-type ratchetBudget struct {
-	value    int
-	declared bool
-}
-
-// CheckBudgetRatchet 比对当前与基准 target 的两类预算，上涨即产出 finding：
-// 契约的 legacyBudget 按 from->to 比，声明了目标领域的子系统按 unplacedBudget 比。
+// CheckBudgetRatchet 比对当前与基准 target 的契约 legacyBudget，上涨即产出 finding。
 //
 // 参数：cur 为当前 target，base 为基准 target（nil 表示取不到基准，返回 nil）。
-// 返回：按 cur.Contracts、cur.Subsystems 的声明序排列的 budget-raised findings。
+// 返回：按 cur.Contracts 的声明序排列的 budget-raised findings。
 //
-// 注意：基准缺席的契约/目标领域预算一律按 0 参与比较，因为新引入时携带的存量债同样
-// 需要留下理由（契约 §3-3）。本函数只探测上涨，**不判档**——档位取决于当前 target
+// 注意：基准缺席的契约预算一律按 0 参与比较，因为新引入时携带的存量债同样需要留下
+// 理由（契约 §3-3）。本函数只探测上涨，**不判档**——档位取决于当前 target
 // 的 note，那是装配期的事；探测器保持无 I/O 纯函数，也不写 Report。分档见
 // ApplyBudgetRatchet。
 func CheckBudgetRatchet(cur, base *Target) []Finding {
@@ -75,12 +66,6 @@ func CheckBudgetRatchet(cur, base *Target) []Finding {
 	baseContracts := make(map[string]int, len(base.Contracts))
 	for _, contract := range base.Contracts {
 		baseContracts[contract.From+"->"+contract.To] = contract.LegacyBudget
-	}
-	baseSubsystems := make(map[string]ratchetBudget, len(base.Subsystems))
-	for _, subsystem := range base.Subsystems {
-		if len(subsystem.Domains) > 0 {
-			baseSubsystems[subsystem.ID] = ratchetBudget{value: subsystem.UnplacedBudget, declared: true}
-		}
 	}
 	var findings []Finding
 	for _, contract := range cur.Contracts {
@@ -98,23 +83,6 @@ func CheckBudgetRatchet(cur, base *Target) []Finding {
 		}
 		findings = append(findings, Finding{Kind: KindBudgetRaised, From: contract.From, To: contract.To, Detail: detail})
 	}
-	for _, subsystem := range cur.Subsystems {
-		if len(subsystem.Domains) == 0 {
-			continue
-		}
-		old, exists := baseSubsystems[subsystem.ID]
-		if !exists {
-			old = ratchetBudget{value: 0}
-		}
-		if subsystem.UnplacedBudget <= old.value {
-			continue
-		}
-		detail := fmt.Sprintf("子系统 %s 新增目标领域携带未落位预算 %d（基准中未声明目标领域，按预算 0 处理）", subsystem.ID, subsystem.UnplacedBudget)
-		if old.declared {
-			detail = fmt.Sprintf("子系统 %s 未落位预算 %d→%d 上涨", subsystem.ID, old.value, subsystem.UnplacedBudget)
-		}
-		findings = append(findings, Finding{Kind: KindBudgetRaised, From: subsystem.ID, Detail: detail})
-	}
 	return findings
 }
 
@@ -123,8 +91,7 @@ func CheckBudgetRatchet(cur, base *Target) []Finding {
 // 参数：rep 为 Check 已产出的报告（原地修改）；cur 为当前 target；base 为基准
 // target（nil 时探测器返回空，本函数只剩一次排序）。
 //
-// 分档口径：理由一律取**当前** target 的 note——子系统预算取 UnplacedBudgetNote，
-// 契约预算取 LegacyBudgetNote；TrimSpace 后非空才降为 warn，否则进 fails。取当前而
+// 分档口径：理由一律取**当前** target 的 LegacyBudgetNote；TrimSpace 后非空才降为 warn，否则进 fails。取当前而
 // 不取基准，是因为「这次为什么放宽」只有当前这份 target 能回答。
 //
 // 注意：只有 budget-raised 会被 note 降档；其他 fail 一律留在 Fails。
@@ -144,18 +111,8 @@ func ApplyBudgetRatchet(rep *Report, cur, base *Target) {
 	sortFindings(rep)
 }
 
-// budgetRatchetNote 找到一条 budget-raised 对应的当前 note。
-// To 为空是目标领域预算上涨的形状标记（契约 §4 冻结 30），据此分流到子系统；
-// 否则按 from/to 找契约。找不到就返回空串 = 没有理由。
+// budgetRatchetNote 找到一条 budget-raised 对应的当前契约 note。找不到就返回空串 = 没有理由。
 func budgetRatchetNote(cur *Target, finding Finding) string {
-	if finding.To == "" {
-		for _, subsystem := range cur.Subsystems {
-			if subsystem.ID == finding.From {
-				return subsystem.UnplacedBudgetNote
-			}
-		}
-		return ""
-	}
 	for _, contract := range cur.Contracts {
 		if contract.From == finding.From && contract.To == finding.To {
 			return contract.LegacyBudgetNote
