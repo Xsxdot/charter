@@ -2,17 +2,50 @@ package codegraph
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
 
 // mkView 拼一个最小视图：nodes 映射 id→(container,file)，edges/impls 是边表。
 
-// checkNoDecls 是「不带领域声明」的调用快捷方式。本刀之前的全部用例都不涉及
-// decls，用它保持这些用例的调用形态不变——20 处 ", nil" 只会把真实 diff 淹掉。
-// 它同时正是契约 §4-12「decls 为 nil 时输出与入参引入前逐字节相同」的执行面：
-// 这批存量用例全绿即该条成立。带 decls 的用例一律直呼 Check。
-func checkNoDecls(t *Target, v *View) *Report { return Check(t, nil, v, nil) }
+// checkNoDecls 是「不带领域声明」的调用快捷方式。Best 夹具由旧 target
+// 的子系统与视图容器机械转换而来，确保存量契约用例继续真正执行主判据；
+// 第二个参数显式传入 Best，避免把 nil 当成「关闭全部契约执法」（C1.8 §5-3）。
+func checkNoDecls(t *Target, v *View) *Report { return Check(t, bestFixtureForTarget(t, v), v, nil) }
+
+func bestFixtureForTarget(t *Target, v *View) *Best {
+	b := &Best{
+		Meta:       BestMeta{Version: 1, Project: "test"},
+		Domains:    map[string]BestDomain{},
+		Containers: map[string]string{},
+	}
+	for _, subsystem := range t.Subsystems {
+		b.Domains[subsystem.ID] = BestDomain{
+			Label:          subsystem.Name,
+			Responsibility: "fixture",
+			Type:           subsystem.Type,
+		}
+	}
+	nodeIDs := make([]string, 0, len(v.Nodes))
+	for id := range v.Nodes {
+		nodeIDs = append(nodeIDs, id)
+	}
+	sort.Strings(nodeIDs)
+	for containerID := range v.Containers {
+		for _, nodeID := range nodeIDs {
+			n := v.Nodes[nodeID]
+			if n.Status == "deleted" || n.Container != containerID {
+				continue
+			}
+			if subsystem := t.SubsystemOf(n.File); subsystem != "" {
+				b.Containers[containerID] = subsystem
+				break
+			}
+		}
+	}
+	return b
+}
 
 func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}
@@ -64,6 +97,24 @@ func TestCheckTable(t *testing.T) {
 			assertKinds(t, "fail", rep.Fails, c.wantFailKinds)
 			assertKinds(t, "warn", rep.Warns, c.wantWarnKinds)
 		})
+	}
+}
+
+func TestCheckNilBestSkipsContractEnforcement(t *testing.T) {
+	target := twoDomainTarget(nil, 0)
+	view := mkView(
+		map[string][2]string{
+			"a": {"a.Server", "a/server.go"},
+			"b": {"b.Server", "b/server.go"},
+		},
+		[][2]string{{"a", "b"}}, nil)
+	withBest := Check(target, bestFixtureForTarget(target, view), view, nil)
+	if !hasFinding(withBest.Fails, "over-budget") {
+		t.Fatalf("有 best 时应执行契约执法: %+v", withBest)
+	}
+	withoutBest := Check(target, nil, view, nil)
+	if len(withoutBest.Fails) != 0 || len(withoutBest.LegacyHits) != 0 {
+		t.Fatalf("best 缺失时应跳过全部契约执法: %+v", withoutBest)
 	}
 }
 

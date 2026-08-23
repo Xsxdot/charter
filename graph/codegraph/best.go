@@ -175,3 +175,17 @@ func (b *Best) DomainOfContainer(containerID string) string {
 	}
 	return b.Containers[containerID]
 }
+
+// bestSubsystemOfNode follows the only enforcement ownership chain:
+// node.Container → Best.Containers → Best.Domains.Parent → top-level domain.
+// Any missing link, deleted node, or nil best is graph-outside and returns "".
+func bestSubsystemOfNode(b *Best, v *View, nodeID string) string {
+	if b == nil || v == nil {
+		return ""
+	}
+	n, ok := v.Nodes[nodeID]
+	if !ok || n.Status == "deleted" {
+		return ""
+	}
+	return b.SubsystemOf(b.DomainOfContainer(n.Container))
+}

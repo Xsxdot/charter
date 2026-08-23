@@ -141,7 +141,7 @@ func TestCheckAnchorOwnership(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rep := Check(&Target{Meta: TargetMeta{Version: 2}}, nil, tc.view, tc.decls)
+			rep := Check(&Target{Meta: TargetMeta{Version: 2}}, &Best{}, tc.view, tc.decls)
 			got := anchorFindings(rep)
 			if len(got) != len(tc.wantKinds) {
 				t.Fatalf("期望 %d 条锚 finding，实际 %d 条: %+v", len(tc.wantKinds), len(got), got)
@@ -173,7 +173,7 @@ func TestCheckAnchorOwnership(t *testing.T) {
 // 契约 7、8：From/To 的用法。off-domain 要能一眼看出「谁声明的、实际落在哪」，
 // 这两个字段就是查看器与 CLI 做归因的唯一结构化入口，写错就只能靠人读 Detail。
 func TestCheckAnchorFindingFields(t *testing.T) {
-	rep := Check(&Target{Meta: TargetMeta{Version: 2}}, nil, stdAnchorView(),
+	rep := Check(&Target{Meta: TargetMeta{Version: 2}}, &Best{}, stdAnchorView(),
 		lifecycleDecl("d_task", "other/steal.go#Steal", "nowhere/x.go#Gone"))
 	got := anchorFindings(rep)
 	if len(got) != 2 {
@@ -286,7 +286,7 @@ func TestCheckAnchorFindingsParticipateInFinalSort(t *testing.T) {
 			ID: "d_svc", Type: "logic", Paths: []string{"svc/**"},
 		}},
 	}
-	rep := Check(tg, nil, v, lifecycleDecl("d_task", "svc/steal.go#Steal", ""))
+	rep := Check(tg, &Best{}, v, lifecycleDecl("d_task", "svc/steal.go#Steal", ""))
 
 	kinds := make([]string, 0, len(rep.Warns))
 	for _, w := range rep.Warns {

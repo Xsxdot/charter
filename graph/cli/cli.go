@@ -114,6 +114,15 @@ var graphValidateCmd = &cobra.Command{
 			return err
 		}
 		issues := codegraph.Validate(g)
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return err
+		}
+		if best != nil {
+			for _, issue := range codegraph.ValidateBest(best) {
+				issues = append(issues, "[best] "+issue)
+			}
+		}
 		decls, err := codegraph.LoadDomainDecls(graphRepo)
 		if err != nil {
 			return err
@@ -222,6 +231,15 @@ var graphCheckCmd = &cobra.Command{
 		if issues := codegraph.ValidateTarget(t); len(issues) > 0 {
 			return fmt.Errorf("目标图自身不合法: %v", issues)
 		}
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return fmt.Errorf("最优图不可用，check 拒绝执行: %w", err)
+		}
+		if best == nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "最优图判据已跳过：未找到 codegraph/best.json")
+		} else if issues := codegraph.ValidateBest(best); len(issues) > 0 {
+			return fmt.Errorf("最优图自身不合法: %v", issues)
+		}
 		v, _, err := graphLoadView()
 		if err != nil {
 			return err
@@ -233,7 +251,7 @@ var graphCheckCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rep := codegraph.Check(t, nil, v, decls)
+		rep := codegraph.Check(t, best, v, decls)
 		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
 		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {
@@ -499,10 +517,14 @@ var graphDomainsCmd = &cobra.Command{
 			return err
 		}
 		doms := codegraph.DomainTree(v)
-		if target, targetErr := codegraph.LoadTarget(graphRepo); targetErr == nil {
-			doms = codegraph.DomainTreeWithTarget(v, target)
+		best, bestErr := codegraph.LoadBest(graphRepo)
+		if bestErr != nil {
+			return bestErr
+		}
+		if best != nil {
+			doms = codegraph.DomainTreeWithBest(v, best)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "target.json 不可用，subsystems/crossSubsystem 已省略: %v\n", targetErr)
+			fmt.Fprintln(cmd.ErrOrStderr(), "best.json 不可用，subsystems/crossSubsystem 已省略：未找到 codegraph/best.json")
 		}
 		out := map[string]any{"view": v.Name, "domains": doms}
 		if doms == nil {

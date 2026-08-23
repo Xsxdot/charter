@@ -45,10 +45,7 @@ type Report struct {
 // **两个 nil 入参的后果不对称**：decls 为 nil 只关掉锚判据；b 为 nil 关掉的是
 // 主判据——归属无来源，四条 gap 判据与全部契约执法一并跳过。因此调用方在 b 为
 // nil 时必须显式喊出「判据已跳过」，静默等同伪绿（C1.8 契约 §3-1、§5-3）。
-//
-// TODO(C1.8): 本参数在 Ticket 0 阶段尚未接线，实现见 C1.8 契约 §4、§5-3。
 func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
-	_ = b
 	rep := &Report{Fails: []Finding{}, Warns: []Finding{}, LegacyHits: map[string]int{}}
 	assembly := make(map[string]bool, len(t.Assembly))
 	for _, f := range t.Assembly {
@@ -68,128 +65,130 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 			continue
 		}
 		allFiles[n.File] = true
-		d := t.SubsystemOf(n.File)
+		d := bestSubsystemOfNode(b, v, id)
 		nodeDomain[id] = d
 		if d == "" {
 			outside[n.File] = true
 		}
 	}
-	// call 边
-	liveDirections := map[string]bool{}
-	for i := range v.Edges {
-		e := v.Edges[i]
-		if e.Status == "deleted" {
-			continue
+	if b != nil {
+		// call 边
+		liveDirections := map[string]bool{}
+		for i := range v.Edges {
+			e := v.Edges[i]
+			if e.Status == "deleted" {
+				continue
+			}
+			from, to := nodeDomain[e.From], nodeDomain[e.To]
+			if from == "" || to == "" || from == to {
+				continue // 图外已单独 warn；域内不检查
+			}
+			// 组装点边虽豁免 new-direction 执法，仍证明声明方向已建成；R3 要求
+			// dead-contract 把它与普通 call 边一并计为活边。
+			liveDirections[from+"->"+to] = true
+			if callerNode, ok := v.Nodes[e.From]; ok && assembly[callerNode.File] {
+				continue // 组装点豁免（依赖注入的绑定边）
+			}
+			c := contracts[from+"->"+to]
+			if c == nil {
+				rep.Fails = append(rep.Fails, Finding{Kind: "new-direction", From: from, To: to,
+					Edge: &Edge{e.From, e.To}, Detail: fmt.Sprintf("跨子系统方向 %s→%s 无契约条目", from, to)})
+				continue
+			}
+			label := ""
+			if callee, ok := v.Nodes[e.To]; ok {
+				label = v.Containers[callee.Container].Label
+			}
+			if inList(c.Entries, label) {
+				continue
+			}
+			rep.LegacyHits[from+"->"+to]++
 		}
-		from, to := nodeDomain[e.From], nodeDomain[e.To]
-		if from == "" || to == "" || from == to {
-			continue // 图外已单独 warn；域内不检查
+		// implements 边：实现(from 侧域=to 契约方) → 接口(from 契约方)
+		for i := range v.Implements {
+			e := v.Implements[i]
+			if e.Status == "deleted" {
+				continue
+			}
+			implDom, ifaceDom := nodeDomain[e.From], nodeDomain[e.To]
+			if implDom == "" || ifaceDom == "" || implDom == ifaceDom {
+				continue
+			}
+			// implements 的方向是接口所在域 → 实现所在域；即使接口条目本身
+			// 另有 dead-interface 问题，这条边仍证明契约缝存在（契约 §7-R3）。
+			liveDirections[ifaceDom+"->"+implDom] = true
+			c := contracts[ifaceDom+"->"+implDom]
+			ifaceName := ""
+			if n, ok := v.Nodes[e.To]; ok {
+				ifaceName = n.Name
+			}
+			if c == nil || !inList(c.Interfaces, ifaceName) {
+				rep.Fails = append(rep.Fails, Finding{Kind: "off-interface", From: ifaceDom, To: implDom,
+					Edge:   &Edge{e.From, e.To},
+					Detail: fmt.Sprintf("跨子系统实现未声明: %s 实现了 %s 的 %s", implDom, ifaceDom, ifaceName)})
+			}
 		}
-		// 组装点边虽豁免 new-direction 执法，仍证明声明方向已建成；R3 要求
-		// dead-contract 把它与普通 call 边一并计为活边。
-		liveDirections[from+"->"+to] = true
-		if callerNode, ok := v.Nodes[e.From]; ok && assembly[callerNode.File] {
-			continue // 组装点豁免（依赖注入的绑定边）
-		}
-		c := contracts[from+"->"+to]
-		if c == nil {
-			rep.Fails = append(rep.Fails, Finding{Kind: "new-direction", From: from, To: to,
-				Edge: &Edge{e.From, e.To}, Detail: fmt.Sprintf("跨子系统方向 %s→%s 无契约条目", from, to)})
-			continue
-		}
-		label := ""
-		if callee, ok := v.Nodes[e.To]; ok {
-			label = v.Containers[callee.Container].Label
-		}
-		if inList(c.Entries, label) {
-			continue
-		}
-		rep.LegacyHits[from+"->"+to]++
-	}
-	// implements 边：实现(from 侧域=to 契约方) → 接口(from 契约方)
-	for i := range v.Implements {
-		e := v.Implements[i]
-		if e.Status == "deleted" {
-			continue
-		}
-		implDom, ifaceDom := nodeDomain[e.From], nodeDomain[e.To]
-		if implDom == "" || ifaceDom == "" || implDom == ifaceDom {
-			continue
-		}
-		// implements 的方向是接口所在域 → 实现所在域；即使接口条目本身
-		// 另有 dead-interface 问题，这条边仍证明契约缝存在（契约 §7-R3）。
-		liveDirections[ifaceDom+"->"+implDom] = true
-		c := contracts[ifaceDom+"->"+implDom]
-		ifaceName := ""
-		if n, ok := v.Nodes[e.To]; ok {
-			ifaceName = n.Name
-		}
-		if c == nil || !inList(c.Interfaces, ifaceName) {
-			rep.Fails = append(rep.Fails, Finding{Kind: "off-interface", From: ifaceDom, To: implDom,
-				Edge:   &Edge{e.From, e.To},
-				Detail: fmt.Sprintf("跨子系统实现未声明: %s 实现了 %s 的 %s", implDom, ifaceDom, ifaceName)})
-		}
-	}
-	// 漏建对账沿用既有 call/implements 的归域口径。入口要求 Label 容器至少有
-	// 一个非 deleted 节点落在 to 域，接口要求 Name 节点落在 from 域；这是 R2
-	// 对全局存在性收窄，避免「同名但跨域」造成对账通过、实际 check 仍违规。
-	for _, c := range t.Contracts {
-		direction := c.From + "→" + c.To
-		for _, entry := range c.Entries {
-			found := false
-			for containerID, container := range v.Containers {
-				if container.Label != entry {
-					continue
-				}
-				for _, n := range v.Nodes {
-					if n.Status == "deleted" || n.Container != containerID || t.SubsystemOf(n.File) != c.To {
+		// 漏建对账沿用既有 call/implements 的归域口径。入口要求 Label 容器至少有
+		// 一个非 deleted 节点落在 to 域，接口要求 Name 节点落在 from 域；这是 R2
+		// 对全局存在性收窄，避免「同名但跨域」造成对账通过、实际 check 仍违规。
+		for _, c := range t.Contracts {
+			direction := c.From + "→" + c.To
+			for _, entry := range c.Entries {
+				found := false
+				for containerID, container := range v.Containers {
+					if container.Label != entry {
 						continue
 					}
-					found = true
-					break
+					for nodeID, n := range v.Nodes {
+						if n.Status == "deleted" || n.Container != containerID || bestSubsystemOfNode(b, v, nodeID) != c.To {
+							continue
+						}
+						found = true
+						break
+					}
+					if found {
+						break
+					}
 				}
-				if found {
-					break
+				if !found {
+					rep.Fails = append(rep.Fails, Finding{
+						Kind: KindDeadEntry, From: c.From, To: c.To,
+						Detail: fmt.Sprintf("契约 %s 声明的入口 %q 在 %s 中不存在（无同 Label 容器或其非 deleted 节点均不属 %s；期望在 %s 找到）", direction, entry, c.To, c.To, c.To),
+					})
 				}
 			}
-			if !found {
+			for _, iface := range c.Interfaces {
+				found := false
+				for nodeID, n := range v.Nodes {
+					if n.Status != "deleted" && n.Name == iface && bestSubsystemOfNode(b, v, nodeID) == c.From {
+						found = true
+						break
+					}
+				}
+				if !found {
+					rep.Fails = append(rep.Fails, Finding{
+						Kind: KindDeadInterface, From: c.From, To: c.To,
+						Detail: fmt.Sprintf("契约 %s 声明的接口 %q 在 %s 中不存在（无同名非 deleted 节点；期望在 %s 找到）", direction, iface, c.From, c.From),
+					})
+				}
+			}
+			if !liveDirections[c.From+"->"+c.To] {
 				rep.Fails = append(rep.Fails, Finding{
-					Kind: KindDeadEntry, From: c.From, To: c.To,
-					Detail: fmt.Sprintf("契约 %s 声明的入口 %q 在 %s 中不存在（无同 Label 容器或其非 deleted 节点均不属 %s；期望在 %s 找到）", direction, entry, c.To, c.To, c.To),
+					Kind: KindDeadContract, From: c.From, To: c.To,
+					Detail: fmt.Sprintf("契约 %s 声明的方向没有活跃 call、implements 或组装点豁免边（期望在该方向看到至少一条跨子系统边）", direction),
 				})
 			}
 		}
-		for _, iface := range c.Interfaces {
-			found := false
-			for _, n := range v.Nodes {
-				if n.Status != "deleted" && n.Name == iface && t.SubsystemOf(n.File) == c.From {
-					found = true
-					break
-				}
+		// 预算结算
+		for key, hits := range rep.LegacyHits {
+			c := contracts[key]
+			if hits > c.LegacyBudget {
+				rep.Fails = append(rep.Fails, Finding{Kind: "over-budget", From: c.From, To: c.To,
+					Detail: fmt.Sprintf("%s 直调 %d 条超出预算 %d", key, hits, c.LegacyBudget)})
+			} else {
+				rep.Warns = append(rep.Warns, Finding{Kind: "legacy", From: c.From, To: c.To,
+					Detail: fmt.Sprintf("%s 预算内直调 %d/%d（可收窄后调低预算）", key, hits, c.LegacyBudget)})
 			}
-			if !found {
-				rep.Fails = append(rep.Fails, Finding{
-					Kind: KindDeadInterface, From: c.From, To: c.To,
-					Detail: fmt.Sprintf("契约 %s 声明的接口 %q 在 %s 中不存在（无同名非 deleted 节点；期望在 %s 找到）", direction, iface, c.From, c.From),
-				})
-			}
-		}
-		if !liveDirections[c.From+"->"+c.To] {
-			rep.Fails = append(rep.Fails, Finding{
-				Kind: KindDeadContract, From: c.From, To: c.To,
-				Detail: fmt.Sprintf("契约 %s 声明的方向没有活跃 call、implements 或组装点豁免边（期望在该方向看到至少一条跨子系统边）", direction),
-			})
-		}
-	}
-	// 预算结算
-	for key, hits := range rep.LegacyHits {
-		c := contracts[key]
-		if hits > c.LegacyBudget {
-			rep.Fails = append(rep.Fails, Finding{Kind: "over-budget", From: c.From, To: c.To,
-				Detail: fmt.Sprintf("%s 直调 %d 条超出预算 %d", key, hits, c.LegacyBudget)})
-		} else {
-			rep.Warns = append(rep.Warns, Finding{Kind: "legacy", From: c.From, To: c.To,
-				Detail: fmt.Sprintf("%s 预算内直调 %d/%d（可收窄后调低预算）", key, hits, c.LegacyBudget)})
 		}
 	}
 	// 图外文件

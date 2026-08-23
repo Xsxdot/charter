@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -159,8 +160,8 @@ func TestGraphDomains(t *testing.T) {
 		t.Fatalf("嵌套子领域没出来: %s", out)
 	}
 	for _, d := range r.Domains {
-		if d.ID == "d_svc/store" && (!d.CrossSubsystem || len(d.Subsystems) != 2) {
-			t.Fatalf("跨子系统派生: %+v", d)
+		if d.ID == "d_svc/store" && (d.CrossSubsystem || !reflect.DeepEqual(d.Subsystems, []string{"d_svc"})) {
+			t.Fatalf("best 容器归属应提供单一子系统: %+v", d)
 		}
 	}
 }
@@ -179,28 +180,21 @@ func TestGraphValidateReportsDomainCount(t *testing.T) {
 	}
 }
 
-func TestGraphDomainsTargetIsSoftDependency(t *testing.T) {
-	for _, version := range []int{0, 1} {
-		repo := t.TempDir()
-		copyFixtureRepo(t, fixtureRepo, repo)
-		path := filepath.Join(repo, "codegraph", "target.json")
-		if version == 0 {
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-		} else if err := os.WriteFile(path, []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		stdout, stderr, err := runGraphSeparate(t, "domains", "--repo", repo)
-		if err != nil {
-			t.Fatalf("target version=%d 时 domains 应通过: %v stdout=%s stderr=%s", version, err, stdout, stderr)
-		}
-		if bytes.Contains([]byte(stdout), []byte(`"subsystems"`)) || bytes.Contains([]byte(stdout), []byte(`"crossSubsystem"`)) {
-			t.Fatalf("target version=%d 时派生字段应省略: %s", version, stdout)
-		}
-		if !strings.Contains(stderr, "subsystems") {
-			t.Fatalf("target version=%d 时 stderr 应提示字段省略: %s", version, stderr)
-		}
+func TestGraphDomainsBestIsSoftDependency(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best.json 缺失时 domains 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if bytes.Contains([]byte(stdout), []byte(`"subsystems"`)) || bytes.Contains([]byte(stdout), []byte(`"crossSubsystem"`)) {
+		t.Fatalf("best.json 缺失时派生字段应省略: %s", stdout)
+	}
+	if !strings.Contains(stderr, "best.json") {
+		t.Fatalf("stderr 应提示 best.json 字段省略: %s", stderr)
 	}
 }
 
@@ -235,6 +229,37 @@ func TestGraphCheckMissingTargetFails(t *testing.T) {
 	_, err := runGraph(t, "check", "--repo", t.TempDir())
 	if err == nil {
 		t.Fatal("无 target 的 check 必须失败")
+	}
+}
+
+func TestGraphCheckMissingBestSkipsWithNotice(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best.json 缺失时 check 应降级通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "best.json") || !strings.Contains(stderr, "跳过") {
+		t.Fatalf("stderr 必须显式说明最优图判据已跳过: %s", stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	if len(report.Fails) != 0 {
+		t.Fatalf("best 缺失时不得执行契约 fail: %+v", report)
+	}
+}
+
+func TestGraphCheckInvalidBestFails(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "best.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runGraph(t, "check", "--repo", repo)
+	if err == nil || !strings.Contains(err.Error(), "最优图不可用") {
+		t.Fatalf("best.json 解析失败时 check 必须拒绝: %v", err)
 	}
 }
 

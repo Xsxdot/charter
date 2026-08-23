@@ -73,19 +73,19 @@ func TestDomainTreeDerivesSubsystems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := LoadTarget("testdata/repo")
+	best, err := LoadBest("testdata/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	byID := map[string]DomainStat{}
-	for _, stat := range DomainTreeWithTarget(Merge(g, nil), target) {
+	for _, stat := range DomainTreeWithBest(Merge(g, nil), best) {
 		byID[stat.ID] = stat
 	}
 	if !reflect.DeepEqual(byID["d_cli"].Subsystems, []string{"d_cmd"}) || byID["d_cli"].CrossSubsystem {
 		t.Fatalf("单子系统领域派生: %+v", byID["d_cli"])
 	}
-	if !reflect.DeepEqual(byID["d_svc/store"].Subsystems, []string{"d_svc", "d_web"}) || !byID["d_svc/store"].CrossSubsystem {
-		t.Fatalf("跨子系统领域派生: %+v", byID["d_svc/store"])
+	if !reflect.DeepEqual(byID["d_svc/store"].Subsystems, []string{"d_svc"}) || byID["d_svc/store"].CrossSubsystem {
+		t.Fatalf("best 容器归属应提供单一子系统: %+v", byID["d_svc/store"])
 	}
 	raw, err := json.Marshal(byID["d_cli"])
 	if err != nil {

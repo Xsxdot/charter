@@ -32,14 +32,14 @@ type DomainStat struct {
 	Interfaces     []string `json:"interfaces"`
 	Subsystems     []string `json:"subsystems,omitempty"`
 	CrossSubsystem bool     `json:"crossSubsystem,omitempty"`
-	targetDerived  bool
+	bestDerived    bool
 }
 
-// MarshalJSON 只在成功加载 target 时输出派生字段；target 缺失或 v1 时保持旧 wire 形状。
+// MarshalJSON 只在成功加载 best 时输出派生字段；best 缺失时保持旧 wire 形状。
 func (s DomainStat) MarshalJSON() ([]byte, error) {
 	type plain DomainStat
 	raw, err := json.Marshal(plain(s))
-	if err != nil || !s.targetDerived {
+	if err != nil || !s.bestDerived {
 		return raw, err
 	}
 	var fields map[string]json.RawMessage
@@ -70,12 +70,12 @@ func DomainTree(v *View) []DomainStat {
 	return domainTree(v, nil)
 }
 
-// DomainTreeWithTarget 在 DomainTree 的基础上按成员节点文件派生所属子系统。
-func DomainTreeWithTarget(v *View, target *Target) []DomainStat {
-	return domainTree(v, target)
+// DomainTreeWithBest 在 DomainTree 的基础上按 best 容器归属派生所属子系统。
+func DomainTreeWithBest(v *View, best *Best) []DomainStat {
+	return domainTree(v, best)
 }
 
-func domainTree(v *View, target *Target) []DomainStat {
+func domainTree(v *View, best *Best) []DomainStat {
 	if len(v.Domains) == 0 {
 		return nil
 	}
@@ -116,12 +116,12 @@ func domainTree(v *View, target *Target) []DomainStat {
 			s.Funcs++
 		}
 	}
-	if target != nil {
+	if best != nil {
 		subsystems := make(map[string]map[string]bool, len(stats))
 		for id := range stats {
 			subsystems[id] = map[string]bool{}
 		}
-		for _, n := range v.Nodes {
+		for nodeID, n := range v.Nodes {
 			if n.Status == "deleted" {
 				continue
 			}
@@ -130,13 +130,13 @@ func domainTree(v *View, target *Target) []DomainStat {
 			if !ok {
 				continue
 			}
-			if subsystem := target.SubsystemOf(n.File); subsystem != "" {
+			if subsystem := bestSubsystemOfNode(best, v, nodeID); subsystem != "" {
 				subsystems[id][subsystem] = true
 			}
-			stat.targetDerived = true
+			stat.bestDerived = true
 		}
 		for id, stat := range stats {
-			stat.targetDerived = true
+			stat.bestDerived = true
 			for subsystem := range subsystems[id] {
 				stat.Subsystems = append(stat.Subsystems, subsystem)
 			}
