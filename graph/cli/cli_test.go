@@ -856,19 +856,28 @@ func TestGraphMigrate(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "codegraph"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "codegraph", "target.json"), []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "target.json"), []byte(`{"meta":{"version":1,"project":"fixture"},"domains":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runGraph(t, "migrate", "--repo", repo)
-	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) {
-		t.Fatalf("migrate 输出: err=%v out=%s", err, out)
+	out, stderr, err := runGraphSeparate(t, "migrate", "--repo", repo)
+	if err != nil || !bytes.Contains([]byte(out), []byte(`"to": 2`)) {
+		t.Fatalf("v1→v2 migrate 输出: err=%v stdout=%s stderr=%s", err, out, stderr)
 	}
-	raw, readErr := os.ReadFile(filepath.Join(repo, "codegraph", "target.json"))
-	if readErr != nil {
-		t.Fatal(readErr)
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "baseline.json"), []byte(`{"meta":{"project":"fixture"},"containers":{},"nodes":{},"edges":[]}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !bytes.Contains(raw, []byte(`"version": 2`)) {
-		t.Fatalf("T7 的 v1→v2 过渡迁移应写出 v2 target: %s", raw)
+	out, stderr, err = runGraphSeparate(t, "migrate", "--repo", repo)
+	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) || !bytes.Contains([]byte(out), []byte(`"to": 3`)) {
+		t.Fatalf("v2→v3 migrate 输出: err=%v stdout=%s stderr=%s", err, out, stderr)
+	}
+	if !strings.Contains(stderr, "机械翻译") || !strings.Contains(stderr, "不是最优结构") {
+		t.Fatalf("migrate stderr 应有结构提示: %s", stderr)
+	}
+	if _, err := codegraph.LoadTarget(repo); err != nil {
+		t.Fatalf("migrate 后 target 应可加载: %v", err)
+	}
+	if _, err := codegraph.LoadBest(repo); err != nil {
+		t.Fatalf("migrate 后 best 应可加载: %v", err)
 	}
 }
 

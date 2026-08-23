@@ -206,12 +206,15 @@ var graphValidateCmd = &cobra.Command{
 
 var graphMigrateCmd = &cobra.Command{
 	Use:   "migrate",
-	Short: "将 target.json 从 v1 机械迁移到 v2",
+	Short: "将 v2 target.json 与 baseline.json 机械迁移到 v3 与 best.json",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
 		result, err := codegraph.MigrateTarget(graphRepo)
 		if err != nil {
 			return err
+		}
+		for _, note := range result.Notes {
+			fmt.Fprintln(cmd.ErrOrStderr(), note)
 		}
 		return graphPrintJSON(cmd, result)
 	},
