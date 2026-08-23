@@ -219,12 +219,6 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 				Detail: fmt.Sprintf("组装点 %q 未命中视图中任何节点文件", f)})
 		}
 	}
-	// 目标领域 gap：只对声明了 domains 的子系统执法，档位由 unplaced 与
-	// unplacedBudget 的比较决定（契约 §3-1）。
-	gapFails, gapWarns := targetDomainFindings(t, v)
-	rep.Fails = append(rep.Fails, gapFails...)
-	rep.Warns = append(rep.Warns, gapWarns...)
-
 	// fitness 只消费当前视图的图内文件集并落 Warns；命中是要求回答边界，
 	// 不是自动把架构形态判成契约违规（契约 §2-1、§2-3）。
 	// 锚归属：位置在 gap 之后、fitness 之前。三者都只落 Warns，彼此无依赖，

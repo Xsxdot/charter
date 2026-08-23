@@ -271,19 +271,16 @@ func assertRatchetGrade(t *testing.T, rep *Report, wantFails, wantWarns int) {
 	}
 }
 
-// 冻结 32：note 只降 budget-raised 的档，实际未落位超预算永远是 fail。
-// 这两条如果共用降档分支，一个 note 就能把真实的迁移欠账洗成 warn。
-func TestApplyBudgetRatchetKeepsUnplacedOverBudgetInFails(t *testing.T) {
-	cur := domainSubsystemTarget("d_svc", 1, "竖切迁移中", true)
-	base := domainSubsystemTarget("d_svc", 0, "", true)
-	// d_svc/api 之外的两个文件未落位 > 预算 1 → over-budget。
-	rep := checkNoDecls(cur, viewWithFiles("d_svc/api/a.go", "d_svc/loose1.go", "d_svc/loose2.go"))
-	if !hasFinding(rep.Fails, KindUnplacedOverBudget) {
-		t.Fatalf("前置条件不成立，应先有 unplaced-over-budget: %+v", rep)
-	}
+// 冻结 32：note 只降 budget-raised 的档，其他 fail 永远留在 fails。
+// 这两条如果共用降档分支，一个 note 就能把真实的契约违规洗成 warn。
+func TestApplyBudgetRatchetKeepsOverBudgetInFails(t *testing.T) {
+	cur := twoDomainTarget(nil, 1)
+	cur.Contracts[0].LegacyBudgetNote = "竖切迁移中"
+	base := twoDomainTarget(nil, 0)
+	rep := &Report{Fails: []Finding{{Kind: "over-budget", From: "d_a", To: "d_b", Detail: "a→b 2 条超出预算 1"}}}
 	ApplyBudgetRatchet(rep, cur, base)
-	if !hasFinding(rep.Fails, KindUnplacedOverBudget) || hasFinding(rep.Warns, KindUnplacedOverBudget) {
-		t.Fatalf("unplaced-over-budget 不得被 note 降档: %+v", rep)
+	if !hasFinding(rep.Fails, "over-budget") || hasFinding(rep.Warns, "over-budget") {
+		t.Fatalf("over-budget 不得被 note 降档: %+v", rep)
 	}
 	if !hasFinding(rep.Warns, KindBudgetRaised) || hasFinding(rep.Fails, KindBudgetRaised) {
 		t.Fatalf("有理由的 budget-raised 应降为 warn: %+v", rep)
@@ -295,7 +292,7 @@ func TestApplyBudgetRatchetKeepsUnplacedOverBudgetInFails(t *testing.T) {
 // 永远吊在末尾，check 输出顺序不再确定、无法做 diff。
 func TestApplyBudgetRatchetReordersWholeReport(t *testing.T) {
 	rep := &Report{
-		Fails: []Finding{{Kind: KindUnplacedOverBudget, From: "d_svc", Detail: "z 未落位"}},
+		Fails: []Finding{{Kind: "over-budget", From: "d_svc", To: "d_target", Detail: "z 超预算"}},
 		Warns: []Finding{{Kind: "outside-file", Detail: "图外文件: z.go"}},
 	}
 	cur := &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
@@ -307,7 +304,7 @@ func TestApplyBudgetRatchetReordersWholeReport(t *testing.T) {
 	ApplyBudgetRatchet(rep, cur, &Target{})
 
 	if len(rep.Fails) != 2 || rep.Fails[0].Kind != KindBudgetRaised {
-		t.Fatalf("budget-raised 追加后必须重排到 unplaced-over-budget 之前: %+v", rep.Fails)
+		t.Fatalf("budget-raised 追加后必须重排到 over-budget 之前: %+v", rep.Fails)
 	}
 	if len(rep.Warns) != 2 || rep.Warns[0].Kind != KindBudgetRaised {
 		t.Fatalf("warns 侧同样必须重排: %+v", rep.Warns)

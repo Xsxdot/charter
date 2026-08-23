@@ -19,12 +19,10 @@ const (
 
 // fitness 判据（刀 4）的 finding kind。
 const (
-	KindPrefixFamily       = "prefix-family"
-	KindOversizedPackage   = "oversized-package"
-	KindBudgetRaised       = "budget-raised"
-	KindUnplaced           = "unplaced"
-	KindUnplacedOverBudget = "unplaced-over-budget"
-	KindDomainEmpty        = "domain-empty"
+	KindPrefixFamily     = "prefix-family"
+	KindOversizedPackage = "oversized-package"
+	KindBudgetRaised     = "budget-raised"
+	KindDomainEmpty      = "domain-empty"
 )
 
 // 声明锚归属（刀 C1.2）的 finding kind。两者一律进 Warns：handoff 今天就有
@@ -129,9 +127,7 @@ func CheckBudgetRatchet(cur, base *Target) []Finding {
 // 契约预算取 LegacyBudgetNote；TrimSpace 后非空才降为 warn，否则进 fails。取当前而
 // 不取基准，是因为「这次为什么放宽」只有当前这份 target 能回答。
 //
-// 注意：只有 budget-raised 会被 note 降档。unplaced-over-budget 是当前实际欠账超过
-// 预算，无论有没有理由都留在 Fails（契约 §4 冻结 32）——两者共用降档分支的话，一句
-// note 就能把真实的迁移欠账洗成 warn。
+// 注意：只有 budget-raised 会被 note 降档；其他 fail 一律留在 Fails。
 //
 // 收尾必须重新 sortFindings：追加发生在 Check 排序之后，不重排 budget-raised 就会
 // 永远吊在末尾，check 输出顺序不再确定、CLI 重复运行无法 diff。

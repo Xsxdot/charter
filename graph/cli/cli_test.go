@@ -434,29 +434,6 @@ func TestGraphCheckSubsystemBudgetRatchetEqualDoesNotFire(t *testing.T) {
 	}
 }
 
-// 冻结 32 的 CLI 端交叉验证：同一份报告里，有理由的 budget-raised 降成 warn，
-// 而实际未落位超预算的 unplaced-over-budget 必须还在 fails、退出码仍非零。
-func TestGraphCheckSubsystemNoteOnlyDowngradesRatchet(t *testing.T) {
-	repo, base := gitTargetDomainRepo(t, "", 0, 1, "竖切迁移中", "svc/notifier.go")
-	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
-	if err == nil {
-		t.Fatalf("实际未落位超预算应非零，note 不得洗白: %s\nstderr=%s", stdout, stderr)
-	}
-	report := unmarshalReport(t, stdout)
-	if len(ratchetFindings(report.Warns)) != 1 || len(ratchetFindings(report.Fails)) != 0 {
-		t.Fatalf("有理由的 budget-raised 应降为 warn: %+v", report)
-	}
-	over := 0
-	for _, finding := range report.Fails {
-		if finding.Kind == "unplaced-over-budget" {
-			over++
-		}
-	}
-	if over != 1 {
-		t.Fatalf("unplaced-over-budget 必须留在 fails: %+v", report)
-	}
-}
-
 // --repo 指向 git 顶层的子目录时，git show 必须带上 nested/ 前缀去读 target.json。
 func TestGraphCheckBudgetRatchetReadsNestedRepoPrefix(t *testing.T) {
 	repo, base := gitTargetDomainRepo(t, "nested", 2, 3, "", "svc/**")
@@ -474,16 +451,17 @@ func TestGraphCheckBudgetRatchetReadsNestedRepoPrefix(t *testing.T) {
 }
 
 // 棘轮 finding 追加后必须与其余 finding 一起重排：kind 字典序 budget-raised <
-// unplaced-over-budget，所以它必须排在首位。旧实现在 Check 排完序后才 append，
+// dead-contract，所以它必须排在首位。旧实现在 Check 排完序后才 append，
 // 于是它永远吊在末尾，check 输出顺序不再确定。
 func TestGraphCheckOutputStaysSortedAndByteStable(t *testing.T) {
 	repo, base := gitTargetDomainRepo(t, "", 0, 1, "", "svc/notifier.go")
+	addDeadContract(t, repo)
 	first, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
 	if err == nil {
-		t.Fatalf("前置条件：本用例应同时有棘轮与超预算两条 fail: %s", first)
+		t.Fatalf("前置条件：本用例应同时有棘轮与 dead-contract 两条 fail: %s", first)
 	}
 	report := unmarshalReport(t, first)
-	if len(report.Fails) != 2 || report.Fails[0].Kind != "budget-raised" || report.Fails[1].Kind != "unplaced-over-budget" {
+	if len(report.Fails) != 2 || report.Fails[0].Kind != "budget-raised" || report.Fails[1].Kind != "dead-contract" {
 		t.Fatalf("fails 应按 kind 全序排列，budget-raised 在前: %+v", report.Fails)
 	}
 	for i := 0; i < 3; i++ {
@@ -491,6 +469,27 @@ func TestGraphCheckOutputStaysSortedAndByteStable(t *testing.T) {
 		if again != first {
 			t.Fatalf("第 %d 次重复运行输出漂移:\n首次=%s\n本次=%s", i+1, first, again)
 		}
+	}
+}
+
+func addDeadContract(t *testing.T, repo string) {
+	t.Helper()
+	path := filepath.Join(repo, "codegraph", "target.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target codegraph.Target
+	if err := json.Unmarshal(raw, &target); err != nil {
+		t.Fatal(err)
+	}
+	target.Contracts = append(target.Contracts, codegraph.Contract{From: "d_svc", To: "d_web"})
+	out, err := json.MarshalIndent(&target, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -273,17 +273,17 @@ func TestAnchorRefsFollowDeclaredOrderWithinOneDecl(t *testing.T) {
 // 审计发现这条零守卫：把 anchorOwnershipFindings 的 append 挪到 sortFindings 之后，
 // 全量仍绿。原因是 committed 的锚用例产出的 warns **只有锚这一种 kind**，混排顺序
 // 从未被观测过。这里刻意造出两种 kind 共存的局面：anchor-off-domain 字典序在
-// domain-empty 之前，若锚是排完才追加的，它会掉到末尾。
+// dead-assembly 之前，若锚是排完才追加的，它会掉到末尾。
 func TestCheckAnchorFindingsParticipateInFinalSort(t *testing.T) {
 	v := anchorView([]string{"d_task", "d_other"},
 		map[string]string{"k_task": "d_task", "k_other": "d_other"},
 		map[string][2]string{"Steal": {"k_other", "svc/steal.go"}})
-	// 目标图声明一个零命中的目标域 → 产出 domain-empty；锚落在别人家 → off-domain
+	// 目标图声明一个不存在的组装文件 → 产出 dead-assembly；锚落在别人家 → off-domain
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
+		Meta:     TargetMeta{Version: 2},
+		Assembly: []string{"svc/missing.go"},
 		Subsystems: []TargetSubsystem{{
-			ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}, UnplacedBudget: 99,
-			Domains: []TargetDomain{{ID: "dt_ghost", Name: "空域", Responsibility: "无成员", Paths: []string{"svc/ghost/**"}}},
+			ID: "d_svc", Type: "logic", Paths: []string{"svc/**"},
 		}},
 	}
 	rep := Check(tg, nil, v, lifecycleDecl("d_task", "svc/steal.go#Steal", ""))
