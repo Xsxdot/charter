@@ -14,7 +14,8 @@ import (
 
 // Finding 一条对照发现。Kind 取值：
 // fail 侧：new-direction（无契约方向）/ off-entry 归并进 legacy 或 over-budget /
-// off-interface（未声明的跨域实现）/ over-budget（legacy 超预算）
+// off-interface（未声明的跨域实现）/ over-budget（legacy 超预算）/ dead-entry /
+// dead-interface / dead-contract（契约声明的缝未在视图中建成）
 // warn 侧：legacy（预算内直调计数）/ outside-file（图外文件）/ dead-rule（规则未命中任何节点）/
 // dead-assembly（组装点条目未命中任何节点文件）
 type Finding struct {
@@ -64,6 +65,7 @@ func Check(t *Target, v *View) *Report {
 		}
 	}
 	// call 边
+	liveDirections := map[string]bool{}
 	for i := range v.Edges {
 		e := v.Edges[i]
 		if e.Status == "deleted" {
@@ -73,6 +75,9 @@ func Check(t *Target, v *View) *Report {
 		if from == "" || to == "" || from == to {
 			continue // 图外已单独 warn；域内不检查
 		}
+		// 组装点边虽豁免 new-direction 执法，仍证明声明方向已建成；R3 要求
+		// dead-contract 把它与普通 call 边一并计为活边。
+		liveDirections[from+"->"+to] = true
 		if callerNode, ok := v.Nodes[e.From]; ok && assembly[callerNode.File] {
 			continue // 组装点豁免（依赖注入的绑定边）
 		}
@@ -101,6 +106,9 @@ func Check(t *Target, v *View) *Report {
 		if implDom == "" || ifaceDom == "" || implDom == ifaceDom {
 			continue
 		}
+		// implements 的方向是接口所在域 → 实现所在域；即使接口条目本身
+		// 另有 dead-interface 问题，这条边仍证明契约缝存在（契约 §7-R3）。
+		liveDirections[ifaceDom+"->"+implDom] = true
 		c := contracts[ifaceDom+"->"+implDom]
 		ifaceName := ""
 		if n, ok := v.Nodes[e.To]; ok {
@@ -110,6 +118,57 @@ func Check(t *Target, v *View) *Report {
 			rep.Fails = append(rep.Fails, Finding{Kind: "off-interface", From: ifaceDom, To: implDom,
 				Edge:   &Edge{e.From, e.To},
 				Detail: fmt.Sprintf("跨子系统实现未声明: %s 实现了 %s 的 %s", implDom, ifaceDom, ifaceName)})
+		}
+	}
+	// 漏建对账沿用既有 call/implements 的归域口径。入口要求 Label 容器至少有
+	// 一个非 deleted 节点落在 to 域，接口要求 Name 节点落在 from 域；这是 R2
+	// 对全局存在性收窄，避免「同名但跨域」造成对账通过、实际 check 仍违规。
+	for _, c := range t.Contracts {
+		direction := c.From + "→" + c.To
+		for _, entry := range c.Entries {
+			found := false
+			for containerID, container := range v.Containers {
+				if container.Label != entry {
+					continue
+				}
+				for _, n := range v.Nodes {
+					if n.Status == "deleted" || n.Container != containerID || t.SubsystemOf(n.File) != c.To {
+						continue
+					}
+					found = true
+					break
+				}
+				if found {
+					break
+				}
+			}
+			if !found {
+				rep.Fails = append(rep.Fails, Finding{
+					Kind: KindDeadEntry, From: c.From, To: c.To,
+					Detail: fmt.Sprintf("契约 %s 声明的入口 %q 在 %s 中不存在（无同 Label 容器或其非 deleted 节点均不属 %s；期望在 %s 找到）", direction, entry, c.To, c.To, c.To),
+				})
+			}
+		}
+		for _, iface := range c.Interfaces {
+			found := false
+			for _, n := range v.Nodes {
+				if n.Status != "deleted" && n.Name == iface && t.SubsystemOf(n.File) == c.From {
+					found = true
+					break
+				}
+			}
+			if !found {
+				rep.Fails = append(rep.Fails, Finding{
+					Kind: KindDeadInterface, From: c.From, To: c.To,
+					Detail: fmt.Sprintf("契约 %s 声明的接口 %q 在 %s 中不存在（无同名非 deleted 节点；期望在 %s 找到）", direction, iface, c.From, c.From),
+				})
+			}
+		}
+		if !liveDirections[c.From+"->"+c.To] {
+			rep.Fails = append(rep.Fails, Finding{
+				Kind: KindDeadContract, From: c.From, To: c.To,
+				Detail: fmt.Sprintf("契约 %s 声明的方向没有活跃 call、implements 或组装点豁免边（期望在该方向看到至少一条跨子系统边）", direction),
+			})
 		}
 	}
 	// 预算结算
