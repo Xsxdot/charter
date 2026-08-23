@@ -19,13 +19,25 @@ type TargetMeta struct {
 	Project string `json:"project"`
 }
 
+// TargetDomain 一个子系统内的目标领域。归属由嵌套关系决定，不设 subsystem 外键。
+// Paths 与 TargetSubsystem.Paths 同构：只接受精确路径或 dir/**。
+type TargetDomain struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Responsibility string   `json:"responsibility"`
+	Paths          []string `json:"paths"`
+}
+
 // TargetSubsystem 一个声明的子系统。Type 二选一：logic / boundary（分区协议的类型标注）。
 type TargetSubsystem struct {
-	ID    string   `json:"id"`
-	Name  string   `json:"name"`
-	Type  string   `json:"type"`
-	Paths []string `json:"paths"`
-	Note  string   `json:"note,omitempty"`
+	ID                 string         `json:"id"`
+	Name               string         `json:"name"`
+	Type               string         `json:"type"`
+	Paths              []string       `json:"paths"`
+	Note               string         `json:"note,omitempty"`
+	UnplacedBudget     int            `json:"unplacedBudget,omitempty"`
+	UnplacedBudgetNote string         `json:"unplacedBudgetNote,omitempty"`
+	Domains            []TargetDomain `json:"domains,omitempty"`
 }
 
 // Assignment 例外文件的显式归属，优先级高于 paths 规则。
@@ -78,22 +90,87 @@ func LoadTarget(repoRoot string) (*Target, error) {
 	return &t, nil
 }
 
+// targetPrefixRuleSuffix 是「目录子树」规则的唯一后缀字面量。归域规则只有精确路径与
+// dir/** 两种形态，这个后缀是区分它们的全部依据；它必须只有一处定义，否则收紧或放宽
+// 约定时漏改一处不会有任何测试变红。
+const targetPrefixRuleSuffix = "/**"
+
+// cutTargetRule 解析一条归域规则的形态，是上述后缀约定的唯一实现。
+//
+// 参数：rule 为一条 paths 规则（未必已通过 validPathRule）。
+// 返回：isPrefixRule 为 true 时 prefix 是去掉 "/**" 后的目录名（不含尾部斜杠），
+// 调用方须自行按「目录整段」语义拼回分隔符；为 false 时 rule 是精确路径，prefix
+// 原样返回。
+//
+// 注意：本函数只管**形态解析**，不做任何匹配判定。四个调用点（SubsystemOf、
+// targetRuleMatchesFile、targetPathCovers、targetPathsOverlap）的判定语义各不相同，
+// 共享的只有这一层解析。
+func cutTargetRule(rule string) (prefix string, isPrefixRule bool) {
+	return strings.CutSuffix(rule, targetPrefixRuleSuffix)
+}
+
 // validPathRule 判断归域规则语法：精确路径或 "dir/**" 前缀，仅此两种（spec §4）。
 func validPathRule(rule string) bool {
 	if rule == "" || strings.ContainsAny(rule, "[]?{}") {
 		return false
 	}
 	// "dir/**" 之外不允许出现 *；裸 "**" 会把整个仓库圈进一个域，禁止。
-	if i := strings.Index(rule, "*"); i >= 0 {
-		return strings.HasSuffix(rule, "/**") && !strings.Contains(strings.TrimSuffix(rule, "/**"), "*")
+	if strings.Contains(rule, "*") {
+		prefix, isPrefixRule := cutTargetRule(rule)
+		return isPrefixRule && !strings.Contains(prefix, "*")
 	}
 	return true
 }
 
+// targetPathCovers 判断 parent 的精确路径/dir/** 集合是否覆盖 child。
+// 两个入参都必须已通过 validPathRule——本函数只认「精确路径」和「dir/**」两种字面
+// 形态，不做 glob 匹配，因为归域规则本身就只有这两种（契约 §2-1 第 4 条）。
+func targetPathCovers(parent, child string) bool {
+	parentPrefix, parentIsPrefix := cutTargetRule(parent)
+	childPrefix, childIsPrefix := cutTargetRule(child)
+	if !parentIsPrefix {
+		// 精确路径只覆盖同一个文件；它盖不住任何目录子树。
+		return !childIsPrefix && parent == child
+	}
+	if childIsPrefix {
+		return childPrefix == parentPrefix || strings.HasPrefix(childPrefix, parentPrefix+"/")
+	}
+	return strings.HasPrefix(child, parentPrefix+"/")
+}
+
+// targetPathsOverlap 判断两条已通过语法校验的规则是否拥有共同文件。
+// 同样只处理精确路径与 dir/** 两种字面形态：两条精确路径除非相等否则永不相交，
+// 前缀规则之间则看目录是否互为祖先（契约 §2-1 第 6 条）。
+func targetPathsOverlap(left, right string) bool {
+	if left == right {
+		return true
+	}
+	leftPrefix, leftIsPrefix := cutTargetRule(left)
+	rightPrefix, rightIsPrefix := cutTargetRule(right)
+	if !leftIsPrefix && !rightIsPrefix {
+		return false
+	}
+	if !leftIsPrefix {
+		return strings.HasPrefix(left, rightPrefix+"/")
+	}
+	if !rightIsPrefix {
+		return strings.HasPrefix(right, leftPrefix+"/")
+	}
+	return leftPrefix == rightPrefix ||
+		strings.HasPrefix(leftPrefix, rightPrefix+"/") ||
+		strings.HasPrefix(rightPrefix, leftPrefix+"/")
+}
+
 // ValidateTarget 校验目标图内部一致性，返回问题清单（空 = 合法）。
+// 目标领域部分只做结构不变式（契约 §3-2）：id 全局唯一、responsibility 非空、
+// 路径语法合法且被父子系统覆盖、同级不重叠、预算非负。它不读 baseline、不读视图、
+// 不碰文件系统——「目标域在当前代码里有没有命中」是 Check 的事，不是结构门的事。
 func ValidateTarget(t *Target) []string {
 	var issues []string
 	ids := make(map[string]bool, len(t.Subsystems))
+	// 目标领域 id 的唯一性是整个文档级的（契约 §2-1 第 2 条），所以计数器必须
+	// 活在子系统循环之外。
+	domainIDs := make(map[string]bool)
 	for _, d := range t.Subsystems {
 		if ids[d.ID] {
 			issues = append(issues, fmt.Sprintf("子系统 id %q 重复", d.ID))
@@ -102,9 +179,57 @@ func ValidateTarget(t *Target) []string {
 		if d.Type != "logic" && d.Type != "boundary" {
 			issues = append(issues, fmt.Sprintf("子系统 %s 的 type 取值非法: %q（只认 logic/boundary）", d.ID, d.Type))
 		}
+		var subsystemRules []string
 		for _, p := range d.Paths {
 			if !validPathRule(p) {
 				issues = append(issues, fmt.Sprintf("子系统 %s 的 paths 规则 %q 语法非法（只支持精确路径或 dir/**）", d.ID, p))
+				continue
+			}
+			subsystemRules = append(subsystemRules, p)
+		}
+		if d.UnplacedBudget < 0 {
+			issues = append(issues, fmt.Sprintf("子系统 %s 的 unplacedBudget 不能为负", d.ID))
+		}
+		// legalRules[i] 是第 i 个目标领域里语法合法的规则；重叠检查只在这些规则
+		// 之间做——对语法已经非法的规则再报一次「覆盖/重叠」是噪声，只会让人去修
+		// 一个由语法错误派生出来的假问题。
+		legalRules := make([][]string, len(d.Domains))
+		for i, domain := range d.Domains {
+			if domainIDs[domain.ID] {
+				issues = append(issues, fmt.Sprintf("目标领域 id %q 重复（子系统 %s）", domain.ID, d.ID))
+			}
+			domainIDs[domain.ID] = true
+			if strings.TrimSpace(domain.Responsibility) == "" {
+				issues = append(issues, fmt.Sprintf("子系统 %s 的目标领域 %s 缺 responsibility（不能为空白）", d.ID, domain.ID))
+			}
+			for _, rule := range domain.Paths {
+				if !validPathRule(rule) {
+					issues = append(issues, fmt.Sprintf("子系统 %s 的目标领域 %s 的 paths 规则 %q 语法非法（只支持精确路径或 dir/**）", d.ID, domain.ID, rule))
+					continue
+				}
+				legalRules[i] = append(legalRules[i], rule)
+				covered := false
+				for _, parent := range subsystemRules {
+					if targetPathCovers(parent, rule) {
+						covered = true
+						break
+					}
+				}
+				if !covered {
+					issues = append(issues, fmt.Sprintf("子系统 %s 的目标领域 %s 的 paths 规则 %q 未被子系统 paths %v 覆盖", d.ID, domain.ID, rule, subsystemRules))
+				}
+			}
+		}
+		for i := range d.Domains {
+			for j := i + 1; j < len(d.Domains); j++ {
+				for _, left := range legalRules[i] {
+					for _, right := range legalRules[j] {
+						if targetPathsOverlap(left, right) {
+							issues = append(issues, fmt.Sprintf("子系统 %s 的目标领域 %s 与 %s 的 paths 规则 %q 与 %q 重叠",
+								d.ID, d.Domains[i].ID, d.Domains[j].ID, left, right))
+						}
+					}
+				}
 			}
 		}
 	}
@@ -140,7 +265,7 @@ func (t *Target) SubsystemOf(file string) string {
 			if rule == file {
 				return d.ID
 			}
-			if prefix, ok := strings.CutSuffix(rule, "/**"); ok && strings.HasPrefix(file, prefix+"/") {
+			if prefix, ok := cutTargetRule(rule); ok && strings.HasPrefix(file, prefix+"/") {
 				return d.ID
 			}
 		}

@@ -306,6 +306,272 @@ func TestGraphCheckBudgetRatchetAcceptsSchemaV1Base(t *testing.T) {
 	assertBudgetFinding(t, report, true)
 }
 
+// TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base 走的是**真 v1 躯干**的基准，
+// 而不是「把 version 改成 1、字段还是 v2 那套」的伪 v1。真 v1 的顶层键叫 domains、
+// 没有 subsystems、更没有 unplacedBudget，宽松解析出来 Subsystems 恒为 nil。
+//
+// 由此得出首跑悬崖：任何子系统**首次**声明带 unplacedBudget > 0 的目标领域时，基准侧
+// 一律读到「未声明目标领域，按 0」，第一次 check 必然报一条无理由的 budget-raised fail、
+// 退出码非零。C1.6 给 handoff 建领域树时会原样撞上，必须同时写 unplacedBudgetNote 才能
+// 降为 warn。这是冻结 33「基准缺席按 0」在目标领域侧的同构后果，不是缺陷（契约 §7-R11）。
+func TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base(t *testing.T) {
+	repo, base := gitTrueV1BaseRepo(t, 2, "")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("首次声明目标领域预算、基准为真 v1 时应非零退出: %s\nstderr=%s", stdout, stderr)
+	}
+	if strings.Contains(stderr, "跳过") {
+		t.Fatalf("真 v1 基准不得让棘轮降级跳过（宽松解析路径就是为它开的）: %s", stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	raised := ratchetFindings(report.Fails)
+	if len(raised) != 1 || len(ratchetFindings(report.Warns)) != 0 {
+		t.Fatalf("真 v1 基准应恰好一条无理由的 budget-raised fail: %+v", report)
+	}
+	if raised[0].From != "d_svc" || raised[0].To != "" {
+		t.Fatalf("目标领域棘轮 From/To 形状不对: %+v", raised[0])
+	}
+	// 措辞必须是「新增」而不是「M→N 上涨」：基准根本没声明目标领域，说成上涨是误导。
+	if !strings.Contains(raised[0].Detail, "新增目标领域携带未落位预算 2") ||
+		!strings.Contains(raised[0].Detail, "基准中未声明目标领域") {
+		t.Fatalf("真 v1 基准应走「基准缺席」措辞而非「上涨」措辞: %+v", raised[0])
+	}
+	// 悬崖只出在棘轮上：目标域盖全了 svc/**，实际未落位为 0，不得混入其他 gap finding。
+	for _, finding := range append(append([]codegraph.Finding{}, report.Fails...), report.Warns...) {
+		switch finding.Kind {
+		case "unplaced", "unplaced-over-budget", "domain-empty":
+			t.Fatalf("本用例的目标域覆盖了全部 svc 文件，不应有 gap finding: %+v", finding)
+		}
+	}
+
+	// 同一份基准，只要当前 target 补上 unplacedBudgetNote，悬崖即降为 warn、退出码归零——
+	// 这就是 C1.6 首跑时的正解，钉在这里免得后人误以为要改判据。
+	notedRepo, notedBase := gitTrueV1BaseRepo(t, 2, "首次建领域树，存量未落位待竖切")
+	notedOut, notedErr, execErr := runGraphSeparate(t, "check", "--base", notedBase, "--repo", notedRepo)
+	if execErr != nil {
+		t.Fatalf("写了 unplacedBudgetNote 后首跑应通过: %v\nstdout=%s\nstderr=%s", execErr, notedOut, notedErr)
+	}
+	notedReport := unmarshalReport(t, notedOut)
+	if len(ratchetFindings(notedReport.Warns)) != 1 || len(ratchetFindings(notedReport.Fails)) != 0 {
+		t.Fatalf("有理由的首跑棘轮应降为 warn: %+v", notedReport)
+	}
+}
+
+// trueSchemaV1Target 是 v1 躯干的目标图：顶层 domains（不是 subsystems）、
+// assignments 的外键字段叫 domain，且没有任何目标领域/预算字段。形状取自
+// codegraph/migrate.go#migrateV1Target 这个 v1 的权威定义。
+const trueSchemaV1Target = `{
+  "meta": { "version": 1, "project": "fixture" },
+  "domains": [
+    { "id": "d_svc", "name": "服务", "type": "logic", "paths": ["svc/**"] },
+    { "id": "d_cmd", "name": "入口", "type": "logic", "paths": ["cmd/**"] },
+    { "id": "d_web", "name": "前端", "type": "boundary", "paths": ["web/**"] }
+  ],
+  "assembly": ["cmd/run.go"],
+  "contracts": [
+    { "from": "d_cmd", "to": "d_svc", "entries": ["svc.Server"], "legacyBudget": 0 }
+  ]
+}
+`
+
+// gitTrueV1BaseRepo 造「基准提交是真 v1、工作区是 v2 且首次声明目标领域」的仓。
+// 目标域路径取 svc/**（与子系统同域），使 svc 下三个文件全部落位——这样报告里
+// 只剩棘轮一条，首跑悬崖不被其他 gap finding 遮住。
+func gitTrueV1BaseRepo(t *testing.T, budget int, note string) (string, string) {
+	t.Helper()
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	targetPath := filepath.Join(repo, "codegraph", "target.json")
+	if err := os.WriteFile(targetPath, []byte(trueSchemaV1Target), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "config", "user.email", "codegraph-test@example.com")
+	runGit(t, repo, "config", "user.name", "codegraph-test")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-q", "-m", "true v1 base target")
+	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+
+	// 基准提交落定后再把工作区换成 v2：copyFixtureRepo 的 v2 原件 + 目标领域声明。
+	copyFixtureRepo(t, fixtureRepo, repo)
+	writeTargetDomainBudget(t, repo, budget, note, []string{"svc/**"})
+	return repo, base
+}
+
+// 目标领域预算上涨走的是与契约预算同一条棘轮，但形状不同：From=子系统 id、To 省略
+// （契约 §4 冻结 30）。Detail 里的 2→3 同时证明基准子系统预算真的被读到了，而不是
+// 一律按「基准缺席，按 0」处理——后者会让每次 check 都无中生有报一条棘轮。
+func TestGraphCheckSubsystemBudgetRatchetShape(t *testing.T) {
+	repo, base := gitTargetDomainRepo(t, "", 2, 3, "", "svc/**")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("目标领域预算上涨且无理由应非零: %s\nstderr=%s", stdout, stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	raised := ratchetFindings(report.Fails)
+	if len(raised) != 1 || len(ratchetFindings(report.Warns)) != 0 {
+		t.Fatalf("无理由的目标领域棘轮应恰好一条 fail: %+v", report)
+	}
+	if raised[0].From != "d_svc" || raised[0].To != "" {
+		t.Fatalf("目标领域棘轮 From/To 形状不对: %+v", raised[0])
+	}
+	if !strings.Contains(raised[0].Detail, "2→3") {
+		t.Fatalf("Detail 应显示基准 2 涨到 3，说明基准子系统预算被读到: %+v", raised[0])
+	}
+}
+
+// 预算没涨就不能报棘轮。这条同时锁住「基准 target 必须把 subsystems 带过来」——
+// 只投影 contracts 的话基准恒为 0，相等也会被当成上涨，棘轮变成永远响的警报。
+func TestGraphCheckSubsystemBudgetRatchetEqualDoesNotFire(t *testing.T) {
+	repo, base := gitTargetDomainRepo(t, "", 3, 3, "", "svc/**")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err != nil {
+		t.Fatalf("预算持平不应有任何 fail: %v\nstdout=%s\nstderr=%s", err, stdout, stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	if len(ratchetFindings(report.Fails)) != 0 || len(ratchetFindings(report.Warns)) != 0 {
+		t.Fatalf("预算持平不得产生 budget-raised: %+v", report)
+	}
+}
+
+// 冻结 32 的 CLI 端交叉验证：同一份报告里，有理由的 budget-raised 降成 warn，
+// 而实际未落位超预算的 unplaced-over-budget 必须还在 fails、退出码仍非零。
+func TestGraphCheckSubsystemNoteOnlyDowngradesRatchet(t *testing.T) {
+	repo, base := gitTargetDomainRepo(t, "", 0, 1, "竖切迁移中", "svc/notifier.go")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("实际未落位超预算应非零，note 不得洗白: %s\nstderr=%s", stdout, stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	if len(ratchetFindings(report.Warns)) != 1 || len(ratchetFindings(report.Fails)) != 0 {
+		t.Fatalf("有理由的 budget-raised 应降为 warn: %+v", report)
+	}
+	over := 0
+	for _, finding := range report.Fails {
+		if finding.Kind == "unplaced-over-budget" {
+			over++
+		}
+	}
+	if over != 1 {
+		t.Fatalf("unplaced-over-budget 必须留在 fails: %+v", report)
+	}
+}
+
+// --repo 指向 git 顶层的子目录时，git show 必须带上 nested/ 前缀去读 target.json。
+func TestGraphCheckBudgetRatchetReadsNestedRepoPrefix(t *testing.T) {
+	repo, base := gitTargetDomainRepo(t, "nested", 2, 3, "", "svc/**")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("子目录仓的棘轮也应生效: %s\nstderr=%s", stdout, stderr)
+	}
+	if strings.Contains(stderr, "跳过") {
+		t.Fatalf("子目录仓不应降级跳过棘轮: %s", stderr)
+	}
+	raised := ratchetFindings(unmarshalReport(t, stdout).Fails)
+	if len(raised) != 1 || !strings.Contains(raised[0].Detail, "2→3") {
+		t.Fatalf("子目录仓应读到 nested/codegraph/target.json 的基准预算: %+v", raised)
+	}
+}
+
+// 棘轮 finding 追加后必须与其余 finding 一起重排：kind 字典序 budget-raised <
+// unplaced-over-budget，所以它必须排在首位。旧实现在 Check 排完序后才 append，
+// 于是它永远吊在末尾，check 输出顺序不再确定。
+func TestGraphCheckOutputStaysSortedAndByteStable(t *testing.T) {
+	repo, base := gitTargetDomainRepo(t, "", 0, 1, "", "svc/notifier.go")
+	first, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("前置条件：本用例应同时有棘轮与超预算两条 fail: %s", first)
+	}
+	report := unmarshalReport(t, first)
+	if len(report.Fails) != 2 || report.Fails[0].Kind != "budget-raised" || report.Fails[1].Kind != "unplaced-over-budget" {
+		t.Fatalf("fails 应按 kind 全序排列，budget-raised 在前: %+v", report.Fails)
+	}
+	for i := 0; i < 3; i++ {
+		again, _, _ := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+		if again != first {
+			t.Fatalf("第 %d 次重复运行输出漂移:\n首次=%s\n本次=%s", i+1, first, again)
+		}
+	}
+}
+
+func unmarshalReport(t *testing.T, stdout string) codegraph.Report {
+	t.Helper()
+	var report codegraph.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("stdout 必须是合法 Report JSON: %v\n%s", err, stdout)
+	}
+	return report
+}
+
+func ratchetFindings(findings []codegraph.Finding) []codegraph.Finding {
+	var out []codegraph.Finding
+	for _, finding := range findings {
+		if finding.Kind == "budget-raised" {
+			out = append(out, finding)
+		}
+	}
+	return out
+}
+
+// gitTargetDomainRepo 造真实 git 仓：repoSub 是 --repo 实际指向的子目录（""=git 顶层），
+// 基准提交里 d_svc 的未落位预算为 baseBudget 且无理由，工作区改成 curBudget + note。
+// domainPaths 决定当前实际有多少 svc 文件落位，用来构造 unplaced 场景。
+func gitTargetDomainRepo(t *testing.T, repoSub string, baseBudget, curBudget int, note string, domainPaths ...string) (string, string) {
+	t.Helper()
+	gitRoot := t.TempDir()
+	repo := filepath.Join(gitRoot, repoSub)
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureRepo(t, fixtureRepo, repo)
+	writeTargetDomainBudget(t, repo, baseBudget, "", domainPaths)
+	runGit(t, gitRoot, "init", "-q")
+	runGit(t, gitRoot, "config", "user.email", "codegraph-test@example.com")
+	runGit(t, gitRoot, "config", "user.name", "codegraph-test")
+	runGit(t, gitRoot, "add", ".")
+	runGit(t, gitRoot, "commit", "-q", "-m", "base target")
+	base := strings.TrimSpace(runGit(t, gitRoot, "rev-parse", "HEAD"))
+	writeTargetDomainBudget(t, repo, curBudget, note, domainPaths)
+	return repo, base
+}
+
+// writeTargetDomainBudget 走真实 JSON 编解码改写夹具 target 的 d_svc，而不是字符串
+// 替换——目标领域是嵌套结构，编解码才能同时验证 wire 形态没写歪。
+func writeTargetDomainBudget(t *testing.T, repo string, budget int, note string, domainPaths []string) {
+	t.Helper()
+	path := filepath.Join(repo, "codegraph", "target.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target codegraph.Target
+	if err := json.Unmarshal(raw, &target); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for i := range target.Subsystems {
+		if target.Subsystems[i].ID != "d_svc" {
+			continue
+		}
+		target.Subsystems[i].UnplacedBudget = budget
+		target.Subsystems[i].UnplacedBudgetNote = note
+		target.Subsystems[i].Domains = []codegraph.TargetDomain{{
+			ID: "d_svc_api", Name: "服务 API", Responsibility: "对外方法", Paths: domainPaths,
+		}}
+		found = true
+	}
+	if !found {
+		t.Fatal("夹具 target 里应有 d_svc 子系统")
+	}
+	out, err := json.MarshalIndent(&target, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertBudgetFinding(t *testing.T, report codegraph.Report, inFails bool) {
 	t.Helper()
 	var fails, warns int
