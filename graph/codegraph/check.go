@@ -206,6 +206,10 @@ func Check(t *Target, v *View) *Report {
 				Detail: fmt.Sprintf("组装点 %q 未命中视图中任何节点文件", f)})
 		}
 	}
+	// fitness 只消费当前视图的图内文件集并落 Warns；命中是要求回答边界，
+	// 不是自动把架构形态判成契约违规（契约 §2-1、§2-3）。
+	rep.Warns = append(rep.Warns, prefixFamilyFindings(v)...)
+	rep.Warns = append(rep.Warns, oversizedPackageFindings(v)...)
 	sortFindings(rep) // 输出稳定排序，测试与 diff 可复现
 	return rep
 }

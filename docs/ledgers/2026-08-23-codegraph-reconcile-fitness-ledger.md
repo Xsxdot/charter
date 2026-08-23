@@ -24,3 +24,11 @@
 - 验证：三类 finding 全部进 Fails；implements 与 assembly 豁免边均计为活；`go run ./cmd/codegraph check --repo ./codegraph/testdata/repo` 实测输出 `fails: []`、`warns: []`；`go test ./codegraph -count=1`、`go test ./cli -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
 - 双裁决：规格符合（R2 按目标子系统收窄、R3 合并 call/implements/assembly 活边，Check 签名未变）；代码质量通过（Finding.Detail 含方向、原文条目与期望子系统，deleted 节点/边不参与）。
 - commit 范围：`da761c7b9368`（T1 实现，ledger amend 后纳入本卡提交）。
+
+## T2：fitness 判据 1/2
+
+- 范围：`fitness.go`、`check.go`、`fitness_test.go`；实现 `prefix-family` 与 `oversized-package`，从 `Check` 追加到 Warns。
+- 红因：空的 prefix/oversized 纯函数及未接线的 Check 先使共享五字符、40 文件和 Warn 档测试失败；失败为功能缺失，不是编译错误。
+- 验证：真实最长公共前缀、成员不足、前三字符、跨目录、40+子目录、39 文件和 Warn/Fails 分流测试均通过；`rg` 未发现 `os.ReadDir`、`filepath.Walk`、git 或 `os/exec`；夹具 check 仍为 `fails: []`、`warns: []`；`go test ./codegraph ./cli -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
+- 双裁决：规格符合（仅消费非 deleted 视图文件集、使用 `/` 路径和真实 LCP，阈值不可配置）；代码质量通过（排序确定、无文件系统副作用、Detail 含目录/数量/阈值及架构法回答提示）。
+- commit 范围：`1a64905c003d`（T2 实现，ledger amend 后纳入本卡提交）。
