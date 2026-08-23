@@ -7,8 +7,17 @@
 // 最优图与 baseline.json 是姊妹关系：baseline 记「代码今天是什么样」，best 记
 // 「基于当下代码实现的功能，最优的子系统/领域结构应该是什么样」。归属由**容器**
 // 表达而非路径规则——路径规则只能复述目录布局，表达不了不与目录同形的职责划分
-//（契约 §1-2）。
+// （契约 §1-2）。
 package codegraph
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
 
 // BestMeta 最优图的来源信息。
 type BestMeta struct {
@@ -44,10 +53,24 @@ type Best struct {
 // 解析失败与 meta.version 不匹配一律显式错误（反静默）。
 //
 // 注意：调用方拿到 nil 时**必须显式告知用户判据已跳过**，不得静默通过
-//（契约 §3-1）。
+// （契约 §3-1）。
 func LoadBest(repoRoot string) (*Best, error) {
-	// TODO(C1.8): 见契约 §3-1
-	return nil, nil
+	p := filepath.Join(repoRoot, "codegraph", "best.json")
+	raw, err := os.ReadFile(p)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取最优图 %s: %w", p, err)
+	}
+	var b Best
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return nil, fmt.Errorf("解析最优图 %s: %w", p, err)
+	}
+	if b.Meta.Version != 1 {
+		return nil, fmt.Errorf("最优图 %s 使用不支持的 schema version %d", p, b.Meta.Version)
+	}
+	return &b, nil
 }
 
 // ValidateBest 校验最优图内部一致性，返回问题清单（空 = 合法）。
@@ -55,8 +78,64 @@ func LoadBest(repoRoot string) (*Best, error) {
 // 纯函数：不读 baseline、不读视图、不碰文件系统——「这个容器在当前代码里存不
 // 存在」是 Check 的事（契约 §3-2）。
 func ValidateBest(b *Best) []string {
-	// TODO(C1.8): 见契约 §3-2 的八条
-	return nil
+	if b == nil {
+		return nil
+	}
+
+	var issues []string
+	if strings.TrimSpace(b.Meta.Project) == "" {
+		issues = append(issues, "meta.project 不能为空")
+	}
+
+	hasChild := make(map[string]bool)
+	for id, d := range b.Domains {
+		if strings.TrimSpace(d.Responsibility) == "" {
+			issues = append(issues, fmt.Sprintf("领域 %s 的 responsibility 不能为空", id))
+		}
+		if d.Parent == "" {
+			if d.Type != "logic" && d.Type != "boundary" {
+				issues = append(issues, fmt.Sprintf("顶层领域 %s 的 type %q 无效", id, d.Type))
+			}
+		} else {
+			if _, ok := b.Domains[d.Parent]; !ok {
+				issues = append(issues, fmt.Sprintf("领域 %s 的 parent %s 不存在", id, d.Parent))
+			} else {
+				hasChild[d.Parent] = true
+			}
+			if d.Type != "" {
+				issues = append(issues, fmt.Sprintf("非顶层领域 %s 不应声明 type %q", id, d.Type))
+			}
+		}
+	}
+
+	for id := range b.Domains {
+		seen := map[string]bool{}
+		for current := id; current != ""; {
+			if seen[current] {
+				issues = append(issues, fmt.Sprintf("领域 %s 的 parent 链存在环", id))
+				break
+			}
+			seen[current] = true
+			d, ok := b.Domains[current]
+			if !ok {
+				break
+			}
+			current = d.Parent
+		}
+	}
+
+	for containerID, domainID := range b.Containers {
+		if _, ok := b.Domains[domainID]; !ok {
+			issues = append(issues, fmt.Sprintf("容器 %s 引用不存在的领域 %s", containerID, domainID))
+			continue
+		}
+		if hasChild[domainID] {
+			issues = append(issues, fmt.Sprintf("容器 %s 挂在非叶子领域 %s", containerID, domainID))
+		}
+	}
+
+	sort.Strings(issues)
+	return issues
 }
 
 // SubsystemOf 沿 Parent 链上溯到顶层领域，返回子系统 id。
@@ -65,12 +144,34 @@ func ValidateBest(b *Best) []string {
 // 环保护是必须的：ValidateBest 会拒环，但本函数不得假设调用方跑过 validate,
 // 一个环会让上溯死循环（契约 §3-3）。
 func (b *Best) SubsystemOf(domainID string) string {
-	// TODO(C1.8): 见契约 §3-3
-	return ""
+	if b == nil {
+		return ""
+	}
+	current, ok := b.Domains[domainID]
+	if !ok {
+		return ""
+	}
+	seen := map[string]bool{}
+	for {
+		if seen[domainID] {
+			return ""
+		}
+		seen[domainID] = true
+		if current.Parent == "" {
+			return domainID
+		}
+		domainID = current.Parent
+		current, ok = b.Domains[domainID]
+		if !ok {
+			return ""
+		}
+	}
 }
 
 // DomainOfContainer 返回容器的最优领域 id，未归属返回 ""。
 func (b *Best) DomainOfContainer(containerID string) string {
-	// TODO(C1.8): 见契约 §3-3
-	return ""
+	if b == nil {
+		return ""
+	}
+	return b.Containers[containerID]
 }
