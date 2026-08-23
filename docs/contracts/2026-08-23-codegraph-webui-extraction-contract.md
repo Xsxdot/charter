@@ -355,3 +355,13 @@ export function fetchCodegraphSource(project: string, file: string, line: number
 - 可执行冻结：无命中（无哈希、密钥派生、自定义编码向量）；跨仓 HTTP 形状由现有 handoff endpoint tests + 迁移后的 viewer tests 对账。
 - 拍板记录：四项均满足三重闸门，已在 §9 记录；“反过来写不会有任何测试变红”的 URL 分层裁决已显式记录。
 - 交棒：breakdown。
+
+## §11 Breakdown 边界澄清回写（2026-08-23）
+
+本节只记录 breakdown 对冻结边界的归属澄清，不新增导出、字段、HTTP 路由或宿主接缝；若后续实现需要超出下列边界，必须退回 contract：
+
+1. `graph/webui/src/api/types.ts` 是 `graph/codegraph/types.go` 的包内 TypeScript wire 镜像，归 `graph/webui` 子系统所有，不构成第三条宿主 API。
+2. `graph/webui/dist/` 与 CI 防漂移比对是同一 `FS()` 静态交付的构建/保全面，不是运行时网络接缝；运行时仍只交付 `FS() fs.FS`。
+3. handoff `/codegraph/app/` 是本次宿主挂载实例；通用契约仍允许同源任意挂载点，viewer 的相对 base 使该实例路径不进入公共 API。
+4. `?project=` 属于 iframe URL 层，API 继续使用 `/api/projects/{name}` 路径参数；两层参数形态不合并、不互换。
+5. handoff 的 `internal/agentd/codegraph.go` provider handler 与 `internal/webui` embed 包是存量边界，本卡只消费/挂载，不把它们迁入 charter `graph/webui`。
