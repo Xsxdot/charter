@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -19,6 +20,34 @@ func TestLoadTarget(t *testing.T) {
 func TestLoadTargetMissingIsError(t *testing.T) {
 	if _, err := LoadTarget(t.TempDir()); err == nil {
 		t.Fatal("target 缺失应报错，不能返回 nil,nil")
+	}
+}
+
+func TestTargetDomainJSONGolden(t *testing.T) {
+	target := Target{
+		Meta: TargetMeta{Version: 2, Project: "handoff"},
+		Subsystems: []TargetSubsystem{{
+			ID: "d_controlplane", Name: "Control Plane", Type: "logic", Paths: []string{"internal/**"},
+			UnplacedBudget: 61, UnplacedBudgetNote: "vertical slice pending",
+			Domains: []TargetDomain{{
+				ID: "d_task", Name: "Task", Responsibility: "owns task lifecycle", Paths: []string{"internal/task/**"},
+			}},
+		}, {ID: "d_empty", Name: "Empty", Type: "logic", Paths: []string{"pkg/**"}}},
+	}
+	raw, err := json.Marshal(target)
+	if err != nil {
+		t.Fatalf("编码目标领域样本: %v", err)
+	}
+	want := `{"meta":{"version":2,"project":"handoff"},"subsystems":[{"id":"d_controlplane","name":"Control Plane","type":"logic","paths":["internal/**"],"unplacedBudget":61,"unplacedBudgetNote":"vertical slice pending","domains":[{"id":"d_task","name":"Task","responsibility":"owns task lifecycle","paths":["internal/task/**"]}]},{"id":"d_empty","name":"Empty","type":"logic","paths":["pkg/**"]}]}`
+	if string(raw) != want {
+		t.Fatalf("目标领域 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
+	}
+	var decoded Target
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("解码目标领域样本: %v", err)
+	}
+	if len(decoded.Subsystems) != 2 || len(decoded.Subsystems[0].Domains) != 1 || decoded.Subsystems[1].UnplacedBudget != 0 || len(decoded.Subsystems[1].Domains) != 0 {
+		t.Fatalf("目标领域 JSON 回读结构错误: %+v", decoded)
 	}
 }
 

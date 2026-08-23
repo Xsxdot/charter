@@ -19,9 +19,12 @@ const (
 
 // fitness 判据（刀 4）的 finding kind。
 const (
-	KindPrefixFamily     = "prefix-family"
-	KindOversizedPackage = "oversized-package"
-	KindBudgetRaised     = "budget-raised"
+	KindPrefixFamily       = "prefix-family"
+	KindOversizedPackage   = "oversized-package"
+	KindBudgetRaised       = "budget-raised"
+	KindUnplaced           = "unplaced"
+	KindUnplacedOverBudget = "unplaced-over-budget"
+	KindDomainEmpty        = "domain-empty"
 )
 
 // 阈值写死在包内，不进 target 配置，避免把 fitness 判据调高到不报为止。

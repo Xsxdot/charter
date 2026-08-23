@@ -19,13 +19,25 @@ type TargetMeta struct {
 	Project string `json:"project"`
 }
 
+// TargetDomain 一个子系统内的目标领域。归属由嵌套关系决定，不设 subsystem 外键。
+// Paths 与 TargetSubsystem.Paths 同构：只接受精确路径或 dir/**。
+type TargetDomain struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Responsibility string   `json:"responsibility"`
+	Paths          []string `json:"paths"`
+}
+
 // TargetSubsystem 一个声明的子系统。Type 二选一：logic / boundary（分区协议的类型标注）。
 type TargetSubsystem struct {
-	ID    string   `json:"id"`
-	Name  string   `json:"name"`
-	Type  string   `json:"type"`
-	Paths []string `json:"paths"`
-	Note  string   `json:"note,omitempty"`
+	ID                 string         `json:"id"`
+	Name               string         `json:"name"`
+	Type               string         `json:"type"`
+	Paths              []string       `json:"paths"`
+	Note               string         `json:"note,omitempty"`
+	UnplacedBudget     int            `json:"unplacedBudget,omitempty"`
+	UnplacedBudgetNote string         `json:"unplacedBudgetNote,omitempty"`
+	Domains            []TargetDomain `json:"domains,omitempty"`
 }
 
 // Assignment 例外文件的显式归属，优先级高于 paths 规则。
