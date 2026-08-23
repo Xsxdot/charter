@@ -198,6 +198,54 @@ func TestGraphDomainsBestIsSoftDependency(t *testing.T) {
 	}
 }
 
+func TestGraphDomainsEdgesWireAndBestComparison(t *testing.T) {
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--edges", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("domains --edges 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	var out struct {
+		View    string                     `json:"view"`
+		Current []codegraph.DomainEdgeStat `json:"current"`
+		Best    []codegraph.DomainEdgeStat `json:"best"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("domains --edges 应输出 JSON: %v\n%s", err, stdout)
+	}
+	if out.View != "baseline" || len(out.Current) == 0 || len(out.Best) == 0 {
+		t.Fatalf("应同时输出现状/最优矩阵: %+v", out)
+	}
+	for _, stat := range append(append([]codegraph.DomainEdgeStat{}, out.Current...), out.Best...) {
+		if stat.From == "" || stat.To == "" || stat.From == stat.To || stat.Count <= 0 {
+			t.Fatalf("矩阵记录必须是非空有向跨域正计数: %+v", stat)
+		}
+	}
+	if bytes.Contains([]byte(stdout), []byte(`"fails"`)) || bytes.Contains([]byte(stdout), []byte(`"warns"`)) {
+		t.Fatalf("--edges 不得混入 check 报告: %s", stdout)
+	}
+	checkOut, err := runGraph(t, "check", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("check fixture 应通过: %v\n%s", err, checkOut)
+	}
+	if bytes.Contains([]byte(checkOut), []byte(`"current"`)) || bytes.Contains([]byte(checkOut), []byte(`"best"`)) {
+		t.Fatalf("check 输出不得混入矩阵: %s", checkOut)
+	}
+}
+
+func TestGraphDomainsEdgesWithoutBestIsExplicit(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--edges", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best 缺失时 domains --edges 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if !bytes.Contains([]byte(stdout), []byte(`"current"`)) || bytes.Contains([]byte(stdout), []byte(`"best":`)) || !bytes.Contains([]byte(stdout), []byte("bestSkipped")) {
+		t.Fatalf("缺 best 时应只输出现状矩阵并显式跳过最优矩阵: %s", stdout)
+	}
+}
+
 func TestGraphValidateDomainDeclIssuePrefix(t *testing.T) {
 	repo := t.TempDir()
 	copyFixtureRepo(t, fixtureRepo, repo)

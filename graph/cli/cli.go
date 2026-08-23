@@ -38,6 +38,7 @@ var (
 	graphDepth              = 2
 	graphView               string
 	graphStale              bool
+	graphEdges              bool
 	absorbCommit            string
 	absorbBranch            string
 	graphResolveDoc         string
@@ -94,6 +95,7 @@ func graphResetState() {
 	graphDepth = 2
 	graphView = ""
 	graphStale = false
+	graphEdges = false
 	absorbCommit = ""
 	absorbBranch = ""
 	graphResolveDoc = ""
@@ -511,6 +513,22 @@ var graphDomainsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if graphEdges {
+			best, bestErr := codegraph.LoadBest(graphRepo)
+			if bestErr != nil {
+				return bestErr
+			}
+			out := map[string]any{
+				"view":    v.Name,
+				"current": codegraph.DomainEdgeMatrix(v),
+			}
+			if best == nil {
+				out["bestSkipped"] = "best.json 不可用，已跳过最优矩阵：未找到 codegraph/best.json"
+			} else {
+				out["best"] = codegraph.BestEdgeMatrix(v, best)
+			}
+			return graphPrintJSON(cmd, out)
+		}
 		doms := codegraph.DomainTree(v)
 		best, bestErr := codegraph.LoadBest(graphRepo)
 		if bestErr != nil {
@@ -718,6 +736,7 @@ func init() {
 	graphCmd.PersistentFlags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	graphCmd.PersistentFlags().StringVar(&graphView, "view", "", "叠加的视图名（codegraph/diffs/<名>.json）")
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")
+	graphDomainsCmd.Flags().BoolVar(&graphEdges, "edges", false, "输出跨领域边矩阵")
 	graphAbsorbCmd.Flags().StringVar(&absorbCommit, "commit", "", "写入基线 meta 的提交号（缺省从 git HEAD 读取）")
 	graphAbsorbCmd.Flags().StringVar(&absorbBranch, "branch", "", "写入基线 meta 的分支名（缺省从 git 读取）")
 	graphResolveCmd.Flags().StringVar(&graphResolveDoc, "doc", "", "要检查的 Markdown 文档路径")
