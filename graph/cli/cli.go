@@ -34,6 +34,7 @@ var buildVersion string
 
 var (
 	graphRepo               = "."
+	graphBase               string
 	graphDepth              = 2
 	graphView               string
 	graphStale              bool
@@ -89,6 +90,7 @@ func graphPrintJSON(cmd *cobra.Command, v any) error {
 // Cobra 测试会在同一进程执行多次子命令，未提供的 flag 不能继承上一次查询。
 func graphResetState() {
 	graphRepo = "."
+	graphBase = ""
 	graphDepth = 2
 	graphView = ""
 	graphStale = false
@@ -204,8 +206,9 @@ var graphMigrateCmd = &cobra.Command{
 }
 
 var graphCheckCmd = &cobra.Command{
-	Use:   "check",
-	Short: "目标图契约对照：实际跨域边 ⊆ target.json 声明的契约面，违规即非零退出",
+	Use:          "check",
+	Short:        "目标图契约对照：实际跨域边 ⊆ target.json 声明的契约面，违规即非零退出",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
 		t, err := codegraph.LoadTarget(graphRepo)
@@ -221,6 +224,11 @@ var graphCheckCmd = &cobra.Command{
 			return err
 		}
 		rep := codegraph.Check(t, v)
+		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "预算棘轮判据已跳过：%v\n", baseErr)
+		} else {
+			appendBudgetRatchet(rep, t, base)
+		}
 		if err := graphPrintJSON(cmd, rep); err != nil {
 			return err
 		}
@@ -229,6 +237,86 @@ var graphCheckCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func appendBudgetRatchet(rep *codegraph.Report, cur, base *codegraph.Target) {
+	for _, finding := range codegraph.CheckBudgetRatchet(cur, base) {
+		note := ""
+		for _, contract := range cur.Contracts {
+			if contract.From == finding.From && contract.To == finding.To {
+				note = contract.LegacyBudgetNote
+				break
+			}
+		}
+		if strings.TrimSpace(note) != "" {
+			rep.Warns = append(rep.Warns, finding)
+		} else {
+			rep.Fails = append(rep.Fails, finding)
+		}
+	}
+}
+
+func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
+	revision := explicit
+	if revision == "" {
+		var err error
+		revision, err = findMergeBase(repo)
+		if err != nil {
+			return nil, err
+		}
+	}
+	prefix, err := gitOutput(repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return nil, fmt.Errorf("无法确定 git 顶层路径前缀：%w", err)
+	}
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	targetPath := prefix + "codegraph/target.json"
+	raw, err := gitOutput(repo, "show", revision+":"+targetPath)
+	if err != nil {
+		return nil, fmt.Errorf("无法读取基准 %s 的 %s：%w", revision, targetPath, err)
+	}
+	var target codegraph.Target
+	// 这是对 LoadTarget 中 meta.version 白名单单点收口的有意例外：基准可能是
+	// schema v1，而 v1/v2 的 contracts 段形态相同；这里只取 contracts 喂棘轮，
+	// 不把宽松解析结果用于任何其他执法输入（契约 §7-R5、R9）。
+	if err := json.Unmarshal([]byte(raw), &target); err != nil {
+		return nil, fmt.Errorf("解析基准 %s 的 target.json：%w", revision, err)
+	}
+	return &codegraph.Target{Contracts: target.Contracts}, nil
+}
+
+func findMergeBase(repo string) (string, error) {
+	// 先用远端 HEAD 的权威符号引用，再试常见远端分支，最后试本地分支；这个顺序
+	// 兼顾团队默认分支命名和未配置 remote 的本地仓，且不把任意分支当成主线。
+	branches := []string{"refs/remotes/origin/HEAD", "origin/main", "origin/master", "main", "master"}
+	var reasons []string
+	for _, branch := range branches {
+		if _, err := gitOutput(repo, "rev-parse", "--verify", branch+"^{commit}"); err != nil {
+			reasons = append(reasons, branch+" 不存在")
+			continue
+		}
+		base, err := gitOutput(repo, "merge-base", "HEAD", branch)
+		if err == nil && base != "" {
+			return base, nil
+		}
+		reasons = append(reasons, branch+" 无法计算 merge-base")
+	}
+	return "", fmt.Errorf("未探测到默认分支（已按 origin/HEAD、origin/main、origin/master、main、master 探测：%s）", strings.Join(reasons, "；"))
+}
+
+func gitOutput(repo string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail == "" {
+			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		}
+		return "", fmt.Errorf("git %s: %w（%s）", strings.Join(args, " "), err, detail)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 var graphAbsorbCmd = &cobra.Command{
@@ -604,6 +692,7 @@ func resolveVersion() string {
 
 func init() {
 	graphCmd.PersistentFlags().StringVar(&graphRepo, "repo", ".", "目标仓库根目录")
+	graphCmd.PersistentFlags().StringVar(&graphBase, "base", "", "棘轮基准 revision（缺省取默认分支 merge-base）")
 	graphCmd.PersistentFlags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	graphCmd.PersistentFlags().StringVar(&graphView, "view", "", "叠加的视图名（codegraph/diffs/<名>.json）")
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")

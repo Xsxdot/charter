@@ -40,3 +40,11 @@
 - 验证：既有契约与新增契约两种 Detail 互不包含，产出顺序跟随 `cur.Contracts`；`go test ./codegraph -count=1`、`go test ./cli -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
 - 双裁决：规格符合（base 缺席按 0、只产 findings、不读 Note/不判档、签名逐字保持）；代码质量通过（按方向建基准索引、Detail 含方向与数值、无 git/fs 依赖）。
 - commit 范围：`f11a4eed7a7`（T3 实现，ledger amend 后纳入本卡提交）。
+
+## T4：CLI 棘轮接线
+
+- 范围：`graph/cli/cli.go`、`graph/cli/cli_test.go`；新增 `--base`、默认分支探测、merge-base/show 读取、v1 宽松 contracts 解析、Note 分档和 stderr 降级。
+- 红因：初始 CLI 无 `--base`，非 git 路径没有棘轮跳过提示；功能接线后临时 git 测试先暴露测试夹具预算替换/版本替换问题，修正夹具后五条行为断言全部通过。棘轮失败时 Cobra usage 曾污染 stdout，改为 check 子命令 `SilenceUsage` 后 JSON 纯净。
+- 验证：临时 git 仓真实走 `git show`；预算上涨无理由进 fails、非空 Note 进 warns、纯空白 Note 仍 fails、schema v1 基准照常比对；非 git 路径 stderr 含“棘轮/跳过”且 stdout 可 `json.Unmarshal`；`git merge-base HEAD master` 输出 `31bf88b788007ab78f56960b3b107e8e6a01e401`，`git rev-parse --show-prefix` 输出空；`go test ./cli ./codegraph -count=1`、`go build ./...`、`go vet ./...`、`gofmt -l .` 均通过。
+- 双裁决：规格符合（显式 base 优先、默认分支顺序固定、只取 contracts、TrimSpace 分档、既有 fails 退出点）；代码质量通过（错误带具体命令/路径上下文，stdout/stderr 信道分离，无新增退出路径）。
+- commit 范围：`09316ab3c9aa`（T4 实现，ledger amend 后纳入本卡提交）。
