@@ -155,6 +155,54 @@ func TestValidateTargetDomainRules(t *testing.T) {
 				subsystem("d_a", []string{"a/**"}, 0),
 			}},
 		},
+		{
+			// 覆盖判定按目录整段走，不按字符串前缀：a/x/** 盖不住兄弟目录 a/xy 里的
+			// 任何东西。这里同时放精确路径与前缀规则两种 child，是因为 targetPathCovers
+			// 对这两种 child 走的是不同分支，只测一种会漏掉另一条。
+			name: "兄弟目录不算被父子系统覆盖",
+			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
+				subsystem("d_a", []string{"a/x/**"}, 0,
+					TargetDomain{ID: "d_sib_file", Name: "X", Responsibility: "r", Paths: []string{"a/xy/z.go"}},
+					TargetDomain{ID: "d_sib_dir", Name: "Y", Responsibility: "r", Paths: []string{"a/xyz/**"}}),
+			}},
+			want: []string{`未被`, `d_sib_file`, `"a/xy/z.go"`, `d_sib_dir`, `"a/xyz/**"`},
+		},
+		{
+			// 重叠判定同理：a/x/** 与 a/xy/** 是两棵互不相交的子树，报重叠会逼人去
+			// 改一个根本不存在的冲突。短名在前（x, xy）与长名在前（pq, p）两种声明
+			// 顺序都要放，因为祖先关系是双向判的，只测一种会漏掉反方向那一条。
+			name: "兄弟目录的两条前缀规则不重叠",
+			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
+				subsystem("d_a", []string{"a/**"}, 0,
+					TargetDomain{ID: "d_x", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
+					TargetDomain{ID: "d_xy", Name: "Y", Responsibility: "r", Paths: []string{"a/xy/**"}},
+					TargetDomain{ID: "d_pq", Name: "PQ", Responsibility: "r", Paths: []string{"a/pq/**"}},
+					TargetDomain{ID: "d_p", Name: "P", Responsibility: "r", Paths: []string{"a/p/**"}}),
+			}},
+			unwanted: []string{"重叠"},
+		},
+		{
+			name: "祖先目录与后代目录的前缀规则重叠",
+			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
+				subsystem("d_a", []string{"a/**"}, 0,
+					TargetDomain{ID: "d_outer", Name: "X", Responsibility: "r", Paths: []string{"a/x/**"}},
+					TargetDomain{ID: "d_inner", Name: "Y", Responsibility: "r", Paths: []string{"a/x/y/**"}}),
+			}},
+			want: []string{"重叠", "d_outer", "d_inner"},
+		},
+		{
+			// a/x.go 这个文件与 a/x/ 这个目录同名却毫无关系。两种声明顺序都放进来，
+			// 是因为重叠判定对「左精确右前缀」和「左前缀右精确」走的是不同分支。
+			name: "精确路径与同名目录的前缀规则不重叠",
+			target: &Target{Meta: TargetMeta{Version: 2}, Subsystems: []TargetSubsystem{
+				subsystem("d_a", []string{"a/**"}, 0,
+					TargetDomain{ID: "d_dir_first", Name: "A", Responsibility: "r", Paths: []string{"a/x/**"}},
+					TargetDomain{ID: "d_file_second", Name: "B", Responsibility: "r", Paths: []string{"a/x.go"}},
+					TargetDomain{ID: "d_file_first", Name: "C", Responsibility: "r", Paths: []string{"a/y.go"}},
+					TargetDomain{ID: "d_dir_second", Name: "D", Responsibility: "r", Paths: []string{"a/y/**"}}),
+			}},
+			unwanted: []string{"重叠"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

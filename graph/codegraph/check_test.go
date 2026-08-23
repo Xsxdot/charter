@@ -465,6 +465,30 @@ func TestCheckTargetDomainGap(t *testing.T) {
 			// 两条 Detail 各带自己的目标域 id。
 			wantDetail: []string{"d_api", "d_worker"},
 		},
+		{
+			// dir/** 是「目录整段」而不是「字符串前缀」。真实动机是 handoff 的竖切：
+			// internal/task/** 绝不能顺手把 internal/taskrunner/ 也吞进任务域，否则
+			// 竖切边界一开始就是假的，而 unplaced 会假性归零、让人以为已经切完。
+			name:         "兄弟目录前缀不得被 dir/** 规则误盖",
+			target:       gapTarget(0, TargetDomain{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}}),
+			view:         gapView("app/api/x.go", "app/apix.go", "app/api-v2/x.go"),
+			wantFails:    map[string]int{KindUnplacedOverBudget: 1},
+			wantWarns:    map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
+			wantDetail:   []string{"2/0", "app/apix.go", "app/api-v2/x.go"},
+			unwantDetail: []string{"app/api/x.go"},
+		},
+		{
+			// 精确路径规则只认那一个文件：它既不能盖住同目录的兄弟文件，自己也必须
+			// 被认出来。删掉精确分支后本域会一个文件都命中不了，未落位从 1 变 2、
+			// 还会多冒一条 domain-empty——三个断言各自都能把它拦下。
+			name:         "精确路径目标领域只盖那一个文件",
+			target:       gapTarget(0, TargetDomain{ID: "d_exact", Name: "单文件域", Responsibility: "只管一个文件", Paths: []string{"app/api/x.go"}}),
+			view:         gapView("app/api/x.go", "app/api/y.go"),
+			wantFails:    map[string]int{KindUnplacedOverBudget: 1},
+			wantWarns:    map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
+			wantDetail:   []string{"1/0", "app/api/y.go"},
+			unwantDetail: []string{"app/api/x.go"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
