@@ -1,6 +1,6 @@
 # Spec：codegraph 目标图刀（target 增目标领域节 + gap 判据与棘轮）
 
-> 状态：**待用户批准**
+> 状态：**已批准**（2026-08-23，用户批准：「开吧」）
 > 级别与档位：**L3 轻档**（动 wire 契约：target.json 新增 `subsystems[].domains[]` 段 + check 报告新增 finding kind）→ contract → breakdown → 单轮 implement → review → acceptance → finish
 > 卡：`C1.1`（父卡 `C1` 代码图批次二）
 > 来源：`docs/roadmap.md` 第 8 条；2026-08-23 roadmap 前置讨论（原型走查四轮，形态基准 handoff `prototypes/codegraph-subsystem/`）

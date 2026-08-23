@@ -1,6 +1,6 @@
 # Spec：codegraph 前端搬迁刀（查看器入 charter，handoff 同源挂载 + iframe）
 
-> 状态：**待用户批准**
+> 状态：**已批准**（2026-08-23，用户批准：「开吧」）
 > 级别与档位：**L3 轻档**（跨仓：charter 新增 `graph/webui` embed 包与前端工程，handoff 升版消费；新增一条宿主契约面）→ contract → breakdown → 单轮 implement（**内含发版卡点**）→ review → acceptance → finish
 > 卡：`C1.4`（父卡 `C1` 代码图批次二）
 > 来源：`docs/roadmap.md` 第 11 条；2026-08-23 roadmap 前置讨论 Q1（用户原话：「前端页面是不是也从 handoff 抽过来，handoff 侧使用 frame 嵌入」）

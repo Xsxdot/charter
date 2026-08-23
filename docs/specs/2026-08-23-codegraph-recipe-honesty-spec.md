@@ -1,6 +1,6 @@
 # Spec：codegraph 配方刀（model 分种 / 协议契约域 / 声明锚归属）
 
-> 状态：**待用户批准**
+> 状态：**已批准**（2026-08-23，用户批准：「开吧」）
 > 级别与档位：**L3 轻档**（动 wire 契约：`Node` 增 `modelKind` + `Check` 签名增 decls 入参 + 扫描配方修订）→ contract → breakdown → 单轮 implement → review → acceptance → finish
 > 卡：`C1.2`（父卡 `C1` 代码图批次二）
 > 来源：`docs/roadmap.md` 第 9 条；2026-08-23 roadmap 前置讨论
