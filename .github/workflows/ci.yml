@@ -1,0 +1,34 @@
+name: graph-webui
+
+on:
+  push:
+    paths: ["graph/webui/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["graph/webui/**", ".github/workflows/ci.yml"]
+
+jobs:
+  webui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: graph/webui/package-lock.json
+      - name: Install viewer dependencies
+        working-directory: graph/webui
+        run: npm ci
+      - name: Run viewer tests
+        working-directory: graph/webui
+        run: npm test
+      - name: Preserve committed dist
+        working-directory: graph/webui
+        run: |
+          cp -a dist "$RUNNER_TEMP/committed-dist"
+      - name: Rebuild viewer
+        working-directory: graph/webui
+        run: npm run build
+      - name: Reject stale committed dist
+        working-directory: graph/webui
+        run: diff -ruN "$RUNNER_TEMP/committed-dist" dist
