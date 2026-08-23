@@ -35,7 +35,12 @@ type Report struct {
 
 // Check 把合并视图 v 套在目标图 t 上对照。算法四步见 spec §5。
 // deleted 状态的节点/边不参与——它们只为渲染保留。
-func Check(t *Target, v *View) *Report {
+//
+// decls 是领域声明（`codegraph/domains/*.json`），由 CLI 层加载后传入；
+// 为 nil 或空时锚判据整体跳过，输出与本入参引入前逐字节相同（契约 §4-12）。
+// 本函数**保持纯函数**：锚只走 resolveGraphAnchor 这条只读 View 的路径，
+// 绝不调用会读盘的 ResolveAnchor（契约 §3-2、§4-13）。
+func Check(t *Target, v *View, decls map[string]DomainDecl) *Report {
 	rep := &Report{Fails: []Finding{}, Warns: []Finding{}, LegacyHits: map[string]int{}}
 	assembly := make(map[string]bool, len(t.Assembly))
 	for _, f := range t.Assembly {
@@ -214,6 +219,10 @@ func Check(t *Target, v *View) *Report {
 
 	// fitness 只消费当前视图的图内文件集并落 Warns；命中是要求回答边界，
 	// 不是自动把架构形态判成契约违规（契约 §2-1、§2-3）。
+	// 锚归属：位置在 gap 之后、fitness 之前。三者都只落 Warns，彼此无依赖，
+	// 排序统一由末尾的 sortFindings 兜底。
+	rep.Warns = append(rep.Warns, anchorOwnershipFindings(v, decls)...)
+
 	rep.Warns = append(rep.Warns, prefixFamilyFindings(v)...)
 	rep.Warns = append(rep.Warns, oversizedPackageFindings(v)...)
 	sortFindings(rep) // 输出稳定排序，测试与 diff 可复现

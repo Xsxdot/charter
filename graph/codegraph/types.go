@@ -69,7 +69,18 @@ type Node struct {
 	Fields       [][]string `json:"fields,omitempty"` // model 专用: [名, 类型, 说明]
 	Unscanned    bool       `json:"unscanned,omitempty"`
 	ProjScanned  bool       `json:"projScanned,omitempty"`
+	// ModelKind 只对 kind=="model" 有意义：区分真实体与传输/配置结构。
+	// 空 = 未分种（存量数据的默认），**不是**「未知实体」——消费侧统计实体数
+	// 时不得把空值计入，否则 707 个 model 又会原样淹没实体表（契约 §2-1）。
+	ModelKind string `json:"modelKind,omitempty"`
 }
+
+// model 的三种子分类。判定序与判据表在扫描配方里，此处只钉取值。
+const (
+	ModelKindEntity = "entity" // 有创建者或写入者的真实体
+	ModelKindDTO    = "dto"    // 传输结构、wire 类型；兜底档
+	ModelKindConfig = "config" // 构造后只读、从配置或 env 装载
+)
 
 // Edge 是一条调用关系 [caller, callee]。
 type Edge [2]string

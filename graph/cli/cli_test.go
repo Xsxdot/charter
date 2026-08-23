@@ -955,3 +955,66 @@ func copyFixtureRepo(t *testing.T, src, dst string) {
 		}
 	}
 }
+
+// check 侧真加载领域声明（契约 25）。夹具里本来就藏着一个真案例：
+// domains/d_cli.json 声明域 d_cli、锚 cmd/run.go#runE，而节点 n_runE 挂在容器
+// k_svc 下、属 d_svc/api——声明说是我的，图说不是你的。这条判据接上之前，
+// 这个矛盾在 check 里是全绿的。
+func TestGraphCheckLoadsDomainDeclsAndReportsAnchorOwnership(t *testing.T) {
+	out, err := runGraph(t, "check", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("锚归属只进 warn，不该让 check 非零退出: %v\n%s", err, out)
+	}
+	var rep struct {
+		Fails []struct{ Kind string } `json:"fails"`
+		Warns []struct {
+			Kind, From, To, Detail string
+		} `json:"warns"`
+	}
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("解析 check 输出: %v\n%s", err, out)
+	}
+	var hit int
+	for _, w := range rep.Warns {
+		if w.Kind != "anchor-off-domain" {
+			continue
+		}
+		hit++
+		if w.From != "d_cli" || w.To != "d_svc/api" {
+			t.Errorf("From 应是声明方 d_cli、To 应是实际所属 d_svc/api，实际 From=%q To=%q", w.From, w.To)
+		}
+		if !strings.Contains(w.Detail, "cmd/run.go#runE") {
+			t.Errorf("报文应含锚原文，实际: %s", w.Detail)
+		}
+	}
+	// lifecycle 的 from/to 两条 + stateMachine 一条，都指向同一个锚且刻意不去重
+	if hit != 3 {
+		t.Fatalf("应报 3 条 anchor-off-domain（from/to/stateMachine 各一，不去重），实际 %d 条: %+v", hit, rep.Warns)
+	}
+	for _, f := range rep.Fails {
+		if strings.HasPrefix(f.Kind, "anchor-") {
+			t.Errorf("锚判据不得进 fails: %+v", f)
+		}
+	}
+}
+
+// 契约 25：check 加载领域声明失败必须返回 err，不得静默降级成「没有声明」。
+//
+// 审计发现这条零守卫：把 `if err != nil { return err }` 换成 `decls, _ :=`，
+// 一份损坏的声明文件会让 check 打印 {"fails":[],"warns":[]} 并退出 0——
+// 全绿而问题还在，正是 cli.go 那处注释点名要防的失效形态，而当时没有测试守着。
+func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	bad := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	if err := os.WriteFile(bad, []byte("{ this is not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "check", "--repo", repo)
+	if err == nil {
+		t.Fatalf("声明文件损坏时 check 必须失败，不得静默当作没有声明。输出: %s", out)
+	}
+	if !strings.Contains(err.Error(), "d_cli.json") {
+		t.Errorf("报错应指出是哪个文件坏了，实际: %v", err)
+	}
+}

@@ -27,6 +27,13 @@ const (
 	KindDomainEmpty        = "domain-empty"
 )
 
+// 声明锚归属（刀 C1.2）的 finding kind。两者一律进 Warns：handoff 今天就有
+// 14 条命中，报硬红只会逼出「改声明去迁就现状」这一最坏的拐杖（契约 §2-2）。
+const (
+	KindAnchorOffDomain = "anchor-off-domain"
+	KindAnchorOffGraph  = "anchor-off-graph"
+)
+
 // 阈值写死在包内，不进 target 配置，避免把 fitness 判据调高到不报为止。
 const (
 	prefixFamilyMinShared  = 4

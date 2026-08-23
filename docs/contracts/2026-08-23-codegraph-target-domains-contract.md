@@ -166,7 +166,7 @@ implement 必须把其中的 note 查找和分档移入 `codegraph` 纯函数，
 13. 目标域路径未被所属子系统 `paths` 覆盖时 `ValidateTarget` 返回问题。
 14. 同一子系统内任意两目标域路径重叠时 `ValidateTarget` 返回问题。
 15. `UnplacedBudget < 0` 时 `ValidateTarget` 返回问题。
-16. `Check` 签名保持 `func Check(t *Target, v *View) *Report`。
+16. `Check` 签名保持 `func Check(t *Target, v *View) *Report`。**（2026-08-23 C1.2 配方刀取代：新签名为 `func Check(t *Target, v *View, decls map[string]DomainDecl) *Report`，见 `2026-08-23-codegraph-recipe-honesty-contract.md` §3-1。本条冻结时 decls 尚不进 check，记录的是彼时的稳定承诺；C1.2 把「声明锚归属」纳入 check，入参扩张是判据范围扩张的必然结果。`decls` 为 nil 时输出与本刀实现逐字节相同，本条其余判据不受影响。）**
 17. `unplaced` 统计非 deleted 视图节点文件去重后的唯一文件。
 18. `unplaced` 只统计当前子系统归属且未命中其任一目标域路径的文件。
 19. `unplaced <= UnplacedBudget` 时产生一条 warn，kind 恰为 `unplaced`。
