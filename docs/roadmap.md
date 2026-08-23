@@ -50,3 +50,6 @@
 13a. **`contracts[].from/to` 的引用完整性无独立校验**：`ValidateTarget` 读不到 best.json，无法自校验方向引用的子系统是否存在；本期下沉为 check 期既有 `dead-contract` 行为（引用不存在的子系统 = 没有边归到它 = 该条目死掉）。独立校验留后。来源：C1.8 spec OOS。
 13b. **best.json 的编辑体验**（查看器里改归属、批量重挂）：239 条容器归属靠手改 JSON 可行但不好用。与已搁置的 C1.3 查看器刀同族，一并再议。来源：C1.8 spec OOS。
 13c. **`DomainStat.Subsystems` / `CrossSubsystem` 是零消费者死字段**：C1.8 拆解实测——`graph/webui/src` 对这两个 wire 字段全部零命中（C1.4 把前端搬进 charter 后，它就是唯一消费方）。删它是跨仓可见的 wire 变更，超出 C1.8 范围，故 C1.8 冻结条 85 明写「保留不动」。与 C1.5 记的 `TestRef.Snippet`（1518 条全空）同族，将来一并清。来源：C1.8 breakdown 待拍板 5。
+
+
+13d. **`misplacedSkipped` 是 C1.6 的进度读数**：C1.8 acceptance 真机实测——用 migrate 机械翻译出的 best.json 跑 handoff 全量图，`bestCoverage` 报 `misplacedSkipped: 125`。成因是两套领域词表并存：视图侧 20 个领域（来自 `codegraph/domains/` 声明），best 侧只有 10 个（机械翻译自旧 target 的子系统）；容器的视图领域不在 best 词表里时按冻结条 61 跳过比较，不产 `container-misplaced`。**这个数就是「best.json 还没真正覆盖结构」的刻度**：C1.6 手写 handoff 的 best.json 时它应显著下降，降不下来说明词表仍未统一。同期读数：`assignedContainers 232 / viewContainers 233`（未认领的是 `c_main`）、`crossDomainEdges 775`。来源：2026-08-24 C1.8 acceptance 真机。

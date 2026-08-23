@@ -24,6 +24,6 @@ description: 图对账——合并前核对本分支代码改动与视图 diff �
 
 ## 红线
 
-- **只动 `codegraph/diffs/<分支>.json`**：不动 `baseline.json`（absorb 归 finish）、不动 `target.json`（契约冻结物，动它要重走 contract）、不动业务代码。
+- **只动 `codegraph/diffs/<分支>.json`**：不动 `baseline.json`（absorb 归 finish）、不动 `target.json` 与 `best.json`（前者是契约冻结物、后者是应然结构树，动哪个都要重走 contract）、不动业务代码。
 - 对账不是重扫：只核对本分支改动面，不做全量重扫——基准靠流程副产物保鲜。
 - 无法机械补齐的矛盾裁 fail 等下一轮或人裁，不硬编结论。
