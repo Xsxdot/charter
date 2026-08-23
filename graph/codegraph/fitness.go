@@ -34,6 +34,17 @@ const (
 	KindAnchorOffGraph  = "anchor-off-graph"
 )
 
+// 最优图 gap（刀 C1.8）的 finding kind。四条一律进 Warns——它们衡量的是最优图
+// 与现状分类的一致性，靠编辑 best.json 即可消解；把可编辑消解的东西设为 fail，
+// 等于给「改标签」发进度奖（契约 §1-3、§4）。
+// 不可伪造的迁移进度条是边的合法性，由既有 new-direction / over-budget /
+// legacyBudget 棘轮承担，本刀只换它们的归属输入。
+const (
+	KindContainerMisplaced = "container-misplaced"
+	KindContainerUnplaced  = "container-unplaced"
+	KindBestDangling       = "best-dangling"
+)
+
 // 阈值写死在包内，不进 target 配置，避免把 fitness 判据调高到不报为止。
 const (
 	prefixFamilyMinShared  = 4

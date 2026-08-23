@@ -14,7 +14,7 @@ import (
 // decls，用它保持这些用例的调用形态不变——20 处 ", nil" 只会把真实 diff 淹掉。
 // 它同时正是契约 §4-12「decls 为 nil 时输出与入参引入前逐字节相同」的执行面：
 // 这批存量用例全绿即该条成立。带 decls 的用例一律直呼 Check。
-func checkNoDecls(t *Target, v *View) *Report { return Check(t, v, nil) }
+func checkNoDecls(t *Target, v *View) *Report { return Check(t, nil, v, nil) }
 
 func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}

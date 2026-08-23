@@ -40,7 +40,15 @@ type Report struct {
 // 为 nil 或空时锚判据整体跳过，输出与本入参引入前逐字节相同（契约 §4-12）。
 // 本函数**保持纯函数**：锚只走 resolveGraphAnchor 这条只读 View 的路径，
 // 绝不调用会读盘的 ResolveAnchor（契约 §3-2、§4-13）。
-func Check(t *Target, v *View, decls map[string]DomainDecl) *Report {
+//
+// b 是最优图（`codegraph/best.json`），由 CLI 层加载后传入。
+// **两个 nil 入参的后果不对称**：decls 为 nil 只关掉锚判据；b 为 nil 关掉的是
+// 主判据——归属无来源，四条 gap 判据与全部契约执法一并跳过。因此调用方在 b 为
+// nil 时必须显式喊出「判据已跳过」，静默等同伪绿（C1.8 契约 §3-1、§5-3）。
+//
+// TODO(C1.8): 本参数在 Ticket 0 阶段尚未接线，实现见 C1.8 契约 §4、§5-3。
+func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
+	_ = b
 	rep := &Report{Fails: []Finding{}, Warns: []Finding{}, LegacyHits: map[string]int{}}
 	assembly := make(map[string]bool, len(t.Assembly))
 	for _, f := range t.Assembly {
