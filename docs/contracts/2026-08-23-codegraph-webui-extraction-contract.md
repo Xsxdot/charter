@@ -365,3 +365,42 @@ export function fetchCodegraphSource(project: string, file: string, line: number
 3. handoff `/codegraph/app/` 是本次宿主挂载实例；通用契约仍允许同源任意挂载点，viewer 的相对 base 使该实例路径不进入公共 API。
 4. `?project=` 属于 iframe URL 层，API 继续使用 `/api/projects/{name}` 路径参数；两层参数形态不合并、不互换。
 5. handoff 的 `internal/agentd/codegraph.go` provider handler 与 `internal/webui` embed 包是存量边界，本卡只消费/挂载，不把它们迁入 charter `graph/webui`。
+
+## §12 已知差异回写（实现轮 review 打回后追加，2026-08-23）
+
+本节**只记录实现与上文冻结条款的偏差**，不改动 §1~§11 任何一条的正文；上文条款仍以冻结时的措辞为准。本卡多处以「等价搬迁 / 不改一处行为」描述迁移目标（见 §3-2「原样保留」、§3-3「不改形态」），下列各项是实测到的**不等价之处**，逐条留档以免后人把它们当成搬迁事故重新「修回去」。
+
+### 12-1 新增前端 console 日志（与「原样保留」的偏差）
+
+- 事实：handoff 侧 `web/src/app/codegraph/**` 与 `web/src/api/client.ts` 的 codegraph 相关代码**一处 console 调用都没有**（本轮 `grep -rho 'console\.[a-z]*' | wc -l` = 0）。搬迁后的 `graph/webui/src` 共有 **10 处**，分布为：
+  - `src/api/client.ts`：2 × `console.debug`（请求发出、成功应答）、3 × `console.warn`（401、非 2xx、传输失败）
+  - `src/app/codegraph/useCodegraph.ts`：3 × `console.info`（跳过取数、取数开始、取数成功）、1 × `console.warn`（取数失败）
+  - `src/app/codegraph/DetailPanel.tsx`：1 × `console.warn`（源码窗口读取失败）
+- 判断：**保留**。全局开发规范要求「关键节点必打日志、每条错误分支带上下文」，浏览器端结构化 logger 不在本卡范围内，`console.*` 是此处唯一可用手段。
+- 影响面：不改任何函数签名、返回值、请求形状与渲染结果；只增加 devtools 可观察性。§8 的 73 条原子断言无一条被触动。
+- 欠账：日志级别未做运行时开关，`console.debug` 每次请求各打一条。若将来查看器嵌入高频刷新场景，需要一个 `debug` 开关，届时另开卡。
+
+### 12-2 用户可见文案改为宿主无关（与 handoff 原文的偏差）
+
+本包要作为公共 module 发给任意宿主，原文案里点名 handoff 专有事物的地方会变成别家宿主用户的死链/空指令，故改写。**`NOT_SCANNED = '未生成代码图'` 未改**——它是 §8-43 冻结的跨仓字面量匹配。
+
+| 位置 | handoff 原文 | 本仓改后 | 理由 |
+|---|---|---|---|
+| `CodegraphPage.tsx` 空态正文 | 「按 `docs/codegraph-scan-recipe.md` 派一次扫描任务」 | 「按本项目的方式扫一次图」 | 该文档只在 handoff 仓存在，charter 及其它宿主点过去是死链 |
+| `client.ts` 401 | 「请重新执行 handoff console 兑换 cookie」 | 「请重新登录后重试」 | 兑换方式是宿主的事；§5-3 明确允许「保留同一错误可观察性」的前提下改写 401 文案 |
+| `client.ts` 非 2xx 兜底 | 「agentd 返回 {status}」 | 「服务端返回 {status}」 | `agentd` 是 handoff 守护进程名。服务端给了 `error` 字段时仍**原样照抄**，未吞掉（§5-3） |
+| `client.ts` 传输失败 | 「无法连接 agentd（反代失败？）」 | 「无法连接服务端（反代失败？）」 | 同上 |
+
+同理，源码内注释中指向 handoff 仓路径的引用（`cmd/graph.go`、`codegraph.go`）改为宿主中性表述；`DetailPanel.tsx` 头注释的「经 agentd 实时读」改为「经宿主 API 实时读」。
+
+### 12-3 主题 CSS 不是 handoff 的子集，也不是 handoff 的复制
+
+§3-3 只要求「前端自带最小主题 CSS，不依赖宿主 token」，未规定视觉等价。实现中三处需要留档：
+
+- **高度链换了实现**：handoff 靠 `Shell.tsx` 的 `h-dvh` → `main.min-h-0.flex-1` 从宿主布局兜住查看器高度；本包没有 Shell，改为在 `index.css` 用 `html, body, #root { height: 100% }` 自建确定高度链。这是**必须的等价补偿**，不是新特性：缺了它 `CodegraphPage` 根元素的 `h-full` 会对着 auto 高度退化，三栏塌成内容高、`FocusGraph`/`DomainPanorama` 的 `clientHeight` 测算全错。
+- **自托管 Geist 与滚动条弱化按 handoff 原样迁入**：`public/fonts/Geist-Variable.woff2` + `@font-face` + `--font-sans` 首位 Geist + 9 行滚动条规则。字体 URL 写 publicDir 绝对形式 `/fonts/…`，由 `base: './'` 在构建期改写为 CSS 相对的 `../fonts/…`（vite 6.4.3 实测产物），因此不违反 §5-4「同源任意挂载点」。
+- **色板仍是最小集**：handoff `index.css` 的 `--state-*`、`--project-*`、`.dark` 档等宿主专用 token 未迁入，查看器用不到。这一条是有意的不等价。
+
+### 12-4 测试面净增
+
+搬迁的 9 支 Vitest 文件一支未删（§8-16 保持）。实现轮另加 `src/theme.test.ts`（4 组断言：高度链、Geist 自托管、`--font-sans`、滚动条两套写法）与 `client.test.ts` / `CodegraphPage.test.tsx` 的宿主无关文案断言。原因：上述全局样式与文案全是**无 DOM 后果的产物级事实**，10 支组件测试全绿时它们可以整段丢失而无人发现——首轮搬迁正是这么丢的。`src/test/setup.ts` 的 `vi.stubGlobal('jest', …)` 桩已删除（本工程无任何 `vi.useFakeTimers()` 用法，该桩为死代码）。

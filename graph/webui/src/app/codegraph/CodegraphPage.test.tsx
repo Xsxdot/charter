@@ -140,6 +140,21 @@ describe('CodegraphPage 非图状态', () => {
     expect(screen.queryByText(/还没有代码图/)).toBeNull()
   })
 
+  // 这个包要发给任意宿主：空态是唯一一处「告诉用户下一步怎么办」的正文，
+  // 一旦点名某个仓才有的文档路径，别的宿主用户点过去就是死链。
+  it('空态措辞宿主无关：不点名任何具体仓的文档，也不提 handoff', async () => {
+    state.data = null as unknown as CodegraphResp
+    state.error = '项目 aio 未生成代码图（无 codegraph/baseline.json）'
+    render(<CodegraphPage />)
+    await waitFor(() => expect(screen.getByText(/还没有代码图/)).toBeTruthy())
+    const copy = document.body.textContent ?? ''
+    expect(copy).not.toMatch(/\.md\b/)
+    expect(copy.toLowerCase()).not.toContain('handoff')
+    // 去掉死链不等于去掉指引：产物落点必须还在，否则空态变成一句废话
+    expect(copy).toContain('codegraph/baseline.json')
+    expect(copy).toContain('刷新')
+  })
+
   it('空 project 不发请求且仍可渲染空状态', () => {
     window.history.replaceState({}, '', '/?project=')
     state.data = null as unknown as CodegraphResp

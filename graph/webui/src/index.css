@@ -1,5 +1,15 @@
 @import 'tailwindcss';
 
+/* Geist 自托管：宿主可能跑在无外网环境，不引 CDN。
+   路径写 publicDir 绝对形式，由 vite.config.ts 的 base:'./' 在构建期改写成
+   CSS 相对的 ../fonts/…，这样查看器挂在宿主的任意同源子路径下都取得到。 */
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.196 0 0);
@@ -11,7 +21,9 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'PingFang SC', sans-serif;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
 }
 
 @theme inline {
@@ -31,5 +43,46 @@
 @layer base {
   * { @apply border-border outline-ring/50; }
   body { @apply bg-background text-foreground; font-family: var(--font-sans); margin: 0; }
-  #root { min-height: 100vh; }
+
+  /* 确定的高度链，三层缺一不可。CodegraphPage 的根元素是 flex h-full flex-col，
+     h-full 是 height:100%——百分比高度只有在祖先链每一层都有确定高度时才解析，
+     碰到 auto 就退化。min-height 撑不起这条链（它不给子元素可解析的高度）。
+     断链的后果不是差几像素：三栏塌成内容高，CallTree/DetailPanel 的 overflow
+     不再各自滚动，FocusGraph 的 el.clientHeight/2 与 DomainPanorama 的
+     clientHeight - pad 都会按塌掉的高度算坐标。
+     用 100% 而不是 100vh：查看器被宿主放在 iframe 里，要填满的是 iframe 的
+     视口，vh 在部分嵌套场景下量的不是这个盒子。 */
+  html, body, #root { height: 100%; }
+
+  /* 滚动条弱化：系统默认的深色粗条在左树 / 中图 / 右详情三栏同时出现时比内容还抢眼。
+     统一改成细的半透明滑块 + 透明轨道，hover 才加深——滚动条是导航辅助，
+     不该在静止时参与视觉层级。
+
+     两套写法都要：scrollbar-* 是 Firefox 与新版 Chrome 的标准属性，
+     ::-webkit-scrollbar 覆盖 Safari 与旧版 Chromium，缺一档就有浏览器落回默认粗条。
+     颜色用 color-mix 从 --foreground 调，跟随主题，不写死灰值 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 20%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--foreground) 20%, transparent);
+    border-radius: 999px;
+    /* 透明边框 + background-clip 让滑块比轨道更细，两侧留出呼吸位 */
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }

@@ -26,12 +26,14 @@ async function bodyOrError(resp: Response): Promise<{ detail: string; body: unkn
 async function parseResponse<T>(path: string, resp: Response): Promise<T> {
   if (resp.status === 401) {
     console.warn('[codegraph] response unauthorized', { path, status: resp.status })
-    throw new ApiError(401, '未授权：浏览器会话已失效，请重新执行 handoff console 兑换 cookie')
+    // 文案保留「会话失效」这层可观察性，但不写具体的登录/兑换命令：本包挂在
+    // 任意宿主下，兑换方式是宿主的事，写死一条命令等于让别家用户敲空。
+    throw new ApiError(401, '未授权：浏览器会话已失效，请重新登录后重试')
   }
   if (!resp.ok) {
     const { detail, body } = await bodyOrError(resp)
     console.warn('[codegraph] response failed', { path, status: resp.status, error: detail || resp.statusText })
-    throw new ApiError(resp.status, detail || `agentd 返回 ${resp.status} ${resp.statusText}`, body)
+    throw new ApiError(resp.status, detail || `服务端返回 ${resp.status} ${resp.statusText}`, body)
   }
   const result = (await resp.json()) as T
   console.debug('[codegraph] response success', { path, status: resp.status })
@@ -46,7 +48,7 @@ async function request<T>(path: string): Promise<T> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn('[codegraph] transport failed', { path, error: message })
-    throw new ApiError(0, `无法连接 agentd（反代失败？）：${message}`)
+    throw new ApiError(0, `无法连接服务端（反代失败？）：${message}`)
   }
   return parseResponse<T>(path, resp)
 }

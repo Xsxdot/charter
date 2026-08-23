@@ -1,4 +1,11 @@
 // CodegraphPage —— 代码图 viewer 的页面状态与三态下钻。
+//
+// 三态：
+//   scope=null 且图里有领域 → 领域全景
+//   scope 还有子领域        → 子领域全景（域外领域画成占位卡）
+//   scope 是叶子领域        → 树+图视图（左树 320 / 中图自适应 / 右详情 340）
+// 整图没有领域段时降级为单领域视图并明示提示——不按包名伪造领域。
+//
 // 边界：项目选择不属于 viewer；只从 iframe 自身 URL 的 ?project= 读取。
 import { useMemo, useState } from 'react'
 import { CallTree } from './CallTree'
@@ -32,7 +39,7 @@ export function CodegraphPage() {
   }, [data, viewName])
   const staleIds = useMemo(() => new Set((data?.stale ?? []).map((s) => s.id)), [data])
 
-  const single = !!view && !hasDomains(view)
+  const single = !!view && !hasDomains(view)               // 旧图：整张图当一个领域看
   const pano = !!view && !single && (scope === null || childDomainsOf(view, scope).length > 0)
   const leafScope = single ? null : scope
 
@@ -40,12 +47,15 @@ export function CodegraphPage() {
     if (!view) return []
     const ok = foci.filter((f) => view.nodes[f] && view.nodes[f].status !== 'deleted')
     if (ok.length) return ok
+    // 默认焦点必须落在当前领域内：goScope 会清空 foci，若这里回落到全图第一个
+    // 已扫描入口，进领域后左树列的是本域的根、焦点图却停在域外节点上，两栏各说各话。
     return leafScope ? leafRoots(view, leafScope).slice(0, 1) : scannedEntries(view).slice(0, 1)
   }, [view, foci, leafScope])
 
   const setFociWithHist = (next: string[], fromHist = false) => {
     if (next.join('|') === effFoci.join('|')) return
     if (!fromHist) {
+      // 历史为空时先把当前（默认）焦点垫底：否则第一次换焦点后「后退」无处可退
       const base = hist.length ? hist.slice(0, histIdx + 1) : [effFoci]
       const h = [...base, next]
       setHist(h)
@@ -61,6 +71,7 @@ export function CodegraphPage() {
     } else setFociWithHist([id])
   }
 
+  // 换一层领域：焦点历史与展开状态都作废——它们是上一层的语境，带过去只会误导
   const goScope = (next: string | null) => {
     setScope(next)
     setSelDomain('')
@@ -71,6 +82,7 @@ export function CodegraphPage() {
     setOpen(new Set())
     setSelected('')
   }
+  // 横跳：落到目标节点所在的叶子领域并把它设为焦点
   const enterNode = (id: string) => {
     if (!view) return
     const path = nodeDomainPathOf(view, id)
@@ -81,6 +93,10 @@ export function CodegraphPage() {
     setSelected(id)
   }
 
+  // 出错时**不能整页替换**：视图下拉与「刷新」都在工具条里，把工具条一起换掉，
+  // 选中一个取不到数据的 diff 视图后就再也换不回基准视图了（本页没有别的入口，
+  // 等于卡死）。所以错误只占内容区，工具条恒在。
+  // 上游 handoff 版这里换掉的是项目下拉，症状同一个——工具条是唯一的退路。
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2 text-sm">
@@ -170,10 +186,10 @@ export function CodegraphPage() {
   )
 }
 
-// NOT_SCANNED 是 agentd 对「这个项目还没扫过图」的应答特征（codegraph.go 的 404
-// 文案）。按文案判而不是按状态码：useCodegraph 只把 Error.message 传出来，
-// 状态码在那一层就丢了。改 agentd 那句文案时这里要一起改——两处都在提「未生成
-// 代码图」，grep 得到。
+// NOT_SCANNED 是宿主服务端对「这个项目还没扫过图」的 404 应答特征。按文案判而
+// 不是按状态码：useCodegraph 只把 Error.message 传出来，状态码在那一层就丢了。
+// 这句是跨仓约定的字面量（契约冻结项），宿主改那句文案时这里必须一起改——两处
+// 都在提「未生成代码图」，grep 得到。
 const NOT_SCANNED = '未生成代码图'
 
 /** CodegraphPlaceholder 是内容区的三种非图状态：加载中 / 没扫过 / 真出错。 */
@@ -192,14 +208,14 @@ function CodegraphPlaceholder({ loading, error, project, onRetry }: {
       {notScanned ? (
         <>
           <p className="text-sm font-medium">{project ? `项目 ${project} 还没有代码图` : '还没有代码图'}</p>
-          {/* 这里不给「跑一句命令」的暗示：本仓没有 graph scan 子命令，
-              基线是派 executor 按 docs/codegraph-scan-recipe.md 扫出来的
-              （handoff graph 一族全是本地只读查询，见 cmd/graph.go） */}
+          {/* 这里只说产物落点，不给具体命令、也不点名任何仓内文档：本组件是发给
+              任意宿主的公共包，扫描入口各家不同（有的是 CLI 子命令，有的是派一次
+              扫描任务），写死一条路径必然对一部分宿主是死链。产物落点是契约里
+              固定的，所以它可以写。 */}
           <p className="max-w-md text-xs text-muted-foreground">
             代码图是扫描产物，落在项目仓库的
             <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono">codegraph/baseline.json</code>。
-            按 <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono">docs/codegraph-scan-recipe.md</code>
-            派一次扫描任务，文件落盘后回来点「刷新」。
+            按本项目的方式扫一次图，文件落盘后回来点「刷新」。
           </p>
         </>
       ) : (

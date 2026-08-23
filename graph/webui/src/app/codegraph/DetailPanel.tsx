@@ -1,6 +1,6 @@
 // DetailPanel —— 代码图右详情（常显，跟随焦点/选中节点）。
 // 区块：职责/签名(新旧对照)/参数/返回/字段/关联测试/被谁调用/调用了/源码。
-// 源码按 file:line 经 agentd 实时读——不落地缓存，保鲜以真实文件为准。
+// 源码按 file:line 经宿主 API 实时读——不落地缓存，保鲜以真实文件为准。
 import { useEffect, useState } from 'react'
 import { fetchCodegraphSource } from '../../api/client'
 import type { CgSourceResp } from '../../api/types'
