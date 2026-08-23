@@ -151,6 +151,30 @@ implement 必须把其中的 note 查找和分档移入 `codegraph` 纯函数，
 
 ## §4 冻结清单（逐条可独立判 pass/fail）
 
+> **2026-08-23 回写：本节大部被 C1.8 最优图刀取代。**
+> 取代者：`2026-08-23-codegraph-best-graph-contract.md`（§9 列出逐条对应）。
+>
+> 起因是用户对「目标图」的定义更正：**「目标域 = 一个包目录」是实现方引进的假设，
+> 用户从未提出**。真正要的是**最优图 `best.json`**——「基于当下代码实现的功能，
+> 最优的子系统/领域结构应该是什么样」，归属由**容器**表达而非路径规则。
+> 路径规则能表达的「应然」上限只有「把文件挪进这个目录」，因而无法表达任何不与
+> 目录同形的职责划分，与本项目配方自己的教条（「领域是职责，不是目录」）冲突。
+>
+> - **被取代**：条 1~7、9~15（`TargetDomain` 字段/JSON 键/嵌套/六条校验）、
+>   条 16（`Check` 签名，本条已被 C1.2 改过一次，C1.8 再改为四参）、
+>   条 17~25（`unplaced` / `unplaced-over-budget` / `domain-empty` 的统计与 Detail；
+>   前两者删除，`domain-empty` 判定改为「零容器指向」）、
+>   条 27~28、30~32（棘轮覆盖 `unplacedBudget`；该预算删除，棘轮只剩契约 `legacyBudget`）、
+>   条 36（handoff 侧写入目标域树 → 改为写入 `best.json`）、
+>   条 37（金样本改锁 `best.json` 形状）。
+> - **不受影响**：条 8（version 语义，值由 2 改 3 但「不匹配即拒载」不变）、条 26、
+>   条 29、条 33、条 34、条 35。
+> - **§5 拍板记录二（否决容器清单作为归属原语）不被推翻**：该反对意见成立。
+>   C1.8 接受它并改变判据用途——`container-misplaced` 不做迁移进度条、不上棘轮，
+>   因为重贴标签即可刷分；不可伪造的进度条是边的合法性，由既有
+>   `new-direction`/`over-budget`/`legacyBudget` 棘轮承担，C1.8 只换其归属输入。
+> - **作废成本为零**：handoff 的 `target.json` 至今未写过任何 `domains` 条目。
+
 1. `TargetDomain` 的 Go 字段恰为 `ID string`、`Name string`、`Responsibility string`、`Paths []string`。
 2. `TargetDomain` 的 JSON 键恰为 `id`、`name`、`responsibility`、`paths`。
 3. `TargetSubsystem.Domains` 类型为 `[]TargetDomain`，JSON 键为 `domains` 且 `omitempty`。

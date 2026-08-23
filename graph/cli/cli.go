@@ -38,6 +38,7 @@ var (
 	graphDepth              = 2
 	graphView               string
 	graphStale              bool
+	graphEdges              bool
 	absorbCommit            string
 	absorbBranch            string
 	graphResolveDoc         string
@@ -94,6 +95,7 @@ func graphResetState() {
 	graphDepth = 2
 	graphView = ""
 	graphStale = false
+	graphEdges = false
 	absorbCommit = ""
 	absorbBranch = ""
 	graphResolveDoc = ""
@@ -114,6 +116,15 @@ var graphValidateCmd = &cobra.Command{
 			return err
 		}
 		issues := codegraph.Validate(g)
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return err
+		}
+		if best != nil {
+			for _, issue := range codegraph.ValidateBest(best) {
+				issues = append(issues, "[best] "+issue)
+			}
+		}
 		decls, err := codegraph.LoadDomainDecls(graphRepo)
 		if err != nil {
 			return err
@@ -197,12 +208,15 @@ var graphValidateCmd = &cobra.Command{
 
 var graphMigrateCmd = &cobra.Command{
 	Use:   "migrate",
-	Short: "将 target.json 从 v1 机械迁移到 v2",
+	Short: "将 v2 target.json 与 baseline.json 机械迁移到 v3 与 best.json",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
 		result, err := codegraph.MigrateTarget(graphRepo)
 		if err != nil {
 			return err
+		}
+		for _, note := range result.Notes {
+			fmt.Fprintln(cmd.ErrOrStderr(), note)
 		}
 		return graphPrintJSON(cmd, result)
 	},
@@ -222,6 +236,15 @@ var graphCheckCmd = &cobra.Command{
 		if issues := codegraph.ValidateTarget(t); len(issues) > 0 {
 			return fmt.Errorf("目标图自身不合法: %v", issues)
 		}
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return fmt.Errorf("最优图不可用，check 拒绝执行: %w", err)
+		}
+		if best == nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "最优图判据已跳过：未找到 codegraph/best.json")
+		} else if issues := codegraph.ValidateBest(best); len(issues) > 0 {
+			return fmt.Errorf("最优图自身不合法: %v", issues)
+		}
 		v, _, err := graphLoadView()
 		if err != nil {
 			return err
@@ -233,7 +256,7 @@ var graphCheckCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rep := codegraph.Check(t, v, decls)
+		rep := codegraph.Check(t, best, v, decls)
 		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
 		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {
@@ -274,22 +297,14 @@ func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
 	}
 	var target codegraph.Target
 	// 这是对 LoadTarget 中 meta.version 白名单单点收口的有意例外：基准可能是
-	// schema v1，而 v1/v2 的预算字段形态相同（契约 §7-R11，取代 R5 原文的
-	// 「只取 contracts 段」）。约束按流向而非按字段段落成立——本函数取 contracts
-	// 与 subsystems 两段，产物只允许喂给棘轮比较（CheckBudgetRatchet /
-	// ApplyBudgetRatchet），**永远不得传给 Check**：两个预算字段只作比较、不作
-	// 事实来源，读歪的上限是棘轮多报少报一条 budget-raised；执法判据一律只吃
-	// 走过版本门的当前 target。
+	// schema v1/v2，而三个版本的 contracts 段形态相同（契约 §7-R11）。本函数只
+	// 投影 contracts，产物只允许喂给棘轮比较（CheckBudgetRatchet /
+	// ApplyBudgetRatchet），**永远不得传给 Check**；预算字段只作比较、不作事实
+	// 来源，执法判据一律只吃走过版本门的当前 target。
 	if err := json.Unmarshal([]byte(raw), &target); err != nil {
 		return nil, fmt.Errorf("解析基准 %s 的 target.json：%w", revision, err)
 	}
-	// subsystems 必须与 contracts 一同投影：棘轮要比较目标领域的 unplacedBudget。
-	// 只投 contracts 的话基准侧永远读不到子系统预算，"相等或下降不产 finding" 这条
-	// 就成了死条文——预算没动也会被当成从 0 上涨，棘轮变成每次 check 都响的假警报。
-	// 真 v1 基准顶层叫 domains 而非 subsystems，投影出 nil 即「基准未声明目标领域」，
-	// 正是契约要的按 0 处理（首跑悬崖见 §7-R11 与
-	// cli_test.go#TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base）。
-	return &codegraph.Target{Contracts: target.Contracts, Subsystems: target.Subsystems}, nil
+	return &codegraph.Target{Contracts: target.Contracts}, nil
 }
 
 func findMergeBase(repo string) (string, error) {
@@ -498,11 +513,31 @@ var graphDomainsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if graphEdges {
+			best, bestErr := codegraph.LoadBest(graphRepo)
+			if bestErr != nil {
+				return bestErr
+			}
+			out := map[string]any{
+				"view":    v.Name,
+				"current": codegraph.DomainEdgeMatrix(v),
+			}
+			if best == nil {
+				out["bestSkipped"] = "best.json 不可用，已跳过最优矩阵：未找到 codegraph/best.json"
+			} else {
+				out["best"] = codegraph.BestEdgeMatrix(v, best)
+			}
+			return graphPrintJSON(cmd, out)
+		}
 		doms := codegraph.DomainTree(v)
-		if target, targetErr := codegraph.LoadTarget(graphRepo); targetErr == nil {
-			doms = codegraph.DomainTreeWithTarget(v, target)
+		best, bestErr := codegraph.LoadBest(graphRepo)
+		if bestErr != nil {
+			return bestErr
+		}
+		if best != nil {
+			doms = codegraph.DomainTreeWithBest(v, best)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "target.json 不可用，subsystems/crossSubsystem 已省略: %v\n", targetErr)
+			fmt.Fprintln(cmd.ErrOrStderr(), "best.json 不可用，subsystems/crossSubsystem 已省略：未找到 codegraph/best.json")
 		}
 		out := map[string]any{"view": v.Name, "domains": doms}
 		if doms == nil {
@@ -701,6 +736,7 @@ func init() {
 	graphCmd.PersistentFlags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	graphCmd.PersistentFlags().StringVar(&graphView, "view", "", "叠加的视图名（codegraph/diffs/<名>.json）")
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")
+	graphDomainsCmd.Flags().BoolVar(&graphEdges, "edges", false, "输出跨领域边矩阵")
 	graphAbsorbCmd.Flags().StringVar(&absorbCommit, "commit", "", "写入基线 meta 的提交号（缺省从 git HEAD 读取）")
 	graphAbsorbCmd.Flags().StringVar(&absorbBranch, "branch", "", "写入基线 meta 的分支名（缺省从 git 读取）")
 	graphResolveCmd.Flags().StringVar(&graphResolveDoc, "doc", "", "要检查的 Markdown 文档路径")

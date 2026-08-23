@@ -1,20 +1,63 @@
 package codegraph
 
 import (
-	"encoding/json"
-	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
 
 // mkView 拼一个最小视图：nodes 映射 id→(container,file)，edges/impls 是边表。
 
-// checkNoDecls 是「不带领域声明」的调用快捷方式。本刀之前的全部用例都不涉及
-// decls，用它保持这些用例的调用形态不变——20 处 ", nil" 只会把真实 diff 淹掉。
-// 它同时正是契约 §4-12「decls 为 nil 时输出与入参引入前逐字节相同」的执行面：
-// 这批存量用例全绿即该条成立。带 decls 的用例一律直呼 Check。
-func checkNoDecls(t *Target, v *View) *Report { return Check(t, v, nil) }
+// checkNoDecls 是「不带领域声明」的调用快捷方式。Best 夹具由旧 target
+// 的子系统与视图容器机械转换而来，确保存量契约用例继续真正执行主判据；
+// 第二个参数显式传入 Best，避免把 nil 当成「关闭全部契约执法」（C1.8 §5-3）。
+func checkNoDecls(t *Target, v *View) *Report { return Check(t, bestFixtureForTarget(t, v), v, nil) }
+
+func bestFixtureForTarget(t *Target, v *View) *Best {
+	ids := make([]string, 0, len(t.Contracts)*2)
+	seen := map[string]bool{}
+	for _, contract := range t.Contracts {
+		for _, id := range []string{contract.From, contract.To} {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Strings(ids)
+	return bestFixtureForDomains(v, ids...)
+}
+
+func bestFixtureForDomains(v *View, ids ...string) *Best {
+	b := &Best{
+		Meta:       BestMeta{Version: 1, Project: "test"},
+		Domains:    map[string]BestDomain{},
+		Containers: map[string]string{},
+	}
+	for _, id := range ids {
+		b.Domains[id] = BestDomain{
+			Label:          id,
+			Responsibility: "fixture",
+			Type:           "logic",
+		}
+	}
+	for containerID := range v.Containers {
+		for _, id := range ids {
+			prefix := strings.TrimPrefix(id, "d_")
+			for _, n := range v.Nodes {
+				if n.Status != "deleted" && n.Container == containerID && (n.File == prefix || strings.HasPrefix(n.File, prefix+"/")) {
+					b.Containers[containerID] = id
+					break
+				}
+			}
+			if _, ok := b.Containers[containerID]; ok {
+				break
+			}
+		}
+	}
+	return b
+}
 
 func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}
@@ -33,13 +76,13 @@ func mkView(nodes map[string][2]string, edges, impls [][2]string) *View {
 
 func twoDomainTarget(entries []string, budget int) *Target {
 	return &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_a", Type: "logic", Paths: []string{"a/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-		},
+		Meta:      TargetMeta{Version: 3},
 		Contracts: []Contract{{From: "d_a", To: "d_b", Entries: entries, LegacyBudget: budget}},
 	}
+}
+
+func twoDomainBest(v *View) *Best {
+	return bestFixtureForDomains(v, "d_a", "d_b")
 }
 
 func TestCheckTable(t *testing.T) {
@@ -49,23 +92,46 @@ func TestCheckTable(t *testing.T) {
 	cases := []struct {
 		name          string
 		tg            *Target
+		best          *Best
 		edges, impls  [][2]string
 		wantFailKinds []string
 		wantWarnKinds []string
 	}{
-		{"域内边不检查", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems}, [][2]string{{"b1", "b2"}}, nil, nil, nil},
-		{"走声明入口合法", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b1"}}, nil, nil, nil},
-		{"越界但有预算=warn", twoDomainTarget([]string{"b.Facade"}, 1), [][2]string{{"a1", "b2"}}, nil, nil, []string{"legacy"}},
-		{"越界超预算=fail", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b2"}}, nil, []string{"over-budget"}, nil},
-		{"无契约方向=fail", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems},
-			[][2]string{{"a1", "b1"}}, nil, []string{"new-direction"}, nil},
+		{name: "域内边不检查", tg: &Target{Meta: TargetMeta{Version: 3}}, best: twoDomainBest(mkView(nodes, [][2]string{{"b1", "b2"}}, nil)), edges: [][2]string{{"b1", "b2"}}},
+		{name: "走声明入口合法", tg: twoDomainTarget([]string{"b.Facade"}, 0), edges: [][2]string{{"a1", "b1"}}},
+		{name: "越界但有预算=warn", tg: twoDomainTarget([]string{"b.Facade"}, 1), edges: [][2]string{{"a1", "b2"}}, wantWarnKinds: []string{"legacy"}},
+		{name: "越界超预算=fail", tg: twoDomainTarget([]string{"b.Facade"}, 0), edges: [][2]string{{"a1", "b2"}}, wantFailKinds: []string{"over-budget"}},
+		{name: "无契约方向=fail", tg: &Target{Meta: TargetMeta{Version: 3}}, best: twoDomainBest(mkView(nodes, [][2]string{{"a1", "b1"}}, nil)), edges: [][2]string{{"a1", "b1"}}, wantFailKinds: []string{"new-direction"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rep := checkNoDecls(c.tg, mkView(nodes, c.edges, c.impls))
+			view := mkView(nodes, c.edges, c.impls)
+			best := c.best
+			if best == nil {
+				best = bestFixtureForTarget(c.tg, view)
+			}
+			rep := Check(c.tg, best, view, nil)
 			assertKinds(t, "fail", rep.Fails, c.wantFailKinds)
 			assertKinds(t, "warn", rep.Warns, c.wantWarnKinds)
 		})
+	}
+}
+
+func TestCheckNilBestSkipsContractEnforcement(t *testing.T) {
+	target := twoDomainTarget(nil, 0)
+	view := mkView(
+		map[string][2]string{
+			"a": {"a.Server", "a/server.go"},
+			"b": {"b.Server", "b/server.go"},
+		},
+		[][2]string{{"a", "b"}}, nil)
+	withBest := Check(target, bestFixtureForTarget(target, view), view, nil)
+	if !hasFinding(withBest.Fails, "over-budget") {
+		t.Fatalf("有 best 时应执行契约执法: %+v", withBest)
+	}
+	withoutBest := Check(target, nil, view, nil)
+	if len(withoutBest.Fails) != 0 || len(withoutBest.LegacyHits) != 0 {
+		t.Fatalf("best 缺失时应跳过全部契约执法: %+v", withoutBest)
 	}
 }
 
@@ -103,66 +169,33 @@ func TestCheckImplements(t *testing.T) {
 	assertKinds(t, "fail", rep.Fails, []string{"off-interface"})
 }
 
-// 组装点出边豁免；deleted 状态的边不检查；图外文件与死规则进 warn。
+// 组装点出边豁免；deleted 状态的边不检查；未归属容器与空 best 领域进 warn。
 func TestCheckExemptionsAndWarns(t *testing.T) {
 	nodes := map[string][2]string{
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"}, "out": {"x", "web/x.ts"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-			{ID: "d_dead", Type: "logic", Paths: []string{"ghost/**"}},
-		},
+		Meta:     TargetMeta{Version: 3},
 		Assembly: []string{"cmd/main.go"},
 	}
 	v := mkView(nodes, [][2]string{{"main", "b1"}}, nil)
 	v.Edges = append(v.Edges, ViewEdge{From: "b1", To: "out", Status: "deleted"})
-	rep := checkNoDecls(tg, v)
+	rep := Check(tg, bestFixtureForDomains(v, "d_cmd", "d_b", "d_dead"), v, nil)
 	if len(rep.Fails) != 0 {
 		t.Fatalf("组装豁免/deleted 边不应 fail: %+v", rep.Fails)
 	}
-	assertKinds(t, "warn", rep.Warns, []string{"outside-file", "dead-rule"})
-}
-
-// 死规则判据（check.go#ruleHitsAny）的目录边界：dir/** 不得把兄弟目录/兄弟文件
-// 算成命中，否则一条真的死规则会被邻居的存在掩盖过去，永远报不出来。
-// 这条判据走的是与 targetRuleMatchesFile 相互独立的第二处实现，必须单独看着：
-// 夹具让 app/apix.go 归到 d_other（只有已归域的文件才进 fileHit），d_api 的
-// app/api/** 因此一个文件都命中不到，必须报 dead-rule。
-func TestCheckDeadRuleRespectsDirectoryBoundary(t *testing.T) {
-	nodes := map[string][2]string{"x": {"x", "app/apix.go"}}
-	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_other", Type: "logic", Paths: []string{"app/apix.go"}},
-			{ID: "d_api", Type: "logic", Paths: []string{"app/api/**"}},
-		},
-	}
-	rep := checkNoDecls(tg, mkView(nodes, nil, nil))
-	dead := findingsOfKind(rep.Warns, "dead-rule")
-	if len(dead) != 1 {
-		t.Fatalf("app/api/** 命中不到任何文件，应报 1 条 dead-rule，实际 %d 条: %+v", len(dead), rep.Warns)
-	}
-	if !strings.Contains(dead[0].Detail, "app/api/**") {
-		t.Errorf("dead-rule 应指向 app/api/** 这条规则，实际: %s", dead[0].Detail)
-	}
+	assertKinds(t, "warn", rep.Warns, []string{"container-unplaced", "domain-empty"})
 }
 
 // 组装点死配置：assembly 里写了视图中不存在的文件，必须报 dead-assembly warn。
-// 这是与 dead-rule 对称的一条——在此之前 assembly 写错文件名完全没有信号，
+// assembly 写错文件名必须有信号，
 // 一条不存在的 "cmd/main.go" 能在基准里躺过整轮而无人发现。
 func TestCheckDeadAssembly(t *testing.T) {
 	nodes := map[string][2]string{
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"},
 	}
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_b", Type: "logic", Paths: []string{"b/**"}},
-		},
+		Meta:     TargetMeta{Version: 3},
 		Assembly: []string{"cmd/main.go", "cmd/ghost.go"},
 	}
 	rep := checkNoDecls(tg, mkView(nodes, [][2]string{{"main", "b1"}}, nil))
@@ -190,9 +223,8 @@ func TestCheckDeadAssembly(t *testing.T) {
 // 边界条件：deleted 节点只为渲染保留，不代表当前分支里还有这个文件。
 func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	tg := &Target{
-		Meta:       TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}}},
-		Assembly:   []string{"cmd/gone.go"},
+		Meta:     TargetMeta{Version: 3},
+		Assembly: []string{"cmd/gone.go"},
 	}
 	v := mkView(map[string][2]string{"g": {"main", "cmd/gone.go"}}, nil, nil)
 	n := v.Nodes["g"]
@@ -367,300 +399,13 @@ func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
 	}
 	v := Merge(g, d)
 	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
-		},
+		Meta:      TargetMeta{Version: 3},
 		Assembly:  []string{"cmd/run.go"},
 		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"new.Entry"}}},
 	}
 	rep := checkNoDecls(tg, v)
 	if hasFinding(rep.Fails, KindDeadEntry) {
 		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
-	}
-}
-
-// gapTarget 造一个「只有 d_app 声明目标领域」的目标图：d_other 故意不声明，
-// 用来锁「未声明 domains 的子系统整体跳过执法」（契约 §3-1 第 1 条）。
-func gapTarget(budget int, domains ...TargetDomain) *Target {
-	return &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_app", Name: "App", Type: "logic", Paths: []string{"app/**"}, UnplacedBudget: budget, Domains: domains},
-			{ID: "d_other", Name: "Other", Type: "logic", Paths: []string{"other/**"}},
-		},
-	}
-}
-
-func gapDomains() []TargetDomain {
-	return []TargetDomain{
-		{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}},
-		{ID: "d_worker", Name: "Worker", Responsibility: "后台任务", Paths: []string{"app/worker/**"}},
-	}
-}
-
-// gapView 按 file 列表造视图，节点 id 自增；同一个文件出现多次即多个节点。
-func gapView(files ...string) *View {
-	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}
-	for i, file := range files {
-		id := fmt.Sprintf("n_%03d", i)
-		v.Containers["c"] = Container{Label: "c"}
-		v.Nodes[id] = ViewNode{Node: Node{Container: "c", Name: id, File: file}}
-	}
-	return v
-}
-
-func findingsOfKind(findings []Finding, kind string) []Finding {
-	var out []Finding
-	for _, f := range findings {
-		if f.Kind == kind {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-func TestCheckTargetDomainGap(t *testing.T) {
-	cases := []struct {
-		name          string
-		target        *Target
-		view          *View
-		wantFails     map[string]int // kind → 条数
-		wantWarns     map[string]int
-		wantDetail    []string // 必须出现在某条 gap finding 的 Detail 里
-		unwantDetail  []string
-		wantFindingID string // 若非空，断言该 kind 的 finding From/To 形状
-	}{
-		{
-			name:       "预算内未落位只进 warns",
-			target:     gapTarget(1, gapDomains()...),
-			view:       gapView("app/api/a.go", "app/loose.go", "other/x.go", "web/out.ts"),
-			wantFails:  map[string]int{KindUnplacedOverBudget: 0},
-			wantWarns:  map[string]int{KindUnplaced: 1, KindDomainEmpty: 1},
-			wantDetail: []string{"1/1", "app/loose.go", "d_worker"},
-		},
-		{
-			name:      "严格超预算进 fails",
-			target:    gapTarget(0, gapDomains()...),
-			view:      gapView("app/api/a.go", "app/loose.go"),
-			wantFails: map[string]int{KindUnplacedOverBudget: 1},
-			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 1},
-			// 1 > 0 才超预算；Detail 必须能看到 n 与预算两个数。
-			wantDetail: []string{"1/0", "app/loose.go"},
-		},
-		{
-			name:      "未声明 domains 的子系统整体跳过",
-			target:    gapTarget(0),
-			view:      gapView("app/loose.go", "other/x.go"),
-			wantFails: map[string]int{KindUnplacedOverBudget: 0},
-			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
-		},
-		{
-			name:      "全部落位时不产 unplaced",
-			target:    gapTarget(0, gapDomains()...),
-			view:      gapView("app/api/a.go", "app/worker/w.go"),
-			wantFails: map[string]int{KindUnplacedOverBudget: 0},
-			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
-		},
-		{
-			name:      "重复文件只算一个未落位",
-			target:    gapTarget(0, gapDomains()...),
-			view:      gapView("app/loose.go", "app/loose.go", "app/loose.go", "app/api/a.go", "app/worker/w.go"),
-			wantFails: map[string]int{KindUnplacedOverBudget: 1},
-			// 去重后 n=1；若实现按节点计数会变成 3/0。
-			wantDetail:   []string{"1/0"},
-			unwantDetail: []string{"3/0"},
-		},
-		{
-			name:      "图外文件与其他子系统文件都不计入",
-			target:    gapTarget(0, gapDomains()...),
-			view:      gapView("app/api/a.go", "app/worker/w.go", "other/x.go", "other/deep/y.go", "web/out.ts"),
-			wantFails: map[string]int{KindUnplacedOverBudget: 0},
-			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
-		},
-		{
-			name:      "同子系统多个未落位文件只聚合成一条",
-			target:    gapTarget(99, gapDomains()...),
-			view:      gapView("app/api/a.go", "app/worker/w.go", "app/f1.go", "app/f2.go", "app/f3.go", "app/f4.go", "app/f5.go", "app/f6.go", "app/f7.go"),
-			wantWarns: map[string]int{KindUnplaced: 1, KindDomainEmpty: 0},
-			// 样例固定为字典序前 5 条，第 6、7 条不得出现——否则大包会刷屏且输出不可 diff。
-			wantDetail:   []string{"7/99", "app/f1.go", "app/f5.go"},
-			unwantDetail: []string{"app/f6.go", "app/f7.go"},
-		},
-		{
-			name:      "每个零命中目标领域各一条 domain-empty",
-			target:    gapTarget(0, gapDomains()...),
-			view:      gapView("other/x.go"),
-			wantWarns: map[string]int{KindDomainEmpty: 2, KindUnplaced: 0},
-			// 两条 Detail 各带自己的目标域 id。
-			wantDetail: []string{"d_api", "d_worker"},
-		},
-		{
-			// dir/** 是「目录整段」而不是「字符串前缀」。真实动机是 handoff 的竖切：
-			// internal/task/** 绝不能顺手把 internal/taskrunner/ 也吞进任务域，否则
-			// 竖切边界一开始就是假的，而 unplaced 会假性归零、让人以为已经切完。
-			name:         "兄弟目录前缀不得被 dir/** 规则误盖",
-			target:       gapTarget(0, TargetDomain{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}}),
-			view:         gapView("app/api/x.go", "app/apix.go", "app/api-v2/x.go"),
-			wantFails:    map[string]int{KindUnplacedOverBudget: 1},
-			wantWarns:    map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
-			wantDetail:   []string{"2/0", "app/apix.go", "app/api-v2/x.go"},
-			unwantDetail: []string{"app/api/x.go"},
-		},
-		{
-			// 精确路径规则只认那一个文件：它既不能盖住同目录的兄弟文件，自己也必须
-			// 被认出来。删掉精确分支后本域会一个文件都命中不了，未落位从 1 变 2、
-			// 还会多冒一条 domain-empty——三个断言各自都能把它拦下。
-			name:         "精确路径目标领域只盖那一个文件",
-			target:       gapTarget(0, TargetDomain{ID: "d_exact", Name: "单文件域", Responsibility: "只管一个文件", Paths: []string{"app/api/x.go"}}),
-			view:         gapView("app/api/x.go", "app/api/y.go"),
-			wantFails:    map[string]int{KindUnplacedOverBudget: 1},
-			wantWarns:    map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
-			wantDetail:   []string{"1/0", "app/api/y.go"},
-			unwantDetail: []string{"app/api/x.go"},
-		},
-		{
-			// 兄弟前缀在 domain-empty 这条判据上的表现：app/apix.go 不算 app/api/**
-			// 的命中，所以该目标域是空域，同时那个文件自己计入未落位。上面两例断的是
-			// unplaced 计数，这条断的是空域信号——同一个边界，两种可观测后果。
-			name:       "兄弟目录前缀不算命中，空目标领域仍报 domain-empty",
-			target:     gapTarget(9, TargetDomain{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}}),
-			view:       gapView("app/apix.go"),
-			wantFails:  map[string]int{KindUnplacedOverBudget: 0},
-			wantWarns:  map[string]int{KindDomainEmpty: 1, KindUnplaced: 1},
-			wantDetail: []string{"d_api", "app/apix.go"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			rep := checkNoDecls(tc.target, tc.view)
-			for kind, want := range tc.wantFails {
-				if got := len(findingsOfKind(rep.Fails, kind)); got != want {
-					t.Errorf("fails 中 %s 应有 %d 条，实际 %d 条: %+v", kind, want, got, rep.Fails)
-				}
-			}
-			for kind, want := range tc.wantWarns {
-				if got := len(findingsOfKind(rep.Warns, kind)); got != want {
-					t.Errorf("warns 中 %s 应有 %d 条，实际 %d 条: %+v", kind, want, got, rep.Warns)
-				}
-			}
-			gap := append(append([]Finding{}, gapFindings(rep.Fails)...), gapFindings(rep.Warns)...)
-			joined := ""
-			for _, f := range gap {
-				joined += f.Detail + "\n"
-				// 契约 §4 冻结 23：gap finding 一律 From=子系统 id、To 省略。
-				if f.From != "d_app" || f.To != "" {
-					t.Errorf("gap finding 的 From/To 形状不对: %+v", f)
-				}
-			}
-			for _, want := range tc.wantDetail {
-				if !strings.Contains(joined, want) {
-					t.Errorf("gap Detail 应含 %q，实际:\n%s", want, joined)
-				}
-			}
-			for _, unwanted := range tc.unwantDetail {
-				if strings.Contains(joined, unwanted) {
-					t.Errorf("gap Detail 不应含 %q，实际:\n%s", unwanted, joined)
-				}
-			}
-		})
-	}
-}
-
-func gapFindings(findings []Finding) []Finding {
-	var out []Finding
-	for _, f := range findings {
-		switch f.Kind {
-		case KindUnplaced, KindUnplacedOverBudget, KindDomainEmpty:
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// deleted 节点只为渲染保留，不代表当前分支还有这个文件：它既不能撑起未落位计数，
-// 也不能让一个目标域看起来「已经有代码了」。
-func TestCheckTargetDomainExcludesDeletedNodes(t *testing.T) {
-	target := gapTarget(0, TargetDomain{ID: "d_api", Name: "API", Responsibility: "r", Paths: []string{"app/api/**"}})
-	v := gapView("app/api/gone.go", "app/loose.go")
-	for id, node := range v.Nodes {
-		if node.File == "app/api/gone.go" || node.File == "app/loose.go" {
-			node.Status = "deleted"
-			v.Nodes[id] = node
-		}
-	}
-	rep := checkNoDecls(target, v)
-	if got := len(findingsOfKind(rep.Fails, KindUnplacedOverBudget)); got != 0 {
-		t.Errorf("deleted 文件不应撑起未落位计数: %+v", rep.Fails)
-	}
-	if got := len(findingsOfKind(rep.Warns, KindDomainEmpty)); got != 1 {
-		t.Errorf("目标域只被 deleted 节点命中时仍应算零命中: %+v", rep.Warns)
-	}
-}
-
-// 真实迁移回归：把 svc/server.go 搬进 svc/api/ 后，未落位数必须自己降下来——
-// 这条是用户故事 3「搬文件使 unplaced 下降」的可执行判据，不是构造视图能糊弄的。
-func TestCheckTargetDomainUnplacedDropsAfterRealMerge(t *testing.T) {
-	g := loadFixture(t)
-	target := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_svc", Name: "服务", Type: "logic", Paths: []string{"svc/**"}, UnplacedBudget: 99,
-				Domains: []TargetDomain{{ID: "d_svc_api", Name: "API", Responsibility: "对外方法", Paths: []string{"svc/api/**"}}}},
-			{ID: "d_cmd", Name: "入口", Type: "logic", Paths: []string{"cmd/**"}},
-			{ID: "d_web", Name: "前端", Type: "boundary", Paths: []string{"web/**"}},
-		},
-	}
-	if issues := ValidateTarget(target); len(issues) != 0 {
-		t.Fatalf("迁移回归用的目标图自身必须合法: %v", issues)
-	}
-
-	before := checkNoDecls(target, Merge(g, nil))
-	beforeGap := findingsOfKind(before.Warns, KindUnplaced)
-	if len(beforeGap) != 1 || !strings.Contains(beforeGap[0].Detail, "3/99") {
-		t.Fatalf("迁移前 svc/** 应有 3 个未落位文件: %+v", before.Warns)
-	}
-
-	moved := g.Nodes["n_do"]
-	moved.File = "svc/api/server.go"
-	movedSave := g.Nodes["n_save"]
-	movedSave.File = "svc/api/server.go"
-	after := checkNoDecls(target, Merge(g, &Diff{View: "branch-migrate", NodesModified: map[string]Node{"n_do": moved, "n_save": movedSave}}))
-	afterGap := findingsOfKind(after.Warns, KindUnplaced)
-	if len(afterGap) != 1 || !strings.Contains(afterGap[0].Detail, "2/99") {
-		t.Fatalf("把 svc/server.go 搬进 svc/api/ 后未落位应降到 2/99: %+v", after.Warns)
-	}
-	if hasFinding(after.Warns, KindDomainEmpty) {
-		t.Fatalf("目标域被真实文件命中后不应再报 domain-empty: %+v", after.Warns)
-	}
-}
-
-// 三种新 kind 必须能原样穿过 Report 的 JSON 编解码——查看器与 CLI 消费的就是这层 wire。
-func TestCheckTargetDomainFindingsSurviveReportJSON(t *testing.T) {
-	rep := checkNoDecls(gapTarget(0, gapDomains()...), gapView("app/loose.go"))
-	raw, err := json.Marshal(rep)
-	if err != nil {
-		t.Fatalf("编码 Report: %v", err)
-	}
-	var decoded Report
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("回读 Report: %v", err)
-	}
-	if !reflect.DeepEqual(rep.Fails, decoded.Fails) || !reflect.DeepEqual(rep.Warns, decoded.Warns) {
-		t.Fatalf("Report JSON 回读后 finding 不一致:\n原始 %+v\n回读 %+v", rep, decoded)
-	}
-	over := findingsOfKind(decoded.Fails, KindUnplacedOverBudget)
-	empty := findingsOfKind(decoded.Warns, KindDomainEmpty)
-	if len(over) != 1 || over[0].From != "d_app" || over[0].To != "" || over[0].Detail == "" {
-		t.Fatalf("unplaced-over-budget 未完整穿过 JSON: %+v", decoded.Fails)
-	}
-	if len(empty) != 2 {
-		t.Fatalf("domain-empty 未完整穿过 JSON: %+v", decoded.Warns)
-	}
-	// To 省略是 wire 契约（冻结 23），不能编成 "to":""。
-	if strings.Contains(string(raw), `"to":""`) {
-		t.Fatalf("gap finding 的 To 必须省略而不是空串: %s", raw)
 	}
 }
 

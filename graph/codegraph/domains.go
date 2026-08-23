@@ -32,14 +32,21 @@ type DomainStat struct {
 	Interfaces     []string `json:"interfaces"`
 	Subsystems     []string `json:"subsystems,omitempty"`
 	CrossSubsystem bool     `json:"crossSubsystem,omitempty"`
-	targetDerived  bool
+	bestDerived    bool
 }
 
-// MarshalJSON 只在成功加载 target 时输出派生字段；target 缺失或 v1 时保持旧 wire 形状。
+// DomainEdgeStat 是跨领域调用边的有序聚合记录。
+type DomainEdgeStat struct {
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Count int    `json:"count"`
+}
+
+// MarshalJSON 只在成功加载 best 时输出派生字段；best 缺失时保持旧 wire 形状。
 func (s DomainStat) MarshalJSON() ([]byte, error) {
 	type plain DomainStat
 	raw, err := json.Marshal(plain(s))
-	if err != nil || !s.targetDerived {
+	if err != nil || !s.bestDerived {
 		return raw, err
 	}
 	var fields map[string]json.RawMessage
@@ -70,12 +77,68 @@ func DomainTree(v *View) []DomainStat {
 	return domainTree(v, nil)
 }
 
-// DomainTreeWithTarget 在 DomainTree 的基础上按成员节点文件派生所属子系统。
-func DomainTreeWithTarget(v *View, target *Target) []DomainStat {
-	return domainTree(v, target)
+// DomainTreeWithBest 在 DomainTree 的基础上按 best 容器归属派生所属子系统。
+func DomainTreeWithBest(v *View, best *Best) []DomainStat {
+	return domainTree(v, best)
 }
 
-func domainTree(v *View, target *Target) []DomainStat {
+// DomainEdgeMatrix 按视图中的现状领域归属统计跨领域调用边。
+func DomainEdgeMatrix(v *View) []DomainEdgeStat {
+	return domainEdgeMatrix(v, func(nodeID string) string {
+		n, ok := v.Nodes[nodeID]
+		if !ok || n.Status == "deleted" {
+			return ""
+		}
+		return domainOfContainer(v, n.Container)
+	})
+}
+
+// BestEdgeMatrix 按最优图的顶层领域归属统计跨领域调用边。
+func BestEdgeMatrix(v *View, best *Best) []DomainEdgeStat {
+	return domainEdgeMatrix(v, func(nodeID string) string {
+		return bestSubsystemOfNode(best, v, nodeID)
+	})
+}
+
+func domainEdgeMatrix(v *View, owner func(string) string) []DomainEdgeStat {
+	counts := map[string]*DomainEdgeStat{}
+	for _, edge := range v.Edges {
+		if edge.Status == "deleted" {
+			continue
+		}
+		if _, ok := v.Nodes[edge.From]; !ok {
+			continue
+		}
+		if _, ok := v.Nodes[edge.To]; !ok {
+			continue
+		}
+		from, to := owner(edge.From), owner(edge.To)
+		if from == "" || to == "" || from == to {
+			continue
+		}
+		key := from + "\x00" + to
+		if counts[key] == nil {
+			counts[key] = &DomainEdgeStat{From: from, To: to}
+		}
+		counts[key].Count++
+	}
+	out := make([]DomainEdgeStat, 0, len(counts))
+	for _, stat := range counts {
+		out = append(out, *stat)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		if out[i].From != out[j].From {
+			return out[i].From < out[j].From
+		}
+		return out[i].To < out[j].To
+	})
+	return out
+}
+
+func domainTree(v *View, best *Best) []DomainStat {
 	if len(v.Domains) == 0 {
 		return nil
 	}
@@ -116,12 +179,12 @@ func domainTree(v *View, target *Target) []DomainStat {
 			s.Funcs++
 		}
 	}
-	if target != nil {
+	if best != nil {
 		subsystems := make(map[string]map[string]bool, len(stats))
 		for id := range stats {
 			subsystems[id] = map[string]bool{}
 		}
-		for _, n := range v.Nodes {
+		for nodeID, n := range v.Nodes {
 			if n.Status == "deleted" {
 				continue
 			}
@@ -130,13 +193,13 @@ func domainTree(v *View, target *Target) []DomainStat {
 			if !ok {
 				continue
 			}
-			if subsystem := target.SubsystemOf(n.File); subsystem != "" {
+			if subsystem := bestSubsystemOfNode(best, v, nodeID); subsystem != "" {
 				subsystems[id][subsystem] = true
 			}
-			stat.targetDerived = true
+			stat.bestDerived = true
 		}
 		for id, stat := range stats {
-			stat.targetDerived = true
+			stat.bestDerived = true
 			for subsystem := range subsystems[id] {
 				stat.Subsystems = append(stat.Subsystems, subsystem)
 			}
