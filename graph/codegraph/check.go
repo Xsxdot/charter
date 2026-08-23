@@ -28,9 +28,10 @@ type Finding struct {
 
 // Report 是 Check 的产出。Fails 非空即闸门不过（cmd 层译成非零退出码）。
 type Report struct {
-	Fails      []Finding      `json:"fails"`
-	Warns      []Finding      `json:"warns"`
-	LegacyHits map[string]int `json:"legacyHits,omitempty"` // "from->to" → 命中数
+	Fails        []Finding      `json:"fails"`
+	Warns        []Finding      `json:"warns"`
+	LegacyHits   map[string]int `json:"legacyHits,omitempty"` // "from->to" → 命中数
+	BestCoverage *BestCoverage  `json:"bestCoverage,omitempty"`
 }
 
 // Check 把合并视图 v 套在目标图 t 上对照。算法四步见 spec §5。
@@ -67,7 +68,7 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 		allFiles[n.File] = true
 		d := bestSubsystemOfNode(b, v, id)
 		nodeDomain[id] = d
-		if d == "" {
+		if _, ok := v.Containers[n.Container]; !ok {
 			outside[n.File] = true
 		}
 	}
@@ -206,6 +207,12 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 			rep.Warns = append(rep.Warns, Finding{Kind: "dead-assembly",
 				Detail: fmt.Sprintf("组装点 %q 未命中视图中任何节点文件", f)})
 		}
+	}
+	if b != nil {
+		rep.BestCoverage = bestCoverage(v, b)
+		gapWarns, skipped := bestGapFindings(v, b)
+		rep.BestCoverage.MisplacedSkipped = skipped
+		rep.Warns = append(rep.Warns, gapWarns...)
 	}
 	// fitness 只消费当前视图的图内文件集并落 Warns；命中是要求回答边界，
 	// 不是自动把架构形态判成契约违规（契约 §2-1、§2-3）。

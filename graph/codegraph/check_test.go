@@ -152,7 +152,7 @@ func TestCheckImplements(t *testing.T) {
 	assertKinds(t, "fail", rep.Fails, []string{"off-interface"})
 }
 
-// 组装点出边豁免；deleted 状态的边不检查；图外文件进 warn。
+// 组装点出边豁免；deleted 状态的边不检查；未归属容器与空 best 领域进 warn。
 func TestCheckExemptionsAndWarns(t *testing.T) {
 	nodes := map[string][2]string{
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"}, "out": {"x", "web/x.ts"},
@@ -172,7 +172,7 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 	if len(rep.Fails) != 0 {
 		t.Fatalf("组装豁免/deleted 边不应 fail: %+v", rep.Fails)
 	}
-	assertKinds(t, "warn", rep.Warns, []string{"outside-file"})
+	assertKinds(t, "warn", rep.Warns, []string{"container-unplaced", "domain-empty"})
 }
 
 // 组装点死配置：assembly 里写了视图中不存在的文件，必须报 dead-assembly warn。

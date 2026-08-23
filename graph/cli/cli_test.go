@@ -222,6 +222,13 @@ func TestGraphCheck(t *testing.T) {
 			t.Fatalf("check 输出缺字段 %s: %s", want, out)
 		}
 	}
+	var report codegraph.Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("check 输出必须是合法 Report: %v", err)
+	}
+	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers == 0 {
+		t.Fatalf("best 存在时 check 必须输出非空归属覆盖读数: %+v", report)
+	}
 }
 
 func TestGraphCheckMissingTargetFails(t *testing.T) {
@@ -260,6 +267,23 @@ func TestGraphCheckInvalidBestFails(t *testing.T) {
 	_, err := runGraph(t, "check", "--repo", repo)
 	if err == nil || !strings.Contains(err.Error(), "最优图不可用") {
 		t.Fatalf("best.json 解析失败时 check 必须拒绝: %v", err)
+	}
+}
+
+func TestGraphCheckCoverageReadoutShowsZero(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	best := `{"meta":{"version":1,"project":"fixture"},"domains":{"d_svc":{"label":"服务","responsibility":"服务","type":"logic"}},"containers":{}}`
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "best.json"), []byte(best), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err == nil {
+		t.Fatalf("空容器 best 的死契约应让 check 非零: stdout=%s", stdout)
+	}
+	report := unmarshalReport(t, stdout)
+	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers != 0 || report.BestCoverage.ViewContainers == 0 {
+		t.Fatalf("归属覆盖为 0 时读数不得静默: %+v", report.BestCoverage)
 	}
 }
 
@@ -361,14 +385,6 @@ func TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base(t *testing.T) {
 		!strings.Contains(raised[0].Detail, "基准中未声明目标领域") {
 		t.Fatalf("真 v1 基准应走「基准缺席」措辞而非「上涨」措辞: %+v", raised[0])
 	}
-	// 悬崖只出在棘轮上：目标域盖全了 svc/**，实际未落位为 0，不得混入其他 gap finding。
-	for _, finding := range append(append([]codegraph.Finding{}, report.Fails...), report.Warns...) {
-		switch finding.Kind {
-		case "unplaced", "unplaced-over-budget", "domain-empty":
-			t.Fatalf("本用例的目标域覆盖了全部 svc 文件，不应有 gap finding: %+v", finding)
-		}
-	}
-
 	// 同一份基准，只要当前 target 补上 unplacedBudgetNote，悬崖即降为 warn、退出码归零——
 	// 这就是 C1.6 首跑时的正解，钉在这里免得后人误以为要改判据。
 	notedRepo, notedBase := gitTrueV1BaseRepo(t, 2, "首次建领域树，存量未落位待竖切")
