@@ -309,3 +309,103 @@ func TestValidateModelKind(t *testing.T) {
 		})
 	}
 }
+
+// 契约 24 的「只计数」那一半。审计发现 EntitiesWithoutLifecycle 全仓零测试，
+// 整个掏空成 return 0 全量仍绿——而契约 §5-5 的验收数字「全仓 entity ≈53」
+// 正是从这个函数读出来的。
+func TestEntitiesWithoutLifecycle(t *testing.T) {
+	cases := []struct {
+		name      string
+		marks     map[string]string // 节点 → modelKind
+		lifecycle []LifecycleRef
+		want      int
+	}{
+		{name: "没有任何 entity 标记时为 0", want: 0},
+		{name: "标了 entity 且无 lifecycle 计 1", marks: map[string]string{"m_task": ModelKindEntity}, want: 1},
+		{
+			name:      "有 creator 即算覆盖",
+			marks:     map[string]string{"m_task": ModelKindEntity},
+			lifecycle: []LifecycleRef{{Who: "n_do", Model: "m_task", Kind: "creator"}},
+			want:      0,
+		},
+		{
+			name:      "有 writer 也算覆盖（不分种类）",
+			marks:     map[string]string{"m_task": ModelKindEntity},
+			lifecycle: []LifecycleRef{{Who: "n_do", Model: "m_task", Kind: "writer"}},
+			want:      0,
+		},
+		{
+			name:      "覆盖的是别的 model，不算",
+			marks:     map[string]string{"m_task": ModelKindEntity},
+			lifecycle: []LifecycleRef{{Who: "n_do", Model: "m_task_ts", Kind: "creator"}},
+			want:      1,
+		},
+		{name: "dto 不计入", marks: map[string]string{"m_task": ModelKindDTO}, want: 0},
+		{name: "config 不计入", marks: map[string]string{"m_task": ModelKindConfig}, want: 0},
+		{name: "空值不计入——空是未分种，不是未知实体", marks: map[string]string{"m_task": ""}, want: 0},
+		{
+			name:  "两个 entity 都没覆盖计 2",
+			marks: map[string]string{"m_task": ModelKindEntity, "m_task_ts": ModelKindEntity},
+			want:  2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := loadFixture(t)
+			for id, mk := range tc.marks {
+				n := g.Nodes[id]
+				n.ModelKind = mk
+				g.Nodes[id] = n
+			}
+			g.Lifecycle = tc.lifecycle
+			if got := EntitiesWithoutLifecycle(g); got != tc.want {
+				t.Fatalf("应为 %d，实际 %d", tc.want, got)
+			}
+		})
+	}
+}
+
+// 枚举取值非法时短路：取值都不合法，后两条判据无从谈起，只该报一条。
+// 审计发现删掉那个 continue 全量仍绿。
+func TestValidateModelKindStopsAfterInvalidEnum(t *testing.T) {
+	g := loadFixture(t)
+	n := g.Nodes["n_do"] // 非 model 节点，同时踩枚举与 kind 两条
+	n.ModelKind = "vo"
+	g.Nodes["n_do"] = n
+	var hits int
+	for _, is := range Validate(g) {
+		if strings.Contains(is, "n_do") && (strings.Contains(is, "modelKind") || strings.Contains(is, "dto")) {
+			hits++
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("枚举非法应短路、只报 1 条，实际 %d 条: %v", hits, Validate(g))
+	}
+}
+
+// diff 侧的 modelKind 执法。nodesAdded 是新节点进图的唯一入口，只查基线等于
+// 让每份 diff 都能把矛盾数据合法带进来。
+func TestValidateDiffEnforcesModelKind(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		View: "branch-x",
+		NodesAdded: map[string]Node{
+			"m_bad": {Kind: "model", Container: "k_ent", File: "svc/bad.go", Name: "Bad", ModelKind: "vo"},
+			"f_bad": {Kind: "func", Container: "k_svc", File: "svc/f.go", Name: "F", ModelKind: ModelKindEntity},
+			"m_dto": {Kind: "model", Container: "k_ent", File: "svc/dto.go", Name: "Dto", ModelKind: ModelKindDTO},
+		},
+		LifecycleAdded: []LifecycleRef{{Who: "n_do", Model: "m_dto", Kind: "writer"}},
+	}
+	issues := ValidateDiff(g, d)
+	for _, want := range []string{"m_bad", "f_bad", "m_dto"} {
+		found := false
+		for _, is := range issues {
+			if strings.Contains(is, want) && strings.HasPrefix(is, "diff ") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("diff 侧应报 %s 的 modelKind 问题，实际 issues: %v", want, issues)
+		}
+	}
+}

@@ -997,3 +997,24 @@ func TestGraphCheckLoadsDomainDeclsAndReportsAnchorOwnership(t *testing.T) {
 		}
 	}
 }
+
+// 契约 25：check 加载领域声明失败必须返回 err，不得静默降级成「没有声明」。
+//
+// 审计发现这条零守卫：把 `if err != nil { return err }` 换成 `decls, _ :=`，
+// 一份损坏的声明文件会让 check 打印 {"fails":[],"warns":[]} 并退出 0——
+// 全绿而问题还在，正是 cli.go 那处注释点名要防的失效形态，而当时没有测试守着。
+func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	bad := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	if err := os.WriteFile(bad, []byte("{ this is not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "check", "--repo", repo)
+	if err == nil {
+		t.Fatalf("声明文件损坏时 check 必须失败，不得静默当作没有声明。输出: %s", out)
+	}
+	if !strings.Contains(err.Error(), "d_cli.json") {
+		t.Errorf("报错应指出是哪个文件坏了，实际: %v", err)
+	}
+}

@@ -126,9 +126,20 @@ spec §三 说 `Check` 增 decls 入参且「纯函数，仍不做 I/O」，但�
    - 容器不存在或 `Domain` 为空 → 跳过（旧扫描数据的降级形态，不是声明作者的错）。
    - 该域 == `decl.Domain` → 无 finding。
    - 该域 != `decl.Domain` → 一条 `anchor-off-domain`。
+
 5. `resolveGraphAnchor` 未命中 → 一条 `anchor-off-graph`。
 
 **同一个锚最多产出一条 finding**（4 与 5 互斥）。同一个 decl 的多个锚各自独立判定；重复的锚原文**不去重**（声明里写两遍就是两条，去重会掩盖声明本身的冗余）。
+
+> **2026-08-23 review 回写（本条第 4 步的相等判定改为子树覆盖）**：上面写的严格相等
+> **已被取代**为「锚所在领域是否落在 `decl.Domain` 的子树内」（沿 `Domain.Parent`
+> 上溯，带访问集防脏数据成环）。理由：领域是树而容器只能挂叶子（`validateDomains`
+> 执法），所以**任何**写在非叶子领域上的声明，其锚必然落在某个子域，严格相等会让
+> 这类声明 100% 假阳且报文解释不了原因。冻结时未讨论此情形。实测 handoff 与夹具
+> 今天都还没有非叶子声明，但 handoff 已有 4 个非叶子领域（`d_coordination`/
+> `d_execution`/`d_runtime`/`d_transport`）而声明才铺了 2 个域——roadmap 1a 把声明
+> 铺满时撞上只是时间问题。兄弟域之间不互相覆盖，树外仍报离域。
+
 
 ### 3-4 `Validate` 侧的 modelKind 执法
 
@@ -138,7 +149,20 @@ spec §三 说 `Check` 增 decls 入参且「纯函数，仍不做 I/O」，但�
 2. `ModelKind` 非空但 `Kind != "model"` → issue（硬）。字段只对 model 有意义，挂在 func/entry 上是扫描者出错。
 3. `ModelKind == "dto"` 却在 `lifecycle` 段里有 `writer` 条目 → issue（硬）。自相矛盾。
 
-**不执法**：`ModelKind == "entity"` 却无 lifecycle 条目——只统计计数，沿用 validate 已有的「统计 unscanned entry 数量但不报 issue」先例。
+**不执法**：`ModelKind == "entity"` 却无 lifecycle 条目——只统计计数。
+
+> **2026-08-23 review 回写之一（执法范围扩到 diff 侧）**：上面三条冻结时只写了
+> `Validate`，实现也只接在那里，于是 `ValidateDiff` 对 modelKind 是执法真空——而
+> `nodesAdded`/`nodesModified` 恰恰是新节点与改动进图的**唯一入口**，`graph validate`
+> 又对每个视图跑 `ValidateDiff`。只查基线等于让每一份 diff 都能把矛盾数据合法带进来。
+> 判据本身不变，**执法面扩到 diff 侧**：报文加 `diff ` 前缀，lifecycle 取基线与
+> `lifecycleAdded` 的并集（dto 的 writer 可能正是这份 diff 加上的）。
+>
+> **回写之二（计数先例的出处更正）**：原文说「沿用 validate 已有的统计 unscanned
+> entry 但不报 issue 的先例」——查证后该先例**不在 `Validate` 函数里**（它只返回
+> `[]string`，没有计数通道），真先例在 validate **命令**（`graph/cli/cli.go` 的
+> `unscannedEntries`）与 `domains.go`/`query.go`。计数已按真先例落在 validate 命令的
+> JSON 输出（`entitiesWithoutLifecycle`）。
 
 ### 3-5 领域划分的变更通道（把隐含约束显式化）
 

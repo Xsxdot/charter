@@ -232,3 +232,119 @@ func TestAnchorFindingsDeterministicOrder(t *testing.T) {
 		t.Errorf("应按 Domain 字典序，实际: %v", first)
 	}
 }
+
+// 契约 15 的另一半：井号**左侧**为空。审计发现 committed 用例只覆盖了「没有井号」
+// 与「右侧为空」两种，删掉 file == "" 那半边判据全量仍绿——而真实后果不是漏报，
+// 是产出一条**假的** anchor-off-graph（空文件名当然解析不到节点）。
+func TestAnchorSkipsRefWithEmptyFileSide(t *testing.T) {
+	got := anchorOwnershipFindings(stdAnchorView(), lifecycleDecl("d_task", "#Handle", ""))
+	if len(got) != 0 {
+		t.Fatalf("锚 %q 左侧为空属格式非法，应跳过而不是报 off-graph，实际: %+v", "#Handle", got)
+	}
+}
+
+// 契约 18 的顺序面：同一 decl 内 from 与 to 的发出序也要稳定。审计发现对调
+// []string{Lifecycle.From, Lifecycle.To} 全量仍绿——「本函数自己的输出顺序自己
+// 负责」这条纪律只兑现了跨 decl 的一半。
+func TestAnchorRefsFollowDeclaredOrderWithinOneDecl(t *testing.T) {
+	v := anchorView([]string{"d_task", "d_a", "d_b"},
+		map[string]string{"k_a": "d_a", "k_b": "d_b"},
+		map[string][2]string{"Alpha": {"k_a", "x/a.go"}, "Beta": {"k_b", "x/b.go"}})
+	// from 落 d_a、to 落 d_b：两条都是 off-domain，靠 To 区分先后
+	got := anchorOwnershipFindings(v, lifecycleDecl("d_task", "x/a.go#Alpha", "x/b.go#Beta"))
+	if len(got) != 2 {
+		t.Fatalf("应有 2 条: %+v", got)
+	}
+	if got[0].To != "d_a" || got[1].To != "d_b" {
+		t.Errorf("应按 lifecycle 声明序 from→to 发出，实际 [%s %s]", got[0].To, got[1].To)
+	}
+	// stateMachine 排在 lifecycle 之后
+	d := DomainDecl{Domain: "d_task", Responsibility: "x",
+		Lifecycle:    &DeclAnchor{From: "x/b.go#Beta"},
+		StateMachine: []Transition{{From: "s", To: "t", Anchor: "x/a.go#Alpha"}}}
+	got = anchorOwnershipFindings(v, map[string]DomainDecl{"d_task": d})
+	if len(got) != 2 || got[0].To != "d_b" || got[1].To != "d_a" {
+		t.Errorf("lifecycle 应排在 stateMachine 之前，实际: %+v", got)
+	}
+}
+
+// 契约 20：锚 finding 必须与既有 finding 一同经 sortFindings 重排，而不是排完再追加。
+//
+// 审计发现这条零守卫：把 anchorOwnershipFindings 的 append 挪到 sortFindings 之后，
+// 全量仍绿。原因是 committed 的锚用例产出的 warns **只有锚这一种 kind**，混排顺序
+// 从未被观测过。这里刻意造出两种 kind 共存的局面：anchor-off-domain 字典序在
+// domain-empty 之前，若锚是排完才追加的，它会掉到末尾。
+func TestCheckAnchorFindingsParticipateInFinalSort(t *testing.T) {
+	v := anchorView([]string{"d_task", "d_other"},
+		map[string]string{"k_task": "d_task", "k_other": "d_other"},
+		map[string][2]string{"Steal": {"k_other", "svc/steal.go"}})
+	// 目标图声明一个零命中的目标域 → 产出 domain-empty；锚落在别人家 → off-domain
+	tg := &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{{
+			ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}, UnplacedBudget: 99,
+			Domains: []TargetDomain{{ID: "dt_ghost", Name: "空域", Responsibility: "无成员", Paths: []string{"svc/ghost/**"}}},
+		}},
+	}
+	rep := Check(tg, v, lifecycleDecl("d_task", "svc/steal.go#Steal", ""))
+
+	kinds := make([]string, 0, len(rep.Warns))
+	for _, w := range rep.Warns {
+		kinds = append(kinds, w.Kind)
+	}
+	// 前置：这个夹具必须真的产出两种以上 kind，否则本测试观测不到顺序
+	seen := map[string]bool{}
+	for _, k := range kinds {
+		seen[k] = true
+	}
+	if !seen[KindAnchorOffDomain] || len(seen) < 2 {
+		t.Fatalf("夹具失效：需要锚 finding 与至少一种其他 kind 共存，实际 %v", kinds)
+	}
+	// 全序断言：Warns 必须整体按 (Kind, Detail) 有序
+	for i := 1; i < len(rep.Warns); i++ {
+		a, b := rep.Warns[i-1], rep.Warns[i]
+		if a.Kind > b.Kind || (a.Kind == b.Kind && a.Detail > b.Detail) {
+			t.Fatalf("Warns 未整体排序（锚 finding 可能是排完才追加的）：第 %d 条 %s 排在 %s 之前\n完整序列: %v",
+				i, a.Kind, b.Kind, kinds)
+		}
+	}
+}
+
+// 父域声明覆盖子域里的锚。领域是树、容器只能挂叶子，所以写在父域上的声明其锚
+// 必然落在子域——严格相等会让这类声明 100% 假阳（审计 F8）。
+func TestAnchorParentDomainCoversChildDomain(t *testing.T) {
+	v := &View{
+		Domains: map[string]Domain{
+			"d_svc":       {Label: "服务"},
+			"d_svc/api":   {Label: "接口", Parent: "d_svc"},
+			"d_svc/store": {Label: "存储", Parent: "d_svc"},
+			"d_other":     {Label: "别处"},
+		},
+		Containers: map[string]Container{
+			"k_api":   {Domain: "d_svc/api"},
+			"k_other": {Domain: "d_other"},
+		},
+		Nodes: map[string]ViewNode{
+			"Handle": {Node: Node{Container: "k_api", File: "svc/api/h.go", Name: "Handle"}},
+			"Steal":  {Node: Node{Container: "k_other", File: "other/s.go", Name: "Steal"}},
+		},
+	}
+	if got := anchorOwnershipFindings(v, lifecycleDecl("d_svc", "svc/api/h.go#Handle", "")); len(got) != 0 {
+		t.Errorf("父域 d_svc 的声明，锚落在子域 d_svc/api，应视为在域内，实际: %+v", got)
+	}
+	// 反向不成立：子域声明、锚落在父域的另一个子域，仍是离域
+	if got := anchorOwnershipFindings(v, lifecycleDecl("d_svc/store", "svc/api/h.go#Handle", "")); len(got) != 1 {
+		t.Errorf("兄弟域之间不互相覆盖，应报 1 条离域，实际: %+v", got)
+	}
+	// 树外仍是离域
+	if got := anchorOwnershipFindings(v, lifecycleDecl("d_svc", "other/s.go#Steal", "")); len(got) != 1 {
+		t.Errorf("锚落在树外的 d_other，应报离域，实际: %+v", got)
+	}
+	// 父链成环时不死循环（数据脏由 validateDomains 报硬 issue，此处只求不挂）
+	cyc := &View{
+		Domains:    map[string]Domain{"a": {Parent: "b"}, "b": {Parent: "a"}},
+		Containers: map[string]Container{"k": {Domain: "a"}},
+		Nodes:      map[string]ViewNode{"S": {Node: Node{Container: "k", File: "x.go", Name: "S"}}},
+	}
+	_ = anchorOwnershipFindings(cyc, lifecycleDecl("b", "x.go#S", "")) // 不 panic、不挂起即通过
+}
