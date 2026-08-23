@@ -1,6 +1,8 @@
 package codegraph
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -345,6 +347,254 @@ func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
 	rep := Check(tg, v)
 	if hasFinding(rep.Fails, KindDeadEntry) {
 		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
+	}
+}
+
+// gapTarget 造一个「只有 d_app 声明目标领域」的目标图：d_other 故意不声明，
+// 用来锁「未声明 domains 的子系统整体跳过执法」（契约 §3-1 第 1 条）。
+func gapTarget(budget int, domains ...TargetDomain) *Target {
+	return &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
+			{ID: "d_app", Name: "App", Type: "logic", Paths: []string{"app/**"}, UnplacedBudget: budget, Domains: domains},
+			{ID: "d_other", Name: "Other", Type: "logic", Paths: []string{"other/**"}},
+		},
+	}
+}
+
+func gapDomains() []TargetDomain {
+	return []TargetDomain{
+		{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}},
+		{ID: "d_worker", Name: "Worker", Responsibility: "后台任务", Paths: []string{"app/worker/**"}},
+	}
+}
+
+// gapView 按 file 列表造视图，节点 id 自增；同一个文件出现多次即多个节点。
+func gapView(files ...string) *View {
+	v := &View{Containers: map[string]Container{}, Nodes: map[string]ViewNode{}}
+	for i, file := range files {
+		id := fmt.Sprintf("n_%03d", i)
+		v.Containers["c"] = Container{Label: "c"}
+		v.Nodes[id] = ViewNode{Node: Node{Container: "c", Name: id, File: file}}
+	}
+	return v
+}
+
+func findingsOfKind(findings []Finding, kind string) []Finding {
+	var out []Finding
+	for _, f := range findings {
+		if f.Kind == kind {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func TestCheckTargetDomainGap(t *testing.T) {
+	cases := []struct {
+		name          string
+		target        *Target
+		view          *View
+		wantFails     map[string]int // kind → 条数
+		wantWarns     map[string]int
+		wantDetail    []string // 必须出现在某条 gap finding 的 Detail 里
+		unwantDetail  []string
+		wantFindingID string // 若非空，断言该 kind 的 finding From/To 形状
+	}{
+		{
+			name:       "预算内未落位只进 warns",
+			target:     gapTarget(1, gapDomains()...),
+			view:       gapView("app/api/a.go", "app/loose.go", "other/x.go", "web/out.ts"),
+			wantFails:  map[string]int{KindUnplacedOverBudget: 0},
+			wantWarns:  map[string]int{KindUnplaced: 1, KindDomainEmpty: 1},
+			wantDetail: []string{"1/1", "app/loose.go", "d_worker"},
+		},
+		{
+			name:      "严格超预算进 fails",
+			target:    gapTarget(0, gapDomains()...),
+			view:      gapView("app/api/a.go", "app/loose.go"),
+			wantFails: map[string]int{KindUnplacedOverBudget: 1},
+			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 1},
+			// 1 > 0 才超预算；Detail 必须能看到 n 与预算两个数。
+			wantDetail: []string{"1/0", "app/loose.go"},
+		},
+		{
+			name:      "未声明 domains 的子系统整体跳过",
+			target:    gapTarget(0),
+			view:      gapView("app/loose.go", "other/x.go"),
+			wantFails: map[string]int{KindUnplacedOverBudget: 0},
+			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
+		},
+		{
+			name:      "全部落位时不产 unplaced",
+			target:    gapTarget(0, gapDomains()...),
+			view:      gapView("app/api/a.go", "app/worker/w.go"),
+			wantFails: map[string]int{KindUnplacedOverBudget: 0},
+			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
+		},
+		{
+			name:      "重复文件只算一个未落位",
+			target:    gapTarget(0, gapDomains()...),
+			view:      gapView("app/loose.go", "app/loose.go", "app/loose.go", "app/api/a.go", "app/worker/w.go"),
+			wantFails: map[string]int{KindUnplacedOverBudget: 1},
+			// 去重后 n=1；若实现按节点计数会变成 3/0。
+			wantDetail:   []string{"1/0"},
+			unwantDetail: []string{"3/0"},
+		},
+		{
+			name:      "图外文件与其他子系统文件都不计入",
+			target:    gapTarget(0, gapDomains()...),
+			view:      gapView("app/api/a.go", "app/worker/w.go", "other/x.go", "other/deep/y.go", "web/out.ts"),
+			wantFails: map[string]int{KindUnplacedOverBudget: 0},
+			wantWarns: map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
+		},
+		{
+			name:      "同子系统多个未落位文件只聚合成一条",
+			target:    gapTarget(99, gapDomains()...),
+			view:      gapView("app/api/a.go", "app/worker/w.go", "app/f1.go", "app/f2.go", "app/f3.go", "app/f4.go", "app/f5.go", "app/f6.go", "app/f7.go"),
+			wantWarns: map[string]int{KindUnplaced: 1, KindDomainEmpty: 0},
+			// 样例固定为字典序前 5 条，第 6、7 条不得出现——否则大包会刷屏且输出不可 diff。
+			wantDetail:   []string{"7/99", "app/f1.go", "app/f5.go"},
+			unwantDetail: []string{"app/f6.go", "app/f7.go"},
+		},
+		{
+			name:      "每个零命中目标领域各一条 domain-empty",
+			target:    gapTarget(0, gapDomains()...),
+			view:      gapView("other/x.go"),
+			wantWarns: map[string]int{KindDomainEmpty: 2, KindUnplaced: 0},
+			// 两条 Detail 各带自己的目标域 id。
+			wantDetail: []string{"d_api", "d_worker"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := Check(tc.target, tc.view)
+			for kind, want := range tc.wantFails {
+				if got := len(findingsOfKind(rep.Fails, kind)); got != want {
+					t.Errorf("fails 中 %s 应有 %d 条，实际 %d 条: %+v", kind, want, got, rep.Fails)
+				}
+			}
+			for kind, want := range tc.wantWarns {
+				if got := len(findingsOfKind(rep.Warns, kind)); got != want {
+					t.Errorf("warns 中 %s 应有 %d 条，实际 %d 条: %+v", kind, want, got, rep.Warns)
+				}
+			}
+			gap := append(append([]Finding{}, gapFindings(rep.Fails)...), gapFindings(rep.Warns)...)
+			joined := ""
+			for _, f := range gap {
+				joined += f.Detail + "\n"
+				// 契约 §4 冻结 23：gap finding 一律 From=子系统 id、To 省略。
+				if f.From != "d_app" || f.To != "" {
+					t.Errorf("gap finding 的 From/To 形状不对: %+v", f)
+				}
+			}
+			for _, want := range tc.wantDetail {
+				if !strings.Contains(joined, want) {
+					t.Errorf("gap Detail 应含 %q，实际:\n%s", want, joined)
+				}
+			}
+			for _, unwanted := range tc.unwantDetail {
+				if strings.Contains(joined, unwanted) {
+					t.Errorf("gap Detail 不应含 %q，实际:\n%s", unwanted, joined)
+				}
+			}
+		})
+	}
+}
+
+func gapFindings(findings []Finding) []Finding {
+	var out []Finding
+	for _, f := range findings {
+		switch f.Kind {
+		case KindUnplaced, KindUnplacedOverBudget, KindDomainEmpty:
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// deleted 节点只为渲染保留，不代表当前分支还有这个文件：它既不能撑起未落位计数，
+// 也不能让一个目标域看起来「已经有代码了」。
+func TestCheckTargetDomainExcludesDeletedNodes(t *testing.T) {
+	target := gapTarget(0, TargetDomain{ID: "d_api", Name: "API", Responsibility: "r", Paths: []string{"app/api/**"}})
+	v := gapView("app/api/gone.go", "app/loose.go")
+	for id, node := range v.Nodes {
+		if node.File == "app/api/gone.go" || node.File == "app/loose.go" {
+			node.Status = "deleted"
+			v.Nodes[id] = node
+		}
+	}
+	rep := Check(target, v)
+	if got := len(findingsOfKind(rep.Fails, KindUnplacedOverBudget)); got != 0 {
+		t.Errorf("deleted 文件不应撑起未落位计数: %+v", rep.Fails)
+	}
+	if got := len(findingsOfKind(rep.Warns, KindDomainEmpty)); got != 1 {
+		t.Errorf("目标域只被 deleted 节点命中时仍应算零命中: %+v", rep.Warns)
+	}
+}
+
+// 真实迁移回归：把 svc/server.go 搬进 svc/api/ 后，未落位数必须自己降下来——
+// 这条是用户故事 3「搬文件使 unplaced 下降」的可执行判据，不是构造视图能糊弄的。
+func TestCheckTargetDomainUnplacedDropsAfterRealMerge(t *testing.T) {
+	g := loadFixture(t)
+	target := &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
+			{ID: "d_svc", Name: "服务", Type: "logic", Paths: []string{"svc/**"}, UnplacedBudget: 99,
+				Domains: []TargetDomain{{ID: "d_svc_api", Name: "API", Responsibility: "对外方法", Paths: []string{"svc/api/**"}}}},
+			{ID: "d_cmd", Name: "入口", Type: "logic", Paths: []string{"cmd/**"}},
+			{ID: "d_web", Name: "前端", Type: "boundary", Paths: []string{"web/**"}},
+		},
+	}
+	if issues := ValidateTarget(target); len(issues) != 0 {
+		t.Fatalf("迁移回归用的目标图自身必须合法: %v", issues)
+	}
+
+	before := Check(target, Merge(g, nil))
+	beforeGap := findingsOfKind(before.Warns, KindUnplaced)
+	if len(beforeGap) != 1 || !strings.Contains(beforeGap[0].Detail, "3/99") {
+		t.Fatalf("迁移前 svc/** 应有 3 个未落位文件: %+v", before.Warns)
+	}
+
+	moved := g.Nodes["n_do"]
+	moved.File = "svc/api/server.go"
+	movedSave := g.Nodes["n_save"]
+	movedSave.File = "svc/api/server.go"
+	after := Check(target, Merge(g, &Diff{View: "branch-migrate", NodesModified: map[string]Node{"n_do": moved, "n_save": movedSave}}))
+	afterGap := findingsOfKind(after.Warns, KindUnplaced)
+	if len(afterGap) != 1 || !strings.Contains(afterGap[0].Detail, "2/99") {
+		t.Fatalf("把 svc/server.go 搬进 svc/api/ 后未落位应降到 2/99: %+v", after.Warns)
+	}
+	if hasFinding(after.Warns, KindDomainEmpty) {
+		t.Fatalf("目标域被真实文件命中后不应再报 domain-empty: %+v", after.Warns)
+	}
+}
+
+// 三种新 kind 必须能原样穿过 Report 的 JSON 编解码——查看器与 CLI 消费的就是这层 wire。
+func TestCheckTargetDomainFindingsSurviveReportJSON(t *testing.T) {
+	rep := Check(gapTarget(0, gapDomains()...), gapView("app/loose.go"))
+	raw, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("编码 Report: %v", err)
+	}
+	var decoded Report
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("回读 Report: %v", err)
+	}
+	if !reflect.DeepEqual(rep.Fails, decoded.Fails) || !reflect.DeepEqual(rep.Warns, decoded.Warns) {
+		t.Fatalf("Report JSON 回读后 finding 不一致:\n原始 %+v\n回读 %+v", rep, decoded)
+	}
+	over := findingsOfKind(decoded.Fails, KindUnplacedOverBudget)
+	empty := findingsOfKind(decoded.Warns, KindDomainEmpty)
+	if len(over) != 1 || over[0].From != "d_app" || over[0].To != "" || over[0].Detail == "" {
+		t.Fatalf("unplaced-over-budget 未完整穿过 JSON: %+v", decoded.Fails)
+	}
+	if len(empty) != 2 {
+		t.Fatalf("domain-empty 未完整穿过 JSON: %+v", decoded.Warns)
+	}
+	// To 省略是 wire 契约（冻结 23），不能编成 "to":""。
+	if strings.Contains(string(raw), `"to":""`) {
+		t.Fatalf("gap finding 的 To 必须省略而不是空串: %s", raw)
 	}
 }
 
