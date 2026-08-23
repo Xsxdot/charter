@@ -223,3 +223,11 @@ ContainersAdded map[string]Container `json:"containersAdded,omitempty"`   // 已
 - 可执行冻结：无新命中。
 - 拍板记录：R1 命中三重闸门（难逆转=wire 增量且牵动扫描配方；会惊讶=后人会问「为什么 diff 能加容器却不能加领域」；真取舍=被否的 A「接受局限」与 D「分支降 warn」都是绕过根因），已在 R1 正文完整记录，不另起段。R2~R9 属边界澄清与机制确认，不命中三重闸门。
 - 欠账：一条，**handoff 扫描配方新增 `containersAdded` 段说明**——不在本刀范围（handoff 仓文件），已在 R1 写明并落 roadmap。
+
+### R10（acceptance 回写）：冻结 4 的零噪声断言按实测更正
+
+冻结 4 原文断言「三类新 fail 对 handoff 真仓的实测结果为 0」。该读数在契约冻结时（2026-08-23 早）成立，**acceptance 真机复测时为 2**——但经查证 **2 条均为真实缺陷，非工具误报**：
+
+`dc00cf163`（handoff 侧另一会话的 `contract(b192)` 冻结）向 `codegraph/target.json` 的两条契约写入了 entry `client.DispatchOpts.local_base_branch`。该串是**字段路径而非容器 label**，baseline 的 containers 中不存在此 label（实测确认）。旧版 check 对匹配不到的 entry 静默，故该哑条目此前零信号；`dead-entry` 判据首次运行即让它可见。已落 handoff 卡 **B206**。
+
+**冻结 4 改述为**：三类新 fail 只在「target.json 声明的契约面确有未建成项」时非零；对 2026-08-23 早的 handoff 真仓快照实测为 0，对含 B192 哑条目的当前快照实测为 2 且两条均可归因到真实缺陷。**判据的正确性由「每条 fail 都能归因到真实缺陷」验证，不由「fail 恒为 0」验证**——后者会把「工具没发现问题」与「代码没问题」混为一谈。
