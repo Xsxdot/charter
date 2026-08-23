@@ -82,3 +82,22 @@ func TestAbsorbLifecycleMergeAndPreserve(t *testing.T) {
 		t.Fatalf("lifecycle 增删/死端点/去重不对: got=%v want=%v", merged.Lifecycle, want)
 	}
 }
+
+func TestAbsorbContainersAddedAndValidate(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		ContainersAdded: map[string]Container{
+			"k_new": {Label: "new.Server", Kind: "服务端", Domain: "d_svc/api"},
+		},
+		NodesAdded: map[string]Node{
+			"n_new": {Kind: "func", Container: "k_new", File: "svc/new.go"},
+		},
+	}
+	merged := Absorb(g, d)
+	if _, ok := merged.Containers["k_new"]; !ok {
+		t.Fatal("Absorb 后新增容器应进入 baseline.Containers")
+	}
+	if issues := Validate(merged); len(issues) != 0 {
+		t.Fatalf("Absorb 后的 baseline 应通过 Validate: %v", issues)
+	}
+}

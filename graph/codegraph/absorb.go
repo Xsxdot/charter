@@ -30,6 +30,11 @@ func Absorb(g *Graph, d *Diff) *Graph {
 		Projections: slices.Clone(g.Projections),
 		Lifecycle:   slices.Clone(g.Lifecycle),
 	}
+	// 先回灌容器再回灌节点，保证新节点的容器引用在基线中闭合；复制后的 out
+	// 保持入参不变，失败重试不会污染原基线（契约 §7-R1）。
+	for id, c := range d.ContainersAdded {
+		out.Containers[id] = c
+	}
 	for id, n := range d.NodesAdded {
 		out.Nodes[id] = n
 	}

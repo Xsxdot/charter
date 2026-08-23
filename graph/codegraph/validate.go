@@ -100,6 +100,18 @@ func validateDomains(g *Graph) []string {
 // nodesAdded 的 container 必须存在。
 func ValidateDiff(g *Graph, d *Diff) []string {
 	var issues []string
+	// containersAdded 是分支新建容器的唯一合法来源；先校验其 id 与领域，避免
+	// 用一个看似新增的条目静默覆盖基线，或把容器挂到图外领域（契约 §7-R1）。
+	for id, c := range d.ContainersAdded {
+		if _, ok := g.Containers[id]; ok {
+			issues = append(issues, fmt.Sprintf("新增容器 %s 已存在于基线，containersAdded 只接受新容器", id))
+		}
+		if c.Domain == "" {
+			issues = append(issues, fmt.Sprintf("新增容器 %s 未声明 domain，containersAdded 的容器必须归属基线领域", id))
+		} else if _, ok := g.Domains[c.Domain]; !ok {
+			issues = append(issues, fmt.Sprintf("新增容器 %s 引用不存在的基线领域 %s", id, c.Domain))
+		}
+	}
 	known := func(id string) bool {
 		if _, ok := g.Nodes[id]; ok {
 			return true
@@ -109,6 +121,9 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 	}
 	for id, n := range d.NodesAdded {
 		if _, ok := g.Containers[n.Container]; !ok {
+			if _, added := d.ContainersAdded[n.Container]; added {
+				continue
+			}
 			issues = append(issues, fmt.Sprintf("新增节点 %s 引用不存在的容器 %s", id, n.Container))
 		}
 	}

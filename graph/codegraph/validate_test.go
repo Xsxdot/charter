@@ -188,3 +188,62 @@ func TestValidateDiffLifecycleRefs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDiffAllowsNodeInAddedContainer(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		ContainersAdded: map[string]Container{
+			"k_new": {Label: "new.Server", Domain: "d_svc/api"},
+		},
+		NodesAdded: map[string]Node{
+			"n_new": {Kind: "func", Container: "k_new", File: "svc/new.go"},
+		},
+	}
+	if issues := ValidateDiff(g, d); len(issues) != 0 {
+		t.Fatalf("新增节点引用新增容器不应报问题: %v", issues)
+	}
+}
+
+func TestValidateDiffStillRejectsNodeInUnknownContainer(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{NodesAdded: map[string]Node{
+		"n_new": {Kind: "func", Container: "k_unknown", File: "svc/new.go"},
+	}}
+	issues := ValidateDiff(g, d)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, "\n"), "k_unknown") {
+		t.Fatalf("真正未知的容器仍必须报问题: %v", issues)
+	}
+}
+
+func TestValidateDiffRejectsAddedContainerConflict(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{ContainersAdded: map[string]Container{
+		"k_svc": {Label: "replacement", Domain: "d_svc/api"},
+	}}
+	issues := ValidateDiff(g, d)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, "\n"), "k_svc") {
+		t.Fatalf("新增容器覆盖基线 id 应报 k_svc: %v", issues)
+	}
+}
+
+func TestValidateDiffRejectsAddedContainerWithoutDomain(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{ContainersAdded: map[string]Container{
+		"k_no_domain": {Label: "new.Server"},
+	}}
+	issues := ValidateDiff(g, d)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, "\n"), "k_no_domain") {
+		t.Fatalf("无 domain 的新增容器应报 k_no_domain: %v", issues)
+	}
+}
+
+func TestValidateDiffRejectsAddedContainerUnknownDomain(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{ContainersAdded: map[string]Container{
+		"k_bad_domain": {Label: "new.Server", Domain: "d_missing"},
+	}}
+	issues := ValidateDiff(g, d)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, "\n"), "k_bad_domain") || !strings.Contains(strings.Join(issues, "\n"), "d_missing") {
+		t.Fatalf("未知 domain 的新增容器应同时带 id 与 domain: %v", issues)
+	}
+}
