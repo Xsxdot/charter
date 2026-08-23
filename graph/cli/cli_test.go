@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -234,6 +236,143 @@ func TestGraphCheckMissingTargetFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("无 target 的 check 必须失败")
 	}
+}
+
+func TestGraphCheckSkipsRatchetWithActionableWarning(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	stdout, stderr, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err != nil {
+		t.Fatalf("无 git 基准时其余判据通过，退出码应不变: %v\nstdout=%s\nstderr=%s", err, stdout, stderr)
+	}
+	var report codegraph.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("降级时 stdout 必须是合法 Report JSON: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stderr, "棘轮") || !strings.Contains(stderr, "跳过") {
+		t.Fatalf("stderr 应明示棘轮判据已跳过: %s", stderr)
+	}
+}
+
+func TestGraphCheckBudgetRatchetFailsFromExplicitBase(t *testing.T) {
+	repo, base := gitTargetRepo(t, 1, 2, "")
+	stdout, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("预算上涨且无理由应非零: %s", stdout)
+	}
+	var report codegraph.Report
+	if jsonErr := json.Unmarshal([]byte(stdout), &report); jsonErr != nil {
+		t.Fatalf("棘轮失败仍应输出合法 JSON: %v\n%s", jsonErr, stdout)
+	}
+	assertBudgetFinding(t, report, true)
+}
+
+func TestGraphCheckBudgetRatchetNoteDowngradesToWarning(t *testing.T) {
+	repo, base := gitTargetRepo(t, 1, 2, "图重扫补全")
+	stdout, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err != nil {
+		t.Fatalf("有非空上涨理由应降为 warn: %v\n%s", err, stdout)
+	}
+	var report codegraph.Report
+	if jsonErr := json.Unmarshal([]byte(stdout), &report); jsonErr != nil {
+		t.Fatalf("棘轮 warn 仍应输出合法 JSON: %v\n%s", jsonErr, stdout)
+	}
+	assertBudgetFinding(t, report, false)
+}
+
+func TestGraphCheckBudgetRatchetWhitespaceNoteStillFails(t *testing.T) {
+	repo, base := gitTargetRepo(t, 1, 2, "   ")
+	stdout, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("纯空白上涨理由不得降档: %s", stdout)
+	}
+	var report codegraph.Report
+	if jsonErr := json.Unmarshal([]byte(stdout), &report); jsonErr != nil {
+		t.Fatalf("纯空白理由的棘轮失败仍应输出合法 JSON: %v\n%s", jsonErr, stdout)
+	}
+	assertBudgetFinding(t, report, true)
+}
+
+func TestGraphCheckBudgetRatchetAcceptsSchemaV1Base(t *testing.T) {
+	repo, base := gitTargetRepoWithVersion(t, 1, 2, "", 1)
+	stdout, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("schema v1 基准仍应参与棘轮并因上涨非零: %s", stdout)
+	}
+	var report codegraph.Report
+	if jsonErr := json.Unmarshal([]byte(stdout), &report); jsonErr != nil {
+		t.Fatalf("schema v1 基准棘轮失败仍应输出合法 JSON: %v\n%s", jsonErr, stdout)
+	}
+	assertBudgetFinding(t, report, true)
+}
+
+func assertBudgetFinding(t *testing.T, report codegraph.Report, inFails bool) {
+	t.Helper()
+	var fails, warns int
+	for _, finding := range report.Fails {
+		if finding.Kind == "budget-raised" {
+			fails++
+		}
+	}
+	for _, finding := range report.Warns {
+		if finding.Kind == "budget-raised" {
+			warns++
+		}
+	}
+	if inFails && (fails != 1 || warns != 0) {
+		t.Fatalf("budget-raised 应在 fails: fails=%d warns=%d report=%+v", fails, warns, report)
+	}
+	if !inFails && (fails != 0 || warns != 1) {
+		t.Fatalf("budget-raised 应在 warns: fails=%d warns=%d report=%+v", fails, warns, report)
+	}
+}
+
+func gitTargetRepo(t *testing.T, oldBudget, currentBudget int, note string) (string, string) {
+	return gitTargetRepoWithVersion(t, oldBudget, currentBudget, note, 2)
+}
+
+func gitTargetRepoWithVersion(t *testing.T, oldBudget, currentBudget int, note string, oldVersion int) (string, string) {
+	t.Helper()
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	writeTargetVersionBudget(t, repo, oldVersion, oldBudget, 2, 0, "")
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "config", "user.email", "codegraph-test@example.com")
+	runGit(t, repo, "config", "user.name", "codegraph-test")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-q", "-m", "base target")
+	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+	writeTargetVersionBudget(t, repo, 2, currentBudget, oldVersion, oldBudget, note)
+	return repo, base
+}
+
+func writeTargetVersionBudget(t *testing.T, repo string, version, budget, previousVersion, previousBudget int, note string) {
+	t.Helper()
+	path := filepath.Join(repo, "codegraph", "target.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.Replace(raw, []byte(fmt.Sprintf(`"version": %d`, previousVersion)), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
+	raw = bytes.Replace(raw, []byte(fmt.Sprintf(`"legacyBudget": %d`, previousBudget)), []byte(fmt.Sprintf(`"legacyBudget": %d`, budget)), 1)
+	if note != "" {
+		old := []byte(fmt.Sprintf(`"legacyBudget": %d`, budget))
+		newValue := []byte(fmt.Sprintf(`"legacyBudget": %d, "legacyBudgetNote": %s`, budget, strconv.Quote(note)))
+		raw = bytes.Replace(raw, old, newValue, 1)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runGit(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v 失败: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 func TestGraphTargetVersionGate(t *testing.T) {

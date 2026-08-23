@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -43,7 +44,7 @@ func TestCheckTable(t *testing.T) {
 		wantFailKinds []string
 		wantWarnKinds []string
 	}{
-		{"域内边不检查", twoDomainTarget(nil, 0), [][2]string{{"b1", "b2"}}, nil, nil, nil},
+		{"域内边不检查", &Target{Meta: TargetMeta{Version: 2}, Subsystems: twoDomainTarget(nil, 0).Subsystems}, [][2]string{{"b1", "b2"}}, nil, nil, nil},
 		{"走声明入口合法", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b1"}}, nil, nil, nil},
 		{"越界但有预算=warn", twoDomainTarget([]string{"b.Facade"}, 1), [][2]string{{"a1", "b2"}}, nil, nil, []string{"legacy"}},
 		{"越界超预算=fail", twoDomainTarget([]string{"b.Facade"}, 0), [][2]string{{"a1", "b2"}}, nil, []string{"over-budget"}, nil},
@@ -175,4 +176,196 @@ func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	if !found {
 		t.Fatalf("deleted 节点不应让组装点算「命中」，实际 warns: %+v", rep.Warns)
 	}
+}
+
+func TestSortFindingsIsTotalOrder(t *testing.T) {
+	findings := []Finding{
+		{Kind: "same", Detail: "same", From: "d_c", To: "d_d", Edge: &Edge{"n_c", "n_d"}},
+		{Kind: "same", Detail: "same", From: "d_a", To: "d_b", Edge: &Edge{"n_a", "n_b"}},
+		{Kind: "same", Detail: "same", From: "d_b", To: "d_c", Edge: &Edge{"n_b", "n_c"}},
+		{Kind: "same", Detail: "same", From: "d_a", To: "d_c", Edge: &Edge{"n_a", "n_c"}},
+		{Kind: "same", Detail: "same", From: "d_c", To: "d_a", Edge: &Edge{"n_c", "n_a"}},
+		{Kind: "same", Detail: "same", From: "d_b", To: "d_a", Edge: &Edge{"n_b", "n_a"}},
+	}
+	first := append([]Finding(nil), findings...)
+	second := append([]Finding(nil), findings...)
+	for i, j := 0, len(second)-1; i < j; i, j = i+1, j-1 {
+		second[i], second[j] = second[j], second[i]
+	}
+
+	sortFindings(&Report{Fails: first})
+	sortFindings(&Report{Fails: second})
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("相同 Kind/Detail 的 finding 排序不稳定:\nfirst=%+v\nsecond=%+v", first, second)
+	}
+}
+
+func TestCheckDeadEntryReconciliation(t *testing.T) {
+	cases := []struct {
+		name      string
+		entry     string
+		nodes     map[string][2]string
+		wantDead  bool
+		wantTo    string
+		wantEntry string
+	}{
+		{
+			name:      "缺失 Label",
+			entry:     "missing.Entry",
+			nodes:     map[string][2]string{"b1": {"b.Facade", "b/f.go"}},
+			wantDead:  true,
+			wantTo:    "d_b",
+			wantEntry: "missing.Entry",
+		},
+		{
+			name:      "同 Label 但节点在错误子系统",
+			entry:     "same.Entry",
+			nodes:     map[string][2]string{"a1": {"same.Entry", "a/a.go"}},
+			wantDead:  true,
+			wantTo:    "d_b",
+			wantEntry: "same.Entry",
+		},
+		{
+			name:     "Label 与节点均在 to",
+			entry:    "b.Facade",
+			nodes:    map[string][2]string{"b1": {"b.Facade", "b/f.go"}},
+			wantDead: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tg := twoDomainTarget([]string{tc.entry}, 0)
+			rep := Check(tg, mkView(tc.nodes, nil, nil))
+			var found *Finding
+			for i := range rep.Fails {
+				if rep.Fails[i].Kind == KindDeadEntry {
+					found = &rep.Fails[i]
+					break
+				}
+			}
+			if tc.wantDead && found == nil {
+				t.Fatalf("应报 dead-entry: %+v", rep)
+			}
+			if !tc.wantDead && found != nil {
+				t.Fatalf("有效入口不应报 dead-entry: %+v", found)
+			}
+			if found != nil && (found.To != tc.wantTo || !strings.Contains(found.Detail, tc.wantEntry) || !strings.Contains(found.Detail, tc.wantTo)) {
+				t.Fatalf("dead-entry 定位信息不完整: %+v", found)
+			}
+		})
+	}
+}
+
+func TestCheckDeadInterfaceReconciliation(t *testing.T) {
+	tg := twoDomainTarget(nil, 0)
+	tg.Contracts[0].Interfaces = []string{"a.Notifier"}
+	missing := Check(tg, mkView(map[string][2]string{
+		"b1": {"b.Facade", "b/f.go"},
+	}, nil, nil))
+	assertFinding(t, missing.Fails, KindDeadInterface, "a.Notifier", "d_b", "d_a→d_b")
+
+	valid := Check(tg, mkView(map[string][2]string{
+		"a.Notifier": {"a.Notifier", "a/n.go"},
+	}, nil, nil))
+	if hasFinding(valid.Fails, KindDeadInterface) {
+		t.Fatalf("from 子系统中的接口不应报 dead-interface: %+v", valid.Fails)
+	}
+}
+
+func TestCheckDeadContractReconciliationCountsAllLiveEdges(t *testing.T) {
+	tests := []struct {
+		name     string
+		edges    [][2]string
+		impls    [][2]string
+		assembly bool
+		want     bool
+	}{
+		{name: "零边", want: true},
+		{name: "implements 边算活", impls: [][2]string{{"impl", "iface"}}},
+		{name: "组装点豁免 call 边算活", edges: [][2]string{{"caller", "callee"}}, assembly: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tg := twoDomainTarget(nil, 0)
+			if tc.name == "implements 边算活" {
+				tg.Contracts[0].Interfaces = []string{"iface"}
+			}
+			tg.Assembly = nil
+			if tc.assembly {
+				tg.Assembly = []string{"a/assembly.go"}
+			}
+			nodes := map[string][2]string{
+				"impl": {"b.Impl", "b/impl.go"}, "iface": {"a.Iface", "a/iface.go"},
+				"caller": {"a.Caller", "a/assembly.go"}, "callee": {"b.Callee", "b/callee.go"},
+			}
+			rep := Check(tg, mkView(nodes, tc.edges, tc.impls))
+			hasDead := hasFinding(rep.Fails, KindDeadContract)
+			if hasDead != tc.want {
+				t.Fatalf("dead-contract=%v want=%v: %+v", hasDead, tc.want, rep.Fails)
+			}
+		})
+	}
+}
+
+func TestCheckReconciliationFindingsAreFails(t *testing.T) {
+	tg := twoDomainTarget([]string{"missing.Entry"}, 0)
+	tg.Contracts[0].Interfaces = []string{"missing.Interface"}
+	rep := Check(tg, mkView(map[string][2]string{}, nil, nil))
+	for _, kind := range []string{KindDeadEntry, KindDeadInterface, KindDeadContract} {
+		if !hasFinding(rep.Fails, kind) {
+			t.Fatalf("%s 应进 fails: %+v", kind, rep)
+		}
+		if hasFinding(rep.Warns, kind) {
+			t.Fatalf("%s 不应进 warns: %+v", kind, rep)
+		}
+	}
+}
+
+func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		ContainersAdded: map[string]Container{
+			"k_new": {Label: "new.Entry", Kind: "服务端", Domain: "d_svc/api"},
+		},
+		NodesAdded: map[string]Node{
+			"n_new": {Kind: "func", Container: "k_new", Name: "new.Entry", File: "svc/new.go"},
+		},
+		EdgesAdded: []Edge{{"n_runE", "n_new"}},
+	}
+	v := Merge(g, d)
+	tg := &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
+			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
+			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
+		},
+		Assembly:  []string{"cmd/run.go"},
+		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"new.Entry"}}},
+	}
+	rep := Check(tg, v)
+	if hasFinding(rep.Fails, KindDeadEntry) {
+		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
+	}
+}
+
+func hasFinding(findings []Finding, kind string) bool {
+	for _, f := range findings {
+		if f.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func assertFinding(t *testing.T, findings []Finding, kind, detail, to, direction string) {
+	t.Helper()
+	for _, f := range findings {
+		if f.Kind == kind {
+			if f.To != to || !strings.Contains(f.Detail, detail) || !strings.Contains(f.Detail, direction) {
+				t.Fatalf("%s 定位信息不完整: %+v", kind, f)
+			}
+			return
+		}
+	}
+	t.Fatalf("缺少 %s: %+v", kind, findings)
 }

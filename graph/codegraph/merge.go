@@ -54,7 +54,11 @@ type View struct {
 
 // Merge 把基线与一个 diff 合并成视图。d 为 nil 时返回纯基准视图（Name="baseline"）。
 func Merge(g *Graph, d *Diff) *View {
-	v := &View{Name: "baseline", Domains: g.Domains, Containers: g.Containers,
+	containers := make(map[string]Container, len(g.Containers))
+	for id, c := range g.Containers {
+		containers[id] = c
+	}
+	v := &View{Name: "baseline", Domains: g.Domains, Containers: containers,
 		Nodes: make(map[string]ViewNode, len(g.Nodes))}
 	for id, n := range g.Nodes {
 		v.Nodes[id] = ViewNode{Node: n}
@@ -75,6 +79,11 @@ func Merge(g *Graph, d *Diff) *View {
 		return v
 	}
 	v.Name = d.View
+	// 新容器必须先投影进视图，分支节点才能引用它并让 dead-entry 看见已建成入口；
+	// 容器表已复制，故该增量不会污染可复用的基线（契约 §7-R1）。
+	for id, c := range d.ContainersAdded {
+		v.Containers[id] = c
+	}
 	for id, n := range d.NodesAdded {
 		v.Nodes[id] = ViewNode{Node: n, Status: "added"}
 	}

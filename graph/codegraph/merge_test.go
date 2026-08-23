@@ -3,6 +3,7 @@ package codegraph
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,21 @@ func TestMergeSkipsInvalidAddedEdges(t *testing.T) {
 	}
 }
 
+func TestMergeContainersAdded(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{ContainersAdded: map[string]Container{
+		"k_new": {Label: "new.Server", Kind: "服务端", Domain: "d_svc/api"},
+	}}
+	v := Merge(g, d)
+	got, ok := v.Containers["k_new"]
+	if !ok || got.Label != "new.Server" {
+		t.Fatalf("新增容器未进入视图或 Label 错误: ok=%v container=%+v", ok, got)
+	}
+	if _, ok := g.Containers["k_new"]; ok {
+		t.Fatal("Merge 不应就地污染基线容器")
+	}
+}
+
 // implements 边必须穿过 LoadGraph→LoadDiff→Merge 全链出现在视图里。
 // 只测内存构造会漏掉 json tag 拼写错这类 wire 缺陷（ChildrenTotal 前科）。
 func TestMergeImplementsThroughWire(t *testing.T) {
@@ -106,5 +122,28 @@ func TestGraphJSONKeysAreAdditiveForLifecycle(t *testing.T) {
 		if !want[key] {
 			t.Fatalf("Graph JSON 出现非 additive 键 %q", key)
 		}
+	}
+}
+
+func TestDiffContainersAddedJSONKeyIsAdditiveAndOmittable(t *testing.T) {
+	withContainer, err := json.Marshal(&Diff{View: "new", ContainersAdded: map[string]Container{
+		"k_new": {Label: "new.Server", Domain: "d_svc/api"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(withContainer, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["containersAdded"]; !ok {
+		t.Fatalf("非空 ContainersAdded 应序列化为 containersAdded: %s", withContainer)
+	}
+	empty, err := json.Marshal(&Diff{View: "empty"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(empty), "containersAdded") {
+		t.Fatalf("空 ContainersAdded 应被 omitempty 省略: %s", empty)
 	}
 }
