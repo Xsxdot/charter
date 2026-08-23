@@ -97,7 +97,7 @@ func validateDomains(g *Graph) []string {
 // ValidateDiff 检查 diff 相对基线的引用完整性。
 // 检查项：nodesModified/nodesDeleted 引用的节点必须在基线里；
 // edgesAdded/edgesDeleted 两端必须在「基线 ∪ nodesAdded」里；
-// nodesAdded 的 container 必须存在。
+// nodesAdded 的 container 必须在「基线 ∪ containersAdded」里。
 func ValidateDiff(g *Graph, d *Diff) []string {
 	var issues []string
 	// containersAdded 是分支新建容器的唯一合法来源；先校验其 id 与领域，避免

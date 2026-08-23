@@ -321,6 +321,33 @@ func TestCheckReconciliationFindingsAreFails(t *testing.T) {
 	}
 }
 
+func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{
+		ContainersAdded: map[string]Container{
+			"k_new": {Label: "new.Entry", Kind: "服务端", Domain: "d_svc/api"},
+		},
+		NodesAdded: map[string]Node{
+			"n_new": {Kind: "func", Container: "k_new", Name: "new.Entry", File: "svc/new.go"},
+		},
+		EdgesAdded: []Edge{{"n_runE", "n_new"}},
+	}
+	v := Merge(g, d)
+	tg := &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
+			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/**"}},
+			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
+		},
+		Assembly:  []string{"cmd/run.go"},
+		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"new.Entry"}}},
+	}
+	rep := Check(tg, v)
+	if hasFinding(rep.Fails, KindDeadEntry) {
+		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
+	}
+}
+
 func hasFinding(findings []Finding, kind string) bool {
 	for _, f := range findings {
 		if f.Kind == kind {
