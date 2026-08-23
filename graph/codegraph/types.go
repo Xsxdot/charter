@@ -100,18 +100,23 @@ type Graph struct {
 
 // Diff 是 codegraph/diffs/<view>.json：某分支/plan 相对基准的差异声明。
 type Diff struct {
-	View               string          `json:"view"`
-	Base               string          `json:"base,omitempty"`
-	Summary            string          `json:"summary,omitempty"`
-	NodesAdded         map[string]Node `json:"nodesAdded,omitempty"`
-	NodesModified      map[string]Node `json:"nodesModified,omitempty"`
-	NodesDeleted       []string        `json:"nodesDeleted,omitempty"`
-	EdgesAdded         []Edge          `json:"edgesAdded,omitempty"`
-	EdgesDeleted       []Edge          `json:"edgesDeleted,omitempty"`
-	ImplementsAdded    []Edge          `json:"implementsAdded,omitempty"`
-	ImplementsDeleted  []Edge          `json:"implementsDeleted,omitempty"`
-	ProjectionsAdded   []Projection    `json:"projectionsAdded,omitempty"`
-	ProjectionsDeleted []Projection    `json:"projectionsDeleted,omitempty"`
-	LifecycleAdded     []LifecycleRef  `json:"lifecycleAdded,omitempty"`
-	LifecycleDeleted   []LifecycleRef  `json:"lifecycleDeleted,omitempty"`
+	View    string `json:"view"`
+	Base    string `json:"base,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	// ContainersAdded 是本分支新建的容器（新包/新类型）。没有它，分支上新建的
+	// 入口容器进不了视图——ValidateDiff 会拒收引用未知容器的新节点，contract 节点
+	// 的「骨架符号入图」纪律与刀 3 的 dead-entry 清零在分支内都无法满足
+	// （契约 §7-R1）。id 与基线冲突时由 ValidateDiff 报问题，不静默覆盖。
+	ContainersAdded    map[string]Container `json:"containersAdded,omitempty"`
+	NodesAdded         map[string]Node      `json:"nodesAdded,omitempty"`
+	NodesModified      map[string]Node      `json:"nodesModified,omitempty"`
+	NodesDeleted       []string             `json:"nodesDeleted,omitempty"`
+	EdgesAdded         []Edge               `json:"edgesAdded,omitempty"`
+	EdgesDeleted       []Edge               `json:"edgesDeleted,omitempty"`
+	ImplementsAdded    []Edge               `json:"implementsAdded,omitempty"`
+	ImplementsDeleted  []Edge               `json:"implementsDeleted,omitempty"`
+	ProjectionsAdded   []Projection         `json:"projectionsAdded,omitempty"`
+	ProjectionsDeleted []Projection         `json:"projectionsDeleted,omitempty"`
+	LifecycleAdded     []LifecycleRef       `json:"lifecycleAdded,omitempty"`
+	LifecycleDeleted   []LifecycleRef       `json:"lifecycleDeleted,omitempty"`
 }

@@ -127,3 +127,99 @@ func CheckBudgetRatchet(cur, base *Target) []Finding      // 新增（已落 fit
 - **可执行冻结**：无命中（本刀无哈希/密钥派生/编码格式类条目）。
 - **视图 diff**：charter/graph 仓无代码图，跳过。
 - **交棒**：breakdown。
+
+---
+
+## §7 修订记录（2026-08-23，breakdown 拍板回写）
+
+拆解节点核对中发现一条结构性缺口与六条边界歧义，按纪律**退回本节点**处理。以下修订与 §1~§5 同等效力，随修订提交冻结。
+
+### R1（P1=C）：`Diff` 新增 `containersAdded` 段——修根因，非本刀专用
+
+**发现的事实**（本轮三处实读）：①`types.go#Diff` 原无任何容器段；②`merge.go#Merge` 的 `View.Containers` 全量取自 baseline；③`validate.go#ValidateDiff` 对「新增节点引用不存在的容器」直接报问题。**结论：分支视图无法引入新容器。**
+
+**影响面大于刀 3**：contract 节点「骨架符号随同一提交入视图 diff」的纪律、`charter:recon` 节点「补齐视图 diff」的职责，对新容器场景**今天就是不可满足的**——只是此前无人发现。刀 3 的 `dead-entry` 在分支上报红并非误报，图里确实没有那条声明的缝；沉默它等于粉饰。
+
+**增量**（additive，照 刀 1+2 lifecycle 段的成功先例）：
+
+```go
+ContainersAdded map[string]Container `json:"containersAdded,omitempty"`   // 已落 types.go#Diff，随本修订冻结
+```
+
+语义四条：
+- **Merge**：`View.Containers` = baseline 容器 ∪ `ContainersAdded`；
+- **ValidateDiff**：`NodesAdded` 的 container 可落在 baseline ∪ `ContainersAdded`；`ContainersAdded` 中 id 已存在于 baseline 的报问题（**不静默覆盖**——「新增」就该是新的）；每个新容器必须带 `domain` 且该领域在 baseline 中存在；
+- **Absorb**：并入 `baseline.Containers`，与既有 `NodesAdded` 同款；
+- **dead-entry**：入口容器落在 `ContainersAdded` 中即视为已建成，分支内可清零。
+
+**连带欠账（不在本刀，落 roadmap）**：handoff 的扫描配方 `docs/codegraph-scan-recipe.md` 需新增 `containersAdded` 段说明（与 lifecycle 那次同款），否则 AI 扫描者不会产出该段。
+
+### R2（P2=B）：`dead-entry`/`dead-interface` 的存在性按子系统收窄
+
+§1-1 原文的「视图容器集/节点名集」是**全局**存在性，但既有 check 的消费口径是**域内**的（call 边的 label 取自 callee 节点的容器，callee 必在 `to` 域；implements 的 ifaceName 必在 `from` 域）。全局口径下，`entries` 写一个存在于别的子系统的同名 label 会造出「对账过了但 check 仍判违规」——正是 §1-1 明文要避免的失败模式。
+
+**收窄为**：`dead-entry` 要求该 Label 的容器至少有一个非 deleted 节点归属 `to` 子系统；`dead-interface` 要求该 Name 的节点归属 `from` 子系统。实测代价为零（handoff 26 条 entries 两种口径均 0 落空）。
+
+### R3（P3=B）：`dead-contract` 的「实际跨子系统边」含 implements 边与组装点豁免边
+
+§1-1 原文「与既有 `new-direction` 同一遍边扫描」的字面读法只数非豁免 call 边。**该读法在库里即转红**：夹具仓唯一的跨子系统边正是组装点豁免边，`cli_test.go#TestGraphCheck` 与 `check_test.go#TestCheckImplements` 双双变红。语义上也站不住——DI 绑定边恰恰是「缝建成了」的证据，只为回调接口声明的契约（有 interfaces、零 call 边）会被误判死。
+
+**判定改为**：该方向的 call 边 ∪ implements 边 ∪ 组装点豁免边，任一非空即「活」。实测代价为零（handoff 两种口径均 0/23 死契约）。
+
+### R4（P4=A）：基准中缺席的契约视同预算 0，且报文分措辞
+
+§4-16 只规定了分档，未规定比对集合。**定为**：基准 target 中不存在的契约，其基准预算视同 0——新契约携带 `legacyBudget > 0` 即命中 `budget-raised`（新增存量债同样要有理由；handoff 历史确有此类事件）。但报文**必须区分措辞**：「新增契约携带存量预算 N」 vs 「预算 M→N 上涨」，否则「上涨」二字对新契约是误导报错。
+
+### R5（C4/P5②）：基准 target 允许 schema v1，走宽松解析
+
+§3-2 只规定了「取不到基准」的降级，未覆盖实测存在的第三态：**取到了但版本旧**（handoff 2026-08-22 前的 target 全是 v1）。**定为**：基准 target 不走 `LoadTarget` 的版本门，由 CLI 直接 `json.Unmarshal` 进 `codegraph.Target`（v1/v2 的 `contracts` 段形态与 `legacyBudget` 语义完全相同，本轮比对确认）。
+
+**约束两条**：该宽松路径**只用于取 `contracts` 段**，不得用它喂任何其他执法输入；代码注释必须写明这是对「`meta.version` 白名单在 `LoadTarget` 单点收口」的**有意例外**及其理由。
+
+### R6（C5）：分档读 `cur` 侧的 `LegacyBudgetNote`
+
+§2-2 的「该契约的 `LegacyBudgetNote`」未指明取 cur 还是 base。**定为 cur**——涨预算的人在新 target 里写理由，基准侧的旧理由不得用于给新涨幅降档。
+
+### R7（C6）：`LegacyBudgetNote` 的「非空」= `strings.TrimSpace` 后非空
+
+§4-16 字面的「非空」意味着 `" "` 也能降档，是零成本的绕过口。**定为**：`TrimSpace` 后非空才算填了理由。
+
+### R8：更正 §5 拍板记录四的立法理由
+
+拍板记录四原写「Web 控制台按 kind 分流展示」作为「kind 是 wire 值、改名要跨仓同步」的理由。**该事实经实测不成立**：`Check` 在 handoff 侧的唯一消费者是 `cmd/graph_gate_test.go`（只读 `f.Kind` 拼错误信息），agentd 只消费 baseline/views/stale，Web 前端零命中。
+
+**裁决不变**（`dead-*` 命名族沿用、kind 不复用），但理由更正为：kind 是 CLI 的 JSON 输出面、是未来消费方的分流依据，且同一概念不应裂成两个命名族。§4-22（六个新 kind 不冲突不复用）照旧执行。
+
+### R9（P5①③④、P6①②）：CLI 机制细节确认在冻结边界内，不新增接缝
+
+- 默认基准 = `git merge-base HEAD <默认分支>`，默认分支依次探 `refs/remotes/origin/HEAD` → `origin/main` → `origin/master` → `main` → `master`，全失败即走 §3-2 降级（`charter:recon` 正文只给了 BASE 概念、无机械算法，本条是新定义）。
+- 基准解析在 CLI 内直接 `json.Unmarshal` 进已导出的 `codegraph.Target`，**不新增导出 API**。
+- `git -C <repo> show <rev>:codegraph/target.json` 的冒号后路径相对 git 顶层，须先 `rev-parse --show-prefix` 拼前缀，否则子目录仓取错文件。
+- 棘轮 findings 由 CLI append 进 `rep.Fails`/`rep.Warns` 后打印，走既有「fails 非空 → 非零退出」单点，**零 wire 结构变更**。
+- 降级提示走 **stderr 一行**，stdout JSON 零污染。§3-2 要求的是「明示提示」而非「机器可读」，且当前无 check JSON 的机器消费方。
+
+### §7 冻结清单增补（接 §4 编号）
+
+23. `Diff.ContainersAdded` 的 JSON 键为 `containersAdded` 且 `omitempty`。
+24. `Merge` 后 `View.Containers` = baseline 容器 ∪ diff 的 `ContainersAdded`。
+25. `ValidateDiff` 接受 `NodesAdded` 的 container 落在 baseline ∪ `ContainersAdded`。
+26. `ValidateDiff` 对「`ContainersAdded` 的 id 已存在于 baseline」报问题。
+27. `ValidateDiff` 对「`ContainersAdded` 的容器无 domain 或 domain 不在 baseline」报问题。
+28. `Absorb` 把 `ContainersAdded` 并入 `baseline.Containers`。
+29. 入口容器落在 `ContainersAdded` 中时 `dead-entry` 不报（分支内可清零）。
+30. `dead-entry` 要求该 Label 的容器至少有一个非 deleted 节点归属 `to` 子系统。
+31. `dead-interface` 要求该 Name 的节点归属 `from` 子系统。
+32. `dead-contract` 的「活」判定 = call 边 ∪ implements 边 ∪ 组装点豁免边，任一非空。
+33. 基准缺席的契约按基准预算 0 参与比对。
+34. 新契约携带存量预算与既有契约预算上涨的报文措辞不同。
+35. 基准 target 为 schema v1 时棘轮照常比对，不跳过。
+36. 降档读的是 `cur` 侧的 `LegacyBudgetNote`。
+37. `LegacyBudgetNote` 经 `strings.TrimSpace` 后为空则不降档（`" "` 不算理由）。
+38. 基准宽松解析路径只用于取 `contracts` 段。
+
+### §7 收尾自检（本轮新鲜证据）
+
+- Ticket 0 增补本轮编译通过：`gofmt -w` → `go build ./...` 退出码 0 → `go vet ./...` 退出码 0 → `go test ./... -count=1` 两包 ok（既有测试零破坏）。
+- 可执行冻结：无新命中。
+- 拍板记录：R1 命中三重闸门（难逆转=wire 增量且牵动扫描配方；会惊讶=后人会问「为什么 diff 能加容器却不能加领域」；真取舍=被否的 A「接受局限」与 D「分支降 warn」都是绕过根因），已在 R1 正文完整记录，不另起段。R2~R9 属边界澄清与机制确认，不命中三重闸门。
+- 欠账：一条，**handoff 扫描配方新增 `containersAdded` 段说明**——不在本刀范围（handoff 仓文件），已在 R1 写明并落 roadmap。
