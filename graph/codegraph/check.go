@@ -172,13 +172,34 @@ func ruleHitsAny(rule string, fileHit map[string]bool) bool {
 }
 
 // sortFindings 把 Fails/Warns 按 Kind+Detail 排序——map 遍历序不定，
-// 输出必须可复现，否则 CLI diff 与测试都不稳。
+// 输出必须可复现，否则 CLI diff 与测试都不稳。slices.SortFunc 不稳定，
+// 撞键时若没有 From/To/Edge tiebreak，输出顺序会抖动且无法做 diff。
 func sortFindings(rep *Report) {
 	cmp := func(a, b Finding) int {
 		if a.Kind != b.Kind {
 			return strings.Compare(a.Kind, b.Kind)
 		}
-		return strings.Compare(a.Detail, b.Detail)
+		if a.Detail != b.Detail {
+			return strings.Compare(a.Detail, b.Detail)
+		}
+		if a.From != b.From {
+			return strings.Compare(a.From, b.From)
+		}
+		if a.To != b.To {
+			return strings.Compare(a.To, b.To)
+		}
+		switch {
+		case a.Edge == nil && b.Edge != nil:
+			return -1
+		case a.Edge != nil && b.Edge == nil:
+			return 1
+		case a.Edge == nil && b.Edge == nil:
+			return 0
+		}
+		if (*a.Edge)[0] != (*b.Edge)[0] {
+			return strings.Compare((*a.Edge)[0], (*b.Edge)[0])
+		}
+		return strings.Compare((*a.Edge)[1], (*b.Edge)[1])
 	}
 	slices.SortFunc(rep.Fails, cmp)
 	slices.SortFunc(rep.Warns, cmp)

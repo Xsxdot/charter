@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -174,5 +175,27 @@ func TestCheckDeadAssemblyIgnoresDeletedNodes(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("deleted 节点不应让组装点算「命中」，实际 warns: %+v", rep.Warns)
+	}
+}
+
+func TestSortFindingsIsTotalOrder(t *testing.T) {
+	findings := []Finding{
+		{Kind: "same", Detail: "same", From: "d_c", To: "d_d", Edge: &Edge{"n_c", "n_d"}},
+		{Kind: "same", Detail: "same", From: "d_a", To: "d_b", Edge: &Edge{"n_a", "n_b"}},
+		{Kind: "same", Detail: "same", From: "d_b", To: "d_c", Edge: &Edge{"n_b", "n_c"}},
+		{Kind: "same", Detail: "same", From: "d_a", To: "d_c", Edge: &Edge{"n_a", "n_c"}},
+		{Kind: "same", Detail: "same", From: "d_c", To: "d_a", Edge: &Edge{"n_c", "n_a"}},
+		{Kind: "same", Detail: "same", From: "d_b", To: "d_a", Edge: &Edge{"n_b", "n_a"}},
+	}
+	first := append([]Finding(nil), findings...)
+	second := append([]Finding(nil), findings...)
+	for i, j := 0, len(second)-1; i < j; i, j = i+1, j-1 {
+		second[i], second[j] = second[j], second[i]
+	}
+
+	sortFindings(&Report{Fails: first})
+	sortFindings(&Report{Fails: second})
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("相同 Kind/Detail 的 finding 排序不稳定:\nfirst=%+v\nsecond=%+v", first, second)
 	}
 }
