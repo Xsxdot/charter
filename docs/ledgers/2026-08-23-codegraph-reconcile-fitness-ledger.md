@@ -93,6 +93,8 @@
 33. 基准缺席预算按 0：`TestCheckBudgetRatchetReportsNewContractDebt`。
 34. 新契约与既有契约措辞分离：`TestCheckBudgetRatchetReportsNewContractDebt`。
 35. schema v1 基准照常比对：`TestGraphCheckBudgetRatchetAcceptsSchemaV1Base`。
-36. 分档读取 cur 侧 Note：`TestGraphCheckBudgetRatchetNoteDowngradesToWarning`，`appendBudgetRatchet`。
+36. 分档读取 cur 侧 Note：`TestGraphCheckBudgetRatchetNoteDowngradesToWarning`，`codegraph.ApplyBudgetRatchet`。<sup>†</sup>
 37. `TrimSpace` 收紧空白 Note：`TestGraphCheckBudgetRatchetWhitespaceNoteStillFails`。
-38. 宽松基准解析只取 contracts：`loadBudgetBase` 注释（R5/R9）与 `TestGraphCheckBudgetRatchetAcceptsSchemaV1Base`。
+38. 宽松基准解析的产物只流向棘轮比较（`legacyBudget` 与 `unplacedBudget` 两个预算字段），不得传给 `Check`：`loadBudgetBase` 注释（R11，取代 R5「只取 contracts 段」的原表述）与 `TestGraphCheckBudgetRatchetAcceptsSchemaV1Base`、`TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base`。<sup>†</sup>
+
+<sup>†</sup> **2026-08-23 C1.1 更正**：第 36 条原锚 `appendBudgetRatchet` 是 CLI 私有函数，已在 C1.1 中删除，分档下沉为 `graph/codegraph/fitness.go#ApplyBudgetRatchet`。第 38 条原文「宽松基准解析只取 contracts」在 C1.1 中不再成立——棘轮要比对基准侧 `subsystems[].unplacedBudget`，该段随之投影；约束改为按**流向**成立，见契约 `2026-08-23-codegraph-reconcile-fitness-contract.md` 的 **R11** 回写。

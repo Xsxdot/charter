@@ -19,7 +19,9 @@
 | 主执法缝 | `func Check(t *Target, v *View) *Report`，输入合并后的视图，deleted 节点/边不参与 | `graph/codegraph/check.go#Check`、`graph/codegraph/merge.go#Merge` |
 | 报告 | `Report{Fails, Warns, LegacyHits}`；档位由 finding 落在哪个 slice 表达，无 severity 字段 | `graph/codegraph/check.go#Finding`、`graph/codegraph/check.go#Report` |
 | 预算棘轮 | `func CheckBudgetRatchet(cur, base *Target) []Finding`，当前只比较契约 `legacyBudget` | `graph/codegraph/fitness.go#CheckBudgetRatchet` |
-| CLI 调用序 | `LoadTarget` → `ValidateTarget` → `Check` → `loadBudgetBase` → `appendBudgetRatchet` → JSON 输出；本刀不增子命令 | `graph/cli/cli.go#graphCheckCmd`、`graph/cli/cli.go#appendBudgetRatchet` |
+| CLI 调用序 | `LoadTarget` → `ValidateTarget` → `Check` → `loadBudgetBase` → `ApplyBudgetRatchet` → JSON 输出；本刀不增子命令 | `graph/cli/cli.go#graphCheckCmd`、`graph/codegraph/fitness.go#ApplyBudgetRatchet` |
+
+> **2026-08-23 C1.1 实况更正**：上表「CLI 调用序」一行原写 `graph/cli/cli.go#appendBudgetRatchet`。该符号已在本刀实现中**删除**——按 §3-3 的要求，note 查找与分档下沉成了 `codegraph` 包的 `ApplyBudgetRatchet`（内部调 `CheckBudgetRatchet` 并收尾重排），CLI 只剩 `loadBudgetBase` 的 git 取数与一次调用。锚点已按实况改写。
 
 本仓顶层没有 `codegraph/` 目录，故本轮不伪造 handoff 的 `baseline.json`、`target.json` 或目标域树；`d_controlplane` / `d_cli` 的具体职责与路径属于 handoff 侧已批准 spec 的数据交付，不在 charter 仓凭空补写。
 
@@ -71,7 +73,9 @@ type TargetSubsystem struct {
 | `unplaced-over-budget` | fail | `From=子系统 id`，`To` 省略 | 同一 `n` 严格大于 `UnplacedBudget` |
 | `domain-empty` | warn | `From=子系统 id`，`To` 省略 | 该目标域的路径在当前视图非 deleted 节点文件集合中零命中 |
 
-新增常量骨架已经落在 `graph/codegraph/fitness.go#KindUnplaced`、`#KindUnplacedOverBudget`、`#KindDomainEmpty`。本轮它们仍是 Ticket 0 符号，`rg` 查证暂无生产发出方或消费方，故按纪律标为「疑似漂移（待 implement 接线）」；implement 必须让 `Check` 发出，CLI JSON 原样承载，后续查看器按 `kind` 分流。`KindBudgetRaised` 当前由 `#CheckBudgetRatchet` 发出，CLI 的 `#appendBudgetRatchet` 按当前 target 的 note 分档，CLI 测试直接消费该 wire 值。
+新增常量骨架已经落在 `graph/codegraph/fitness.go#KindUnplaced`、`#KindUnplacedOverBudget`、`#KindDomainEmpty`。本轮它们仍是 Ticket 0 符号，`rg` 查证暂无生产发出方或消费方，故按纪律标为「疑似漂移（待 implement 接线）」；implement 必须让 `Check` 发出，CLI JSON 原样承载，后续查看器按 `kind` 分流。`KindBudgetRaised` 由 `#CheckBudgetRatchet` 产出，按当前 target 的 note 分档，CLI 测试直接消费该 wire 值。
+
+> **2026-08-23 C1.1 实况更正**：上段原写「CLI 的 `#appendBudgetRatchet` 按当前 target 的 note 分档」。该符号已删除，分档现由 `graph/codegraph/fitness.go#ApplyBudgetRatchet` 在 `codegraph` 包内完成（与 §1 的更正同源）。同段「三个 kind 仍是 Ticket 0 符号、暂无发出方」的读数也已被本刀 implement 推翻：三者现由 `graph/codegraph/gap.go#targetDomainFindings` 经 `Check` 发出。两处均为冻结时点的现状快照，此处按实况留痕，判据本身不变。
 
 `Detail` 是人读字符串，但以下信息是契约，不得省略：
 
