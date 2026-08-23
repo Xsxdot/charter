@@ -178,6 +178,9 @@ var graphValidateCmd = &cobra.Command{
 			"nodes": len(g.Nodes), "edges": len(g.Edges),
 			"containers": len(g.Containers), "domains": len(g.Domains), "views": views,
 			"domainDecls": len(decls), "unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
+			// 标了 entity 但还没补生命周期的 model 数。刻意不执法（契约 24），
+			// 与 unscannedEntries 同处：它是补标进度表，不是错误。
+			"entitiesWithoutLifecycle": codegraph.EntitiesWithoutLifecycle(g),
 		}
 		if graphStale {
 			out["stale"] = stale
@@ -223,7 +226,14 @@ var graphCheckCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rep := codegraph.Check(t, v, nil) // decls 接入待 C1.2 implement
+		// 领域声明进 check：validate 管存在性，check 管正确性（锚归属）。
+		// 加载失败直接返回，不静默降级成「没有声明」——那会让锚判据无声失效，
+		// 报告全绿而问题还在（与 graphValidateCmd 的处置一致）。
+		decls, err := codegraph.LoadDomainDecls(graphRepo)
+		if err != nil {
+			return err
+		}
+		rep := codegraph.Check(t, v, decls)
 		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
 		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {

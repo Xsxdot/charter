@@ -247,3 +247,65 @@ func TestValidateDiffRejectsAddedContainerUnknownDomain(t *testing.T) {
 		t.Fatalf("未知 domain 的新增容器应同时带 id 与 domain: %v", issues)
 	}
 }
+
+// modelKind 执法（契约 21~24）。第 24 条是**反向**断言：entity 无 lifecycle
+// 只计数不报错——沿用 validate 「统计 unscanned 但不报 issue」的先例，若把它
+// 执法成硬红，707 个 model 补标期间 validate 会长期不可用。
+func TestValidateModelKind(t *testing.T) {
+	cases := []struct {
+		name      string
+		modelKind string
+		onNode    string // 挂到哪个节点，缺省 m_task（model）
+		lifecycle []LifecycleRef
+		want      string // 期望报文含此串；空串＝期望**不**报
+	}{
+		{name: "枚举外取值报错", modelKind: "vo", want: "modelKind"},
+		{name: "挂在非 model 节点上报错", modelKind: ModelKindEntity, onNode: "n_do", want: "modelKind"},
+		{
+			name:      "dto 却有 writer 是自相矛盾",
+			modelKind: ModelKindDTO,
+			lifecycle: []LifecycleRef{{Who: "n_do", Model: "m_task", Kind: "writer"}},
+			want:      "dto",
+		},
+		{name: "空值放行", modelKind: "", want: ""},
+		{name: "entity 无 lifecycle 不报错", modelKind: ModelKindEntity, want: ""},
+		{
+			name:      "dto 只有 creator 不算矛盾",
+			modelKind: ModelKindDTO,
+			lifecycle: []LifecycleRef{{Who: "n_do", Model: "m_task", Kind: "creator"}},
+			want:      "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := loadFixture(t)
+			target := tc.onNode
+			if target == "" {
+				target = "m_task"
+			}
+			n := g.Nodes[target]
+			n.ModelKind = tc.modelKind
+			g.Nodes[target] = n
+			g.Lifecycle = tc.lifecycle
+			issues := Validate(g)
+			hit := ""
+			for _, is := range issues {
+				if tc.want != "" && strings.Contains(is, tc.want) {
+					hit = is
+				}
+			}
+			if tc.want == "" {
+				// 反向断言：不能出现任何提到 modelKind 的 issue
+				for _, is := range issues {
+					if strings.Contains(is, "modelKind") || strings.Contains(is, "dto") {
+						t.Fatalf("不应报 modelKind 相关 issue，实际: %v", issues)
+					}
+				}
+				return
+			}
+			if hit == "" {
+				t.Fatalf("期望报文含 %q，实际 issues: %v", tc.want, issues)
+			}
+		})
+	}
+}

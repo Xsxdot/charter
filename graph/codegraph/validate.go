@@ -36,9 +36,68 @@ func Validate(g *Graph) []string {
 		issues = append(issues, validateProjection(g.Nodes, p, "投影")...)
 	}
 	issues = append(issues, validateLifecycle(g.Nodes, g.Lifecycle, "lifecycle")...)
+	issues = append(issues, validateModelKind(g)...)
 	issues = append(issues, validateDomains(g)...)
 	sort.Strings(issues)
 	return issues
+}
+
+// validateModelKind 执法 model 分种（契约 21~23）。三条都是**自相矛盾**类：
+// 取值不在枚举内、字段挂在非 model 节点上、声称是 dto 却有人往它里面写状态。
+//
+// 刻意不执法的第四种（契约 24）：entity 却没有 lifecycle 条目。全仓 707 个
+// model 要分批补标，把「标了 entity 但生命周期还没补」判成硬红，会让 validate
+// 在整个补标期不可用，逼出的处置只能是回头去改 modelKind 迁就现状。它改为在
+// validate 命令里计数（与 unscannedEntries 同处），那个数字顺带成为补标进度表。
+func validateModelKind(g *Graph) []string {
+	var issues []string
+	writers := make(map[string]bool, len(g.Lifecycle))
+	for _, ref := range g.Lifecycle {
+		if ref.Kind == "writer" {
+			writers[ref.Model] = true
+		}
+	}
+	ids := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // map 遍历序不定，issues 虽然最后统一排序，但同键报文要稳定
+	for _, id := range ids {
+		n := g.Nodes[id]
+		if n.ModelKind == "" {
+			continue // 空 = 未分种，存量默认，放行
+		}
+		switch n.ModelKind {
+		case ModelKindEntity, ModelKindDTO, ModelKindConfig:
+		default:
+			issues = append(issues, fmt.Sprintf("节点 %s 的 modelKind %q 不在枚举内（entity/dto/config）", id, n.ModelKind))
+			continue // 取值都非法，后两条判据无从谈起
+		}
+		if n.Kind != "model" {
+			issues = append(issues, fmt.Sprintf("节点 %s 的 kind 是 %s，不该带 modelKind——该字段只对 model 有意义", id, n.Kind))
+			continue
+		}
+		if n.ModelKind == ModelKindDTO && writers[id] {
+			issues = append(issues, fmt.Sprintf("节点 %s 标为 dto 却在 lifecycle 段有 writer 条目：传输结构不该有人写它的状态", id))
+		}
+	}
+	return issues
+}
+
+// EntitiesWithoutLifecycle 数「标了 entity 但 lifecycle 段里既无创建者也无写入者」
+// 的 model。这是补标进度表，不是错误计数——见 validateModelKind 的注释。
+func EntitiesWithoutLifecycle(g *Graph) int {
+	covered := make(map[string]bool, len(g.Lifecycle))
+	for _, ref := range g.Lifecycle {
+		covered[ref.Model] = true
+	}
+	n := 0
+	for id, node := range g.Nodes {
+		if node.ModelKind == ModelKindEntity && !covered[id] {
+			n++
+		}
+	}
+	return n
 }
 
 // validateDomains 检查领域段自洽与容器归属。
