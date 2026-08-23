@@ -203,3 +203,9 @@ implement 必须把其中的 note 查找和分档移入 `codegraph` 纯函数，
 - **可执行冻结**：命中 JSON 编码格式；金样本测试 `graph/codegraph/target_test.go#TestTargetDomainJSONGolden` 已锁定新增字段名、字段顺序、`omitempty` 形态与回读结构，并已在本轮通过。无哈希或密钥派生条目。
 - **欠账（显式）**：handoff 侧 `d_controlplane` / `d_cli` 的用户批准目标域树、`codegraph/target.json` 写入及真机 `check` 复核不在当前仓权限与本节点范围内，交由 implement/acceptance 节点处理；不存在“charter 已写入目标图”的假声明。
 - **交棒**：breakdown。
+
+## §7 拆解节点边界澄清（2026-08-23）
+
+- `graph/codegraph` 与 `graph/cli` 属同一逻辑型实现面；`Check`、`ValidateTarget`、`CheckBudgetRatchet` 是包内/本仓 API，不新增跨子系统契约面，真正的 wire 面仍只有 `target.json` 与既有 `Report` JSON。
+- `unplacedBudgetNote` 只影响预算上涨 `budget-raised` 的 Fails/Warns 分档；实际 gap 超预算的 `unplaced-over-budget` 永远是 fail，两者不合并。
+- handoff 的 `codegraph/target.json` 与扫描配方是既有跨仓 target.json 接缝上的数据/文档消费者；本轮不新增接缝，charter 仓不伪造 handoff 文件，行为结论归协调者真机核验。
