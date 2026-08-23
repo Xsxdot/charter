@@ -4,7 +4,7 @@
 
 1. ~~codegraph 刀 3+4 批次~~ **已完成（2026-08-23）**：漏建对账三类（`dead-entry`/`dead-interface`/`dead-contract`，fail 档）+ fitness 判据两条（`prefix-family`/`oversized-package`，warn 档）+ `legacyBudget` 棘轮（git 与主线比对、理由字段降档）+ **`Diff.containersAdded` 修根因**（分支视图此前无法引入新容器，contract 的「骨架符号入图」与 recon 的「补齐视图 diff」对新容器场景一直是空的）。真机 8 条全执行：真机 1 首次运行即抓到 handoff 真缺陷（见 handoff 卡 B206）。spec/契约(R1~R10)/breakdown/plan/review/ledger 全部入库。
 1a. **领域声明铺满**：机制与 2 份样板（d_coordination_task / d_workspace）已随刀 1+2 落地，**余 17 域按卡增量补写声明**；生命周期数据面已铺满（127 条入库，无需重扫）。来源：刀 1+2 spec OOS。
-1b. **Web 控制台 lifecycle/声明展示**（handoff 侧）：baseline 附加段与 domains/*.json 的 UI 消费。来源：刀 1+2 spec OOS。
+1b. **Web 控制台 lifecycle/声明展示**（handoff 侧）：baseline 附加段与 domains/*.json 的 UI 消费。来源：刀 1+2 spec OOS。**（2026-08-23 并入第 10 条查看器刀，不再单列。）**
 1c. **扫描配方文档 canonical 化**（是否移 charter 仓与法工具同居）：另议。来源：刀 1+2 spec OOS。
 1d. **charter 修法配套（刀 3+4 落地后）**：integrate/acceptance 引用漏建对账、architecture-law 标注哪几条判据已机械化。来源：刀 3+4 spec OOS-1（与第 7 条同源，工具落地后一并做）。
 1e. **「预算必须紧贴现实」判据**：`legacyBudget` 远高于实际命中数时报「松弛过大，应调低」——与棘轮互补的另一半。来源：刀 3+4 spec OOS-2。
@@ -19,4 +19,29 @@
 4. **部署门（刀 0 + 刀 1+2 合并，同因同解）**：需从 handoff main（≥408cd9125）发新 tag → `handoff upgrade --now --target linux-01` → agentd/fleet 重启（归用户排期）。待验：刀 0 #7 执行机 SessionStart hook、#8 Web 控制台渲染复验；刀 1+2 真机 6（lifecycle/声明落库后控制台三段照常渲染）、真机 7（升级后 hook 注入照常）。刀 0 #4（无 Go 设备 install.sh）已于 2026-08-22 晚在 linux-01 干净环境实测通过。来源：刀 0 与刀 1+2 真机清单。
 5. ~~graph check 报告输出顺序非确定~~ **已完成（2026-08-23，随刀 3+4 T0）**：`sortFindings` 比较器补 From/To/Edge 三级 tiebreak，`TestSortFindingsIsTotalOrder` 守护；真机 8 复验三次运行输出同一 md5。
 6. **`handoff graph` 别名移除时点**：deprecated 观察期后另行裁决。来源：刀 0 契约 §4。
-7. **charter 修法配套（工具落地后）**：architecture-law 术语节销账、integrate/acceptance 补图 diff 对账条款、spec/plan 补领域图引用。来源：四刀批次交接文档 Out of Scope 第 1 条。
+7. **charter 修法配套（工具落地后）**：architecture-law 术语节销账、integrate/acceptance 补图 diff 对账条款、spec/plan 补领域图引用；**增补 ⧉ 跨子系统领域判决三选一条款**（故意共享内核→写进领域声明留痕 / 扫描归属错→改配方 / target 划分错→重划路径）与「现状图职责=诚实、目标图职责=指路」原则。来源：四刀批次交接文档 Out of Scope 第 1 条；⧉ 条款来源：2026-08-23 roadmap 前置讨论。
+8. **目标图刀（子系统→领域终态，图批次第一优先）**：target schema 增「目标领域」节；handoff 最优目标图 AI 出稿、用户拍板、冻结入 target；gap 判据与棘轮（baseline 对照目标域计违规，`legacyBudget` 同款只减不增）。**原则：先终态后差分**——迁移 diff 按卡从 target 反推，acceptance = gap 下降；产出直接给 1f（agentd 竖切还债）当蓝图。概念裁决：「逻辑域」不设，层级仍是 子系统→领域，语义重划一律落目标侧。**spec 已出（2026-08-23，卡 C1.1，待批准）**：`docs/specs/2026-08-23-codegraph-target-domains-spec.md`——目标领域嵌在子系统下（结构上不可能跨子系统）、归属规则=路径规则、gap 三判据并入 check、一期只切 `d_controlplane`/`d_cli` 两个重灾区。来源：2026-08-23 roadmap 前置讨论（原型副本 handoff `prototypes/codegraph-subsystem/`）。
+8a. **目标领域的「关键契约面」字段**：本条原文列了它，spec 裁决砍出本期——领域级契约执法是另一整刀，放一个不执法的字段会诱导人填了以为有效。待领域级契约执法立项时一并设计。来源：C1.1 spec OOS。
+8b. **目标领域嵌套（`parent`，二级目标域树）**：一期平铺（子系统下一层），等真实案例。来源：C1.1 spec OOS。
+8c. **「落错域」判据与 baseline↔target 的 id 映射表**：一期只算「未落位」，落位即正确；要算落错就得引入映射表，而映射表本身会腐烂。来源：C1.1 spec OOS。
+8d. **专门的 gap 报告命令 / JSON 导出**：一期只出 check findings；查看器（第 10 条）若需结构化取数，届时再定形态。来源：C1.1 spec OOS。
+8e. **其余 8 个子系统的目标领域树**：一期只切两个重灾区，其余等各自的迁移需求触发（未声明 = 不执法）。来源：C1.1 spec OOS。
+8f. **子系统之间 paths 规则重叠不检测**（既存缺口，非本期新增）：`ValidateTarget` 无此查，`SubsystemOf` 按声明序首次匹配静默裁决。C1.1 只给新增的目标领域补了同级不重叠判据。**已立卡 `C2`**。来源：C1.1 spec 事实调查。
+9. **配方刀（瘦身版，服务 gap 测量诚实性）**：model 分种 entity/dto/config；声明锚归属判据；proto wire 类型建「协议契约」域 `d_protocol` 归还契约子系统。**不做**「把现状域拆好看」——那是拐杖，方向已否。**spec 已出（2026-08-23，卡 C1.2，待批准）**：`docs/specs/2026-08-23-codegraph-recipe-honesty-spec.md`。两处相对讨论的更正：①锚归属判据从 validate 改放 **check 的 warn 档**（validate 全体系无分档，硬红会逼出「改声明迁就现状」的拐杖；handoff 今天就有 14 条：2 条锚不在本域 + 12 条锚不在图内）；②领域划分**没有增量通道**（diff 明确不改 domains），故 `d_protocol` 走**全量重扫**落地，与 modelKind 存量打底同一趟。实测数据更正：全仓 707 model 仅 **53** 有生命周期（「194/11」是 `d_coordination_task` 域内口径）；`d_contract` 子系统主属领域数 **0**。来源：同第 8 条讨论。
+9a. **`lifecycle.field` 不校验**：creator 多填 field、writer 漏填 field 都静默（`validate.go#validateLifecycle`）。独立小判据。来源：C1.2 spec OOS。
+9b. **节点 `kind` 三值抽常量**：`entry`/`func`/`model` 今天是全仓裸字符串字面量（8 个文件），机械重构，与配方刀正交故不顺手做。来源：C1.2 spec OOS。
+9c. **扫描配方是否覆盖 `codegraph/domains/*.json`**：领域声明是人写的语义承诺，让扫描者生成会得到一堆正确但空洞的话；将来若要走派发产出再议。来源：C1.2 spec OOS。
+9d. **`web/src/api/**` 的 119 个 TS 类型是否独立成域**：目前混在 `d_web`；先分种（dto），成域与否等目标图。来源：C1.2 spec OOS。
+9e. **`entity` 无 lifecycle 从「统计」升格为执法的时点**：等 1a 领域声明铺满到一定比例。来源：C1.2 spec OOS。
+10. **查看器刀（讨论中称刀 6，吸收 1b；卡 `C1.3`，被 C1.1/C1.4 阻塞）**：形态基准 = handoff `prototypes/codegraph-subsystem/` 副本 + `pages/order-flow-demo.html` 订单样例——首层架构全景按子系统（类型徽标/领域 chips/聚合边）、主属规则（领域只在主属子系统立卡，他处 ⧉ 引用卡）、组织可切按子系统/按领域、领域页双 tab（语义 = 职责/不变式测试锚/状态机流程图/生命周期锚+机械层实体表/主调用链；结构 = 流程泳道式（订单样例）+ 调用链级联面板 + 焦点链）、视图语法三条（只画行为、外部领域一域一节点、高扇入工具收桩）；**终态新增「目标 vs 现状对照」视图**（按目标图排布、现状映射、违规高亮，依赖第 8 条）；走查否决项：DFS 调用链长墙、容器级聚合作主视图。**本条已拆两半（2026-08-23）**：CLI 去噪与装配器下放独立成第 12 条（卡 `C1.5`），本条只剩查看器形态改造，**暂不出 spec**——对照视图消费的 gap 数据形态要等第 8 条冻结，提前写会作废。来源：同上。
+11. **前端搬迁刀（讨论中称刀 5，排第 10 条动工前；卡 `C1.4`）**：codegraph 查看器前端源码入 charter 仓（`graph/webui/`，构建产物 go:embed 成独立包），handoff 升 go.mod 同源挂载 + iframe 嵌入（契约面收窄为两条只读 API + `?project=`）；顺带修 `/codegraph` 不在 Shell fullPageRoute 白名单的现存挤压 bug；`codegraph serve` 独立命令另议（涉契约 §5「不发网络」不变式修订，不混入本刀）。**spec 已出（2026-08-23，卡 C1.4，待批准）**：`docs/specs/2026-08-23-codegraph-webui-extraction-spec.md`——构建产物**提交进 charter 仓**（跨 module 消费下 go:embed 只能拿到已提交文件，handoff 的 build tag + gitignore 形态不成立）+ CI 防漂移门；宿主契约面 = 两条只读 API + 同源挂载 + iframe URL 的 `?project=`（**措辞更正**：两条 API 保持路径参数 `{name}` 不动，`?project=` 是给查看器的不是给 API 的）；本刀是**等价搬迁不改像素**，形态改造全归第 10 条。来源：同上。
+11a. **404 语义结构化**：前端按中文文案 `'未生成代码图'` 匹配 404 分支（`CodegraphPage.tsx` 的 `NOT_SCANNED` 与 `internal/agentd/codegraph.go` 两处 grep 联动），跨仓之后更脆。本刀原样保留。来源：C1.4 spec OOS。
+11b. **两条只读 API 的响应体瘦身**：今天一次性返回整份 baseline + 全部视图 diff + stale（handoff 量级 3564 节点 / 1.7MB），合并渲染全在前端。第 10 条若要按域取数/分页再议。来源：C1.4 spec OOS。
+11c. **charter 前端子工程的完整质量门**：一期 CI 只做 test + build + 防漂移比对，eslint/typecheck 全套后补。来源：C1.4 spec OOS。
+11d. **两条 API 的项目参数是否从路径参数改 `?project=`**：本刀裁定不动（改它要动 handoff 的路由与 `forwardIfRequested` 转发逻辑）。来源：C1.4 spec OOS。
+12. **CLI 去噪与上下文装配器（卡 `C1.5`，从第 10 条拆出）**：`chain` 默认瘦身 + `--full` 兜底、`--fold-external` / `--collapse-util` 默认开、`--with-source`（`ReAnchor` 本就把整文件读成行数组再丢掉）、`--max-tokens` 默认 30000 且截断必须显式报 `truncated`、新子命令 `codegraph context <领域>` 一击式领域包。**spec 已出（2026-08-23，待批准）**：`docs/specs/2026-08-23-codegraph-context-assembler-spec.md`。实测账：`chain` 默认 depth 2 从真实 hub 出发吐 **56006 字节 ≈ 18.7k token**，其中 36~42% 是 `tests` 数组，`params`/`returns` 与 `signature` 完全冗余。顺手修三件：`--stale` 只对结果子集跑（今天对全图 3564 节点跑）、`Edges` 输出漏过滤 `deleted`、删死字段 `TestRef.Snippet`（1518 条全空无写入方）。**skill 文档同步是交付物之一**。不被结构性阻塞，与第 9 条是收益依赖（领域画错则 `context` 打包的是噪声包）。来源：原第 10 条后半。
+12a. **`who-calls` 与 `chain` 的双向合并**：`Neighborhood` 本就支持同时给 up/down，今天没有命令用。来源：C1.5 spec OOS。
+12b. **按 kind / 域 / 文件前缀过滤查询结果**（`--kind` / `--domain`）：先看去噪默认够不够。来源：C1.5 spec OOS。
+12c. **查询结果缓存 / 索引加速**：今天每次全量加载 baseline（handoff 量级 1.7MB 尚可）。来源：C1.5 spec OOS。
+12d. **`summary` 命令与 SessionStart 的接线名实不符**：它注释自称「供 SessionStart hook 注入会话上下文」，实测 hook 注入的是 `using-charter` 全文，**从未调用它**。来源：C1.5 spec 事实调查。
+12e. **agent 轮次的量化统计**（ledger 侧统计同类任务的查询轮次）：C1.5 用字节数做硬判据，轮次作观察项。来源：C1.5 spec OOS。
