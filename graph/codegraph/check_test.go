@@ -101,7 +101,7 @@ func TestCheckImplements(t *testing.T) {
 	assertKinds(t, "fail", rep.Fails, []string{"off-interface"})
 }
 
-// 组装点出边豁免；deleted 状态的边不检查；图外文件与死规则进 warn。
+// 组装点出边豁免；deleted 状态的边不检查；图外文件进 warn。
 func TestCheckExemptionsAndWarns(t *testing.T) {
 	nodes := map[string][2]string{
 		"main": {"main", "cmd/main.go"}, "b1": {"b.Facade", "b/f.go"}, "out": {"x", "web/x.ts"},
@@ -121,35 +121,11 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 	if len(rep.Fails) != 0 {
 		t.Fatalf("组装豁免/deleted 边不应 fail: %+v", rep.Fails)
 	}
-	assertKinds(t, "warn", rep.Warns, []string{"outside-file", "dead-rule"})
-}
-
-// 死规则判据（check.go#ruleHitsAny）的目录边界：dir/** 不得把兄弟目录/兄弟文件
-// 算成命中，否则一条真的死规则会被邻居的存在掩盖过去，永远报不出来。
-// 这条判据走的是与 targetRuleMatchesFile 相互独立的第二处实现，必须单独看着：
-// 夹具让 app/apix.go 归到 d_other（只有已归域的文件才进 fileHit），d_api 的
-// app/api/** 因此一个文件都命中不到，必须报 dead-rule。
-func TestCheckDeadRuleRespectsDirectoryBoundary(t *testing.T) {
-	nodes := map[string][2]string{"x": {"x", "app/apix.go"}}
-	tg := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_other", Type: "logic", Paths: []string{"app/apix.go"}},
-			{ID: "d_api", Type: "logic", Paths: []string{"app/api/**"}},
-		},
-	}
-	rep := checkNoDecls(tg, mkView(nodes, nil, nil))
-	dead := findingsOfKind(rep.Warns, "dead-rule")
-	if len(dead) != 1 {
-		t.Fatalf("app/api/** 命中不到任何文件，应报 1 条 dead-rule，实际 %d 条: %+v", len(dead), rep.Warns)
-	}
-	if !strings.Contains(dead[0].Detail, "app/api/**") {
-		t.Errorf("dead-rule 应指向 app/api/** 这条规则，实际: %s", dead[0].Detail)
-	}
+	assertKinds(t, "warn", rep.Warns, []string{"outside-file"})
 }
 
 // 组装点死配置：assembly 里写了视图中不存在的文件，必须报 dead-assembly warn。
-// 这是与 dead-rule 对称的一条——在此之前 assembly 写错文件名完全没有信号，
+// assembly 写错文件名必须有信号，
 // 一条不存在的 "cmd/main.go" 能在基准里躺过整轮而无人发现。
 func TestCheckDeadAssembly(t *testing.T) {
 	nodes := map[string][2]string{
@@ -377,16 +353,6 @@ func TestCheckDeadEntryAcceptsMergedAddedContainer(t *testing.T) {
 	if hasFinding(rep.Fails, KindDeadEntry) {
 		t.Fatalf("Merge 后来自 containersAdded 的入口不应报 dead-entry: %+v", rep.Fails)
 	}
-}
-
-func findingsOfKind(findings []Finding, kind string) []Finding {
-	var out []Finding
-	for _, f := range findings {
-		if f.Kind == kind {
-			out = append(out, f)
-		}
-	}
-	return out
 }
 
 func hasFinding(findings []Finding, kind string) bool {

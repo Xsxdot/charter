@@ -16,7 +16,7 @@ import (
 // fail 侧：new-direction（无契约方向）/ off-entry 归并进 legacy 或 over-budget /
 // off-interface（未声明的跨域实现）/ over-budget（legacy 超预算）/ dead-entry /
 // dead-interface / dead-contract（契约声明的缝未在视图中建成）
-// warn 侧：legacy（预算内直调计数）/ outside-file（图外文件）/ dead-rule（规则未命中任何节点）/
+// warn 侧：legacy（预算内直调计数）/ outside-file（图外文件）/
 // dead-assembly（组装点条目未命中任何节点文件）
 type Finding struct {
 	Kind   string `json:"kind"`
@@ -62,7 +62,6 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 	// 归域 + 图外收集（每文件报一次）
 	nodeDomain := make(map[string]string, len(v.Nodes))
 	outside := map[string]bool{}
-	fileHit := map[string]bool{}  // 供死规则检测：哪些文件被规则命中过
 	allFiles := map[string]bool{} // 供组装点死配置检测：视图里出现过的全部文件（含图外）
 	for id, n := range v.Nodes {
 		if n.Status == "deleted" {
@@ -73,8 +72,6 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 		nodeDomain[id] = d
 		if d == "" {
 			outside[n.File] = true
-		} else {
-			fileHit[n.File] = true
 		}
 	}
 	// call 边
@@ -195,21 +192,13 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 				Detail: fmt.Sprintf("%s 预算内直调 %d/%d（可收窄后调低预算）", key, hits, c.LegacyBudget)})
 		}
 	}
-	// 图外文件 + 死规则
+	// 图外文件
 	for f := range outside {
 		rep.Warns = append(rep.Warns, Finding{Kind: "outside-file", Detail: "图外文件（目标图未覆盖）: " + f})
 	}
-	for _, d := range t.Subsystems {
-		for _, rule := range d.Paths {
-			if !ruleHitsAny(rule, fileHit) {
-				rep.Warns = append(rep.Warns, Finding{Kind: "dead-rule", From: d.ID,
-					Detail: fmt.Sprintf("子系统 %s 的规则 %q 未命中视图中任何节点文件", d.ID, rule)})
-			}
-		}
-	}
 	// 组装点死配置：assembly 条目在视图里找不到任何节点文件。
-	// 与 dead-rule 对称——在此之前 assembly 写错文件名是零信号：ValidateTarget
-	// 完全不看 Assembly，Check 只把它当 set 做 caller 比对，于是一条并不存在的
+	// 在此之前 assembly 写错文件名是零信号：ValidateTarget 完全不看 Assembly，
+	// Check 只把它当 set 做 caller 比对，于是一条并不存在的
 	// "cmd/main.go" 能在基准里躺过整轮而无人发现（2026-08-21 双轨对照实测）。
 	// 只报 warn 不报 fail：扫描未覆盖的入口文件（如当前的 main.go）本就没有节点，
 	// 落 fail 会把「基线覆盖不全」误判成「契约违规」。
@@ -234,21 +223,6 @@ func Check(t *Target, b *Best, v *View, decls map[string]DomainDecl) *Report {
 func inList(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
-// ruleHitsAny 判断一条 paths 规则是否命中过任何已归域的节点文件。
-// 「文件对规则」这个判定只有 targetRuleMatchesFile 一处实现，这里只加存在量词：
-// 曾经把谓词在此处再写一遍（把 CutSuffix 提到循环外省几次调用），结果是同一个
-// 判定有两份代码、各自的目录边界要各自被测试看着；2026-08-23 review 实测那份
-// 拷贝的边界确实零保护。省下的是一次 strings.CutSuffix，换来的是一处会漂的重复，
-// 不划算。
-func ruleHitsAny(rule string, fileHit map[string]bool) bool {
-	for f := range fileHit {
-		if targetRuleMatchesFile(f, rule) {
 			return true
 		}
 	}

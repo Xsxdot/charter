@@ -274,8 +274,7 @@ func (t *Target) SubsystemOf(file string) string {
 }
 
 // targetRuleMatchesFile 判断文件是否命中精确路径或 dir/** 规则。
-// 该谓词暂由 dead-rule 对账使用；dead-rule 与 ruleHitsAny 在 T6 一并删除，
-// 路径规则族则在 T7 的一次性瘦身中退场。
+// 该谓词在 T7 的路径规则族一次性瘦身中退场。
 func targetRuleMatchesFile(file, rule string) bool {
 	if file == rule {
 		return true
