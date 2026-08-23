@@ -44,4 +44,5 @@
 12b. **按 kind / 域 / 文件前缀过滤查询结果**（`--kind` / `--domain`）：先看去噪默认够不够。来源：C1.5 spec OOS。
 12c. **查询结果缓存 / 索引加速**：今天每次全量加载 baseline（handoff 量级 1.7MB 尚可）。来源：C1.5 spec OOS。
 12d. **`summary` 命令与 SessionStart 的接线名实不符**：它注释自称「供 SessionStart hook 注入会话上下文」，实测 hook 注入的是 `using-charter` 全文，**从未调用它**。来源：C1.5 spec 事实调查。
+11e. **JS 侧依赖白名单测试**（对标 `graph/cli/deps_test.go#TestModuleDependencyAllowlist`）：C1.4 拍板前端 manifest 走最小依赖集（只留查看器真 import 的包，版本照抄 handoff 现用值），但没有机械门防它以后悄悄长胖。charter 是公共工具仓，依赖面要能一眼看完。来源：2026-08-23 C1.4 拆解稿 P2 拍板。
 12e. **agent 轮次的量化统计**（ledger 侧统计同类任务的查询轮次）：C1.5 用字节数做硬判据，轮次作观察项。来源：C1.5 spec OOS。
