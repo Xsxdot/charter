@@ -44,6 +44,10 @@ type Contract struct {
 	Entries      []string `json:"entries,omitempty"`
 	Interfaces   []string `json:"interfaces,omitempty"`
 	LegacyBudget int      `json:"legacyBudget,omitempty"`
+	// LegacyBudgetNote 非空表示「本契约的预算上涨是有意为之」，棘轮判据据此由
+	// fail 降为 warn（契约 §2-2）。它只影响棘轮一条判据，不影响 over-budget
+	// （实际 > 预算）的既有执法。
+	LegacyBudgetNote string `json:"legacyBudgetNote,omitempty"`
 }
 
 // Target 是 codegraph/target.json 的顶层结构：事前基准。
