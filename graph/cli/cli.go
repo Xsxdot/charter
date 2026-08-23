@@ -224,10 +224,12 @@ var graphCheckCmd = &cobra.Command{
 			return err
 		}
 		rep := codegraph.Check(t, v)
+		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
+		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "预算棘轮判据已跳过：%v\n", baseErr)
 		} else {
-			appendBudgetRatchet(rep, t, base)
+			codegraph.ApplyBudgetRatchet(rep, t, base)
 		}
 		if err := graphPrintJSON(cmd, rep); err != nil {
 			return err
@@ -237,23 +239,6 @@ var graphCheckCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func appendBudgetRatchet(rep *codegraph.Report, cur, base *codegraph.Target) {
-	for _, finding := range codegraph.CheckBudgetRatchet(cur, base) {
-		note := ""
-		for _, contract := range cur.Contracts {
-			if contract.From == finding.From && contract.To == finding.To {
-				note = contract.LegacyBudgetNote
-				break
-			}
-		}
-		if strings.TrimSpace(note) != "" {
-			rep.Warns = append(rep.Warns, finding)
-		} else {
-			rep.Fails = append(rep.Fails, finding)
-		}
-	}
 }
 
 func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
@@ -279,12 +264,17 @@ func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
 	}
 	var target codegraph.Target
 	// 这是对 LoadTarget 中 meta.version 白名单单点收口的有意例外：基准可能是
-	// schema v1，而 v1/v2 的 contracts 段形态相同；这里只取 contracts 喂棘轮，
-	// 不把宽松解析结果用于任何其他执法输入（契约 §7-R5、R9）。
+	// schema v1，而 v1/v2 的 contracts 段形态相同；宽松解析结果只喂棘轮，
+	// 不用于任何其他执法输入（契约 §7-R5、R9）。
 	if err := json.Unmarshal([]byte(raw), &target); err != nil {
 		return nil, fmt.Errorf("解析基准 %s 的 target.json：%w", revision, err)
 	}
-	return &codegraph.Target{Contracts: target.Contracts}, nil
+	// subsystems 与 contracts 一同投影：棘轮现在要比较目标领域的 unplacedBudget
+	// （契约 §3-3）。只投 contracts 的话基准侧永远读不到子系统预算，"相等或下降不
+	// 产 finding" 这条就成了死条文——预算没动也会被当成从 0 上涨，棘轮变成每次
+	// check 都响的假警报。v1 基准没有 subsystems 段，投影出 nil 即「基准未声明目标
+	// 领域」，正是契约要的按 0 处理。
+	return &codegraph.Target{Contracts: target.Contracts, Subsystems: target.Subsystems}, nil
 }
 
 func findMergeBase(repo string) (string, error) {
