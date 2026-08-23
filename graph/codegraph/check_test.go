@@ -119,6 +119,30 @@ func TestCheckExemptionsAndWarns(t *testing.T) {
 	assertKinds(t, "warn", rep.Warns, []string{"outside-file", "dead-rule"})
 }
 
+// 死规则判据（check.go#ruleHitsAny）的目录边界：dir/** 不得把兄弟目录/兄弟文件
+// 算成命中，否则一条真的死规则会被邻居的存在掩盖过去，永远报不出来。
+// 这条判据走的是与 targetRuleMatchesFile 相互独立的第二处实现，必须单独看着：
+// 夹具让 app/apix.go 归到 d_other（只有已归域的文件才进 fileHit），d_api 的
+// app/api/** 因此一个文件都命中不到，必须报 dead-rule。
+func TestCheckDeadRuleRespectsDirectoryBoundary(t *testing.T) {
+	nodes := map[string][2]string{"x": {"x", "app/apix.go"}}
+	tg := &Target{
+		Meta: TargetMeta{Version: 2},
+		Subsystems: []TargetSubsystem{
+			{ID: "d_other", Type: "logic", Paths: []string{"app/apix.go"}},
+			{ID: "d_api", Type: "logic", Paths: []string{"app/api/**"}},
+		},
+	}
+	rep := Check(tg, mkView(nodes, nil, nil))
+	dead := findingsOfKind(rep.Warns, "dead-rule")
+	if len(dead) != 1 {
+		t.Fatalf("app/api/** 命中不到任何文件，应报 1 条 dead-rule，实际 %d 条: %+v", len(dead), rep.Warns)
+	}
+	if !strings.Contains(dead[0].Detail, "app/api/**") {
+		t.Errorf("dead-rule 应指向 app/api/** 这条规则，实际: %s", dead[0].Detail)
+	}
+}
+
 // 组装点死配置：assembly 里写了视图中不存在的文件，必须报 dead-assembly warn。
 // 这是与 dead-rule 对称的一条——在此之前 assembly 写错文件名完全没有信号，
 // 一条不存在的 "cmd/main.go" 能在基准里躺过整轮而无人发现。
@@ -488,6 +512,17 @@ func TestCheckTargetDomainGap(t *testing.T) {
 			wantWarns:    map[string]int{KindUnplaced: 0, KindDomainEmpty: 0},
 			wantDetail:   []string{"1/0", "app/api/y.go"},
 			unwantDetail: []string{"app/api/x.go"},
+		},
+		{
+			// 兄弟前缀在 domain-empty 这条判据上的表现：app/apix.go 不算 app/api/**
+			// 的命中，所以该目标域是空域，同时那个文件自己计入未落位。上面两例断的是
+			// unplaced 计数，这条断的是空域信号——同一个边界，两种可观测后果。
+			name:       "兄弟目录前缀不算命中，空目标领域仍报 domain-empty",
+			target:     gapTarget(9, TargetDomain{ID: "d_api", Name: "API", Responsibility: "对外接口", Paths: []string{"app/api/**"}}),
+			view:       gapView("app/apix.go"),
+			wantFails:  map[string]int{KindUnplacedOverBudget: 0},
+			wantWarns:  map[string]int{KindDomainEmpty: 1, KindUnplaced: 1},
+			wantDetail: []string{"d_api", "app/apix.go"},
 		},
 	}
 	for _, tc := range cases {

@@ -230,12 +230,14 @@ func inList(list []string, s string) bool {
 }
 
 // ruleHitsAny 判断一条 paths 规则是否命中过任何已归域的节点文件。
-// 后缀解析走 cutTargetRule 这一处定义（见 target.go），并把它提到循环外——
-// 判定语义与 targetRuleMatchesFile 一致，只是这里对文件集做存在量词。
+// 「文件对规则」这个判定只有 targetRuleMatchesFile 一处实现，这里只加存在量词：
+// 曾经把谓词在此处再写一遍（把 CutSuffix 提到循环外省几次调用），结果是同一个
+// 判定有两份代码、各自的目录边界要各自被测试看着；2026-08-23 review 实测那份
+// 拷贝的边界确实零保护。省下的是一次 strings.CutSuffix，换来的是一处会漂的重复，
+// 不划算。
 func ruleHitsAny(rule string, fileHit map[string]bool) bool {
-	prefix, isPrefix := cutTargetRule(rule)
 	for f := range fileHit {
-		if f == rule || (isPrefix && strings.HasPrefix(f, prefix+"/")) {
+		if targetRuleMatchesFile(f, rule) {
 			return true
 		}
 	}
