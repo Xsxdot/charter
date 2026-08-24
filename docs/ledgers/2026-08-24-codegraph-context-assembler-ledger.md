@@ -25,3 +25,23 @@
 - 2026-08-25：执行 `git commit -m 'docs(contract): freeze C1.5 context assembler'` 成功；原始输出为 `[cards/C1.5-charter 5dafd0b] docs(contract): freeze C1.5 context assembler`、`2 files changed, 340 insertions(+)`，当前提交已冻结契约文档与台账。
 - 2026-08-25：提交后的 `git diff --check` 原始输出为空，退出码 `0`；仅台账追加本提交记录，契约文档未再修改。
 - 2026-08-25：最终审计：`git status --short --branch` 原始输出为 `## cards/C1.5-charter`；`git log -2 --oneline --decorate` 原始输出为 `99b0661 (HEAD -> cards/C1.5-charter) docs(ledger): record C1.5 freeze` 与 `5dafd0b docs(contract): freeze C1.5 context assembler`；`git diff --check HEAD~2..HEAD` 与 `git show --check --oneline --summary HEAD` 均无检查输出且退出码 `0`。
+- 2026-08-25：本轮读取 `/root/.codex/skills/handoff/SKILL.md`、`skills/breakdown/SKILL.md`、`skills/architecture-law/SKILL.md`；任务属于 handoff executor 的 breakdown 节点，且平台不变量禁止调用 handoff CLI、派发或启动子任务。
+- 2026-08-25：`git status --short --branch` 原始输出为 `## cards/C1.5-charter-2`，当前工作树无已报告改动；分支与历史台账记录的 `cards/C1.5-charter` 不同，未据此切换分支。
+- 2026-08-25：`docs/specs/2026-08-23-codegraph-context-assembler-spec.md:3-5` 实读为上游 spec「已批准」且卡号 `C1.5`；本轮以该状态作为拆解上游状态位。
+- 2026-08-25：`rg --files | rg '(^|/)(best|target)\\.json$'` 实读仅命中 `graph/codegraph/testdata/repo/codegraph/{best,target}.json` fixture，未发现项目级 `codegraph/best.json` 或 `target.json`；本轮按无项目级代码图处理，fixture 仅用于代码/测试入口核对。
+- 2026-08-25：契约头部 `docs/superpowers/specs/c1.5-contract.md:3-6` 实读为 L3、上游已批准、契约「随本提交冻结」，并明确无项目级 `codegraph/target.json`；本轮拆解引用该冻结物，不新增接缝。
+- 2026-08-25：契约冻结的主要现状入口为 `Neighborhood`、`Resolve`、`ReAnchor`、`CheckStale`、`DomainTree`、`LoadDomainDecls`、`EntityLookup`；新增装配类型/函数在 `graph/codegraph`，CLI 仍通过 `graphPrintJSON` 输出 stdout JSON，直接依赖锁定 Cobra v1.10.2。
+- 2026-08-25：`rg -n 'Snippet|snippet'` 实读确认 Go `TestRef.Snippet`、webui `CgTestRef.snippet`、`DetailPanel.tsx` 渲染分支、`DetailPanel.test.tsx` fixture 与 `graph/codegraph/testdata/repo/codegraph/baseline.json` 旧输入存在；契约要求删 provider/consumer 新输出链，旧 JSON 输入仍由标准反序列化忽略。
+- 2026-08-25：CLI 现状实读确认 `graphQueryRunE` 在 `graph/cli/cli.go#graphQueryRunE` 直接调用 `CheckStale(graphRepo, g)` 全图，`graph/codegraph/query.go#Neighborhood` 的结果边收集未跳过 deleted，命令注册在 `#init`，命令计数断言 `graph/cli/cli_test.go#TestGraphCommandCountIncludesMigrate` 固定为 14。
+- 2026-08-25：现状源码窗口入口 `graph/codegraph/sym.go#ReAnchor`、领域/声明/实体入口与 contract §2 均能圈入 `graph/codegraph`；`merge.go#View` 当前不带 `Packages`，契约要求 context 从 CLI 已加载的 `*Graph` 读取 `Graph.Packages`，不新增加载路径。
+- 2026-08-25：`skills/spec/SKILL.md` 与 `skills/plan/SKILL.md` 当前“有图先查图”菜单仍只列旧 `sym / who-calls / chain / domains`；契约 §7 要求同步新默认、`chain --with-source`、`context <领域>`、视图词表优先与未声明降级。
+- 2026-08-25：实读 `skills/defect-families/SKILL.md:10-30`；本项目未发现额外项目清单文件，本稿采用基线通用五族，并追加回答序列化边界、枚举白名单、承重安全属性三族。
+- 2026-08-25：`graph/webui/package.json` 实读确认 viewer 的独立验收命令为 `npm test`（Vitest 4.1.10）、`npm run typecheck`（`tsc -b`）与 `npm run build`（`tsc -b && vite build`）；本稿将其作为边界型子系统机内契约验收，浏览器/反代行为列真机清单。
+- 2026-08-25：按拆解纪律将边界澄清回写 `docs/superpowers/specs/c1.5-contract.md:10`：webui 是既有 CLI stdout JSON wire 的边界型消费者；`AssembleResult`/`ExtractSourceWindow`/`AssembleContext` 是包内 API；skills 文档是交付物而非运行时子系统；三条均不新增跨子系统契约面。
+- 2026-08-25：法定拆解稿已写入 `docs/superpowers/specs/c1.5-breakdown.md`，`wc -l` 原始输出为 `292`；包含待拍板清单、三运行时子系统人工资格核验、逐条契约核对、A~E 子卡/DAG、逐族缺陷审查、6 条真机清单与交稿自检。
+- 2026-08-25：当前 `git status --short --branch` 原始输出为 `## cards/C1.5-charter-2`、契约与台账修改、拆解稿未跟踪；`git diff --check` 原始输出为空、退出码 `0`；占位符扫描 `rg -n 'TBD|TODO|待定|同上|适当处理|无风险' ...` 原始输出为空。
+- 2026-08-25：拆解形状自检 `rg` 原始输出确认 A/B/C/D/E 五张卡各有 ①契约引用、②意图与为什么、③验收、④入口指针；每个缺陷族标题在五卡中各出现 5 次，未命中 TBD/TODO/待定/同上/适当处理/无风险。
+- 2026-08-25：契约与 spec 头部复读确认 spec `:3-5` 为「已批准」、契约 `:3-6` 为「随本提交冻结」且无项目级目标图；契约新增 §10 仅记录不改变冻结语义的边界澄清。
+- 2026-08-25：收口前执行 `git diff --check && git status --short --branch`；原始输出为空检查结果，状态为 `## cards/C1.5-charter-2`，改动为契约、拆解稿与台账三项。
+- 2026-08-25：执行 `git add docs/superpowers/specs/c1.5-breakdown.md docs/superpowers/specs/c1.5-contract.md docs/ledgers/2026-08-24-codegraph-context-assembler-ledger.md` 成功，原始输出为空、退出码 `0`。
+- 2026-08-25：再次暂存台账后执行 `git diff --cached --check && git diff --cached --stat && git status --short --branch`；原始检查输出为空、暂存统计为 3 文件/317 行，状态为契约 M、拆解稿 A、台账 M，分支 `cards/C1.5-charter-2`。
