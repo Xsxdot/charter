@@ -27,7 +27,7 @@ func TestAssembleResultDefaultProjectionAndFull(t *testing.T) {
 			t.Fatalf("default projection leaked full fields: %+v", item.Node)
 		}
 	}
-	full, err := AssembleResult(v, raw, "testdata/repo", QueryOptions{Full: true, MaxTokens: 0})
+	full, err := AssembleResult(v, raw, "testdata/repo", QueryOptions{Full: true, FoldExternal: true, CollapseUtil: true, MaxTokens: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +46,96 @@ func TestAssembleResultDefaultProjectionAndFull(t *testing.T) {
 	}
 	if strings.Contains(string(rawJSON), "snippet") {
 		t.Fatalf("snippet must be removed from wire: %s", rawJSON)
+	}
+}
+
+func TestAssembleResultFullDisablesFolding(t *testing.T) {
+	v := fixtureView(t)
+	raw, err := Neighborhood(v, []string{"e_run"}, -1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := AssembleResult(v, raw, "testdata/repo", QueryOptions{
+		Full:         true,
+		FoldExternal: true,
+		CollapseUtil: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, item := range result.Nodes {
+		if item.External != nil {
+			t.Fatalf("full output contains folded external item: %+v", item.External)
+		}
+		if item.Node == nil {
+			t.Fatalf("full output contains non-node item: %+v", item)
+		}
+		got[item.Node.ID] = true
+	}
+	if len(got) != len(raw.Nodes) {
+		t.Fatalf("full output node count=%d, raw=%d: %+v", len(got), len(raw.Nodes), got)
+	}
+	for _, rn := range raw.Nodes {
+		if !got[rn.ID] {
+			t.Fatalf("full output omitted raw node %q", rn.ID)
+		}
+	}
+	wire, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), `"representatives"`) || strings.Contains(string(wire), `"count"`) {
+		t.Fatalf("full output contains folded wire shape: %s", wire)
+	}
+}
+
+func TestAssembleResultFullDisablesSharedUtilityFolding(t *testing.T) {
+	v := &View{
+		Containers: map[string]Container{
+			"caller-a": {Domain: "d_a"}, "caller-b": {Domain: "d_b"}, "caller-c": {Domain: "d_c"},
+			"shared": {Domain: "d_shared"}, "child": {Domain: "d_shared"},
+		},
+		Nodes: map[string]ViewNode{
+			"caller-a": {Node: Node{Kind: "func", Container: "caller-a", Name: "CallerA"}},
+			"caller-b": {Node: Node{Kind: "func", Container: "caller-b", Name: "CallerB"}},
+			"caller-c": {Node: Node{Kind: "func", Container: "caller-c", Name: "CallerC"}},
+			"shared":   {Node: Node{Kind: "func", Container: "shared", Name: "Shared"}},
+			"child":    {Node: Node{Kind: "func", Container: "child", Name: "Child"}},
+		},
+		Edges: []ViewEdge{
+			{From: "caller-a", To: "shared"}, {From: "caller-b", To: "shared"}, {From: "caller-c", To: "shared"},
+			{From: "shared", To: "child"},
+		},
+	}
+	raw := &Result{
+		View: "baseline", Foci: []string{"shared"},
+		Nodes: []ResultNode{
+			{ID: "shared", Dist: 0, ViewNode: v.Nodes["shared"]},
+			{ID: "child", Dist: 1, ViewNode: v.Nodes["child"]},
+			{ID: "caller-a", Dist: -1, ViewNode: v.Nodes["caller-a"]},
+			{ID: "caller-b", Dist: -1, ViewNode: v.Nodes["caller-b"]},
+			{ID: "caller-c", Dist: -1, ViewNode: v.Nodes["caller-c"]},
+		},
+	}
+	result, err := AssembleResult(v, raw, "", QueryOptions{Full: true, FoldExternal: true, CollapseUtil: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, item := range result.Nodes {
+		if item.External != nil || item.Node == nil {
+			t.Fatalf("full output folded shared utility or external nodes: %+v", item)
+		}
+		got[item.Node.ID] = true
+	}
+	if len(got) != len(raw.Nodes) {
+		t.Fatalf("full output node count=%d, raw=%d: %+v", len(got), len(raw.Nodes), got)
+	}
+	for _, rn := range raw.Nodes {
+		if !got[rn.ID] {
+			t.Fatalf("full output omitted raw node %q", rn.ID)
+		}
 	}
 }
 

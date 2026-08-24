@@ -141,12 +141,16 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 	}
 	slog.Default().Info("assemble result started", "view", raw.View, "foci", len(raw.Foci), "rawNodes", len(raw.Nodes), "full", opts.Full, "withSource", opts.WithSource, "maxTokens", opts.MaxTokens)
 
+	// Full is the compatibility escape hatch: preserve every raw node while
+	// keeping BFS and deleted-edge filtering unchanged.
+	foldExternal := opts.FoldExternal && !opts.Full
+	collapseUtil := opts.CollapseUtil && !opts.Full
 	shared := map[string]int{}
-	if opts.CollapseUtil {
+	if collapseUtil {
 		shared = sharedCallerDomains(v)
 	}
 	sharedTargets := map[string]bool{}
-	if opts.CollapseUtil {
+	if collapseUtil {
 		for id, count := range shared {
 			if count >= DefaultUtilSharedByDomains {
 				sharedTargets[id] = true
@@ -180,7 +184,7 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 			continue
 		}
 		domain := nodeDomain(v, vn.Node)
-		if opts.FoldExternal && domain != "" && !focusDomains[domain] {
+		if foldExternal && domain != "" && !focusDomains[domain] {
 			byExternal[domain] = append(byExternal[domain], rn)
 			continue
 		}
