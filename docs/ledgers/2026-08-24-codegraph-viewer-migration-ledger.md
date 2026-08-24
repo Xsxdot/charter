@@ -1,0 +1,26 @@
+# C1.9 codegraph viewer migration ledger
+
+- 2026-08-24：`pwd && git status --short --branch` -> `/root/.handoff/worktrees/762e73d2`；`## cards/C1.9-charter`；初始工作树无改动。
+- 2026-08-24：读取 `docs/specs/2026-08-24-codegraph-viewer-migration-spec.md`；spec 标注已批准、L2 单子系统、仅动 `graph/webui`、消费 C1.3 已冻结字段且宿主/ wire 契约不改。
+- 2026-08-24：`git log --oneline --decorate -12` -> `fb2d8fe (HEAD -> cards/C1.9-charter, origin/master, origin/HEAD) spec(codegraph): C1.9 查看器二期 spec 批准回写（嵌套下钻+迁移视角+欠账读数，L2）`；当前分支基于已合并 C1.3 查看器实现。
+- 2026-08-24：读取 `skills/plan/SKILL.md` 与 `skills/defect-families/SKILL.md`；本节点产出计划文档，不写实现代码；计划必须包含精确文件、完整接口、基线判据、日志/注释步骤、缺陷族与序列化边界自审。
+- 2026-08-24：`rg --files | rg '(^|/)prototypes/' || true` -> 无输出；spec 声明的 `prototypes/codegraph-phase2/` 形态基准不在当前仓库工作树，计划以 spec 明文与已落地 C1.3 viewer 组件/测试为可读基线，并把原型缺失列为未验证形态事实。
+- 2026-08-24：读取 `graph/webui/package.json` -> 脚本为 `dev`、`build: tsc -b && vite build`、`test: vitest run`、`typecheck: tsc -b`；依赖含 React 19、Vitest 4、Testing Library 16、TypeScript 5.8。
+- 2026-08-24：读取 `graph/webui/src/api/types.ts` 与 C1.3 viewer 源码 -> `CodegraphResp` 已有可选 `best?: CgBest`、`target?: CgTarget`、`report?: CgCheckReport`；现有 `besttree.ts` 已提供 `aggregateBestCards`、`assembleDirections`、`enforcementReadout`，`BestPanorama`/`BestDetail`/`CodegraphPage` 已消费这些字段，现状 `DomainPanorama`/`DomainDetail` 为回退形态。
+- 2026-08-24：读取现有 viewer 测试 -> 已有 C1.3 的 best 全景、详情、无 report 降级、baseline/domain 下钻与面包屑、diff 视图回退用例；新增计划必须复用这些夹具/Testing Library 模式并保留一期用例。
+- 2026-08-24 基线验收尝试：`npm run typecheck && npm test`（工作目录 `graph/webui`）失败，原始输出：`> codegraph-webui@0.0.0 typecheck`；`> tsc -b`；`sh: 1: tsc: not found`。未据此判断源码结果，需先安装锁定依赖后重跑。
+- 2026-08-24：`npm ci --cache /root/.handoff/tmp/762e73d2/npm-cache`（工作目录 `graph/webui`）退出 0，原始摘要：`added 168 packages, and audited 169 packages in 4s`；`found 0 vulnerabilities`。
+- 2026-08-24 基线验收：`npm run typecheck && npm test`（工作目录 `graph/webui`）退出 0；TypeScript 无输出；Vitest 原始摘要：`Test Files 14 passed (14)`、`Tests 89 passed (89)`。
+- 2026-08-24 基线构建：`npm run build`（工作目录 `graph/webui`）退出 0；原始摘要：`vite v6.4.3 building for production`、`✓ 42 modules transformed`、`✓ built in 621ms`。
+- 2026-08-24 构建后工作树核查：`git diff --check && git status --short --branch` -> `## cards/C1.9-charter`；构建改写已跟踪 `graph/webui/dist/index.html` 并删除旧资产、生成未跟踪 `index-CzXZ2eZM.css`/`index-DM1dP66r.js`；台账为本节点新增文件。该生成物变更属于验收副作用，收口前恢复 dist 基线。
+- 2026-08-24：首次 `git restore -- graph/webui/dist/assets/index-G41Q0Rap.js graph/webui/dist/assets/index-PlCD2zKm.css` 失败，原始输出：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/762e73d2/index.lock': Read-only file system`。
+- 2026-08-24：经提升权限重跑同一恢复命令退出 0；原始状态摘要：`## cards/C1.9-charter`、仅有 `?? docs/ledgers/2026-08-24-codegraph-viewer-migration-ledger.md`。
+- 2026-08-24：`rg -n "console\\.|logger|structured" graph/webui/src graph/webui` -> 既有可观测性使用 `console.info/debug/warn` 的结构化对象参数，入口/成功/失败节点在 `src/app/codegraph/useCodegraph.ts:12-25` 与 `src/api/client.ts:28-50`；计划沿既有 logger 形态只为新增页面状态入口、选择与错误分支加上下文字段，不引入第二套 logger。
+- 2026-08-24 计划落盘尝试：使用 `apply_patch` 新增 `docs/plans/2026-08-24-codegraph-viewer-migration-plan.md` 失败，原始输出：`apply_patch verification failed: invalid hunk at line 689, 'git diff --check' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'`；未生成计划文件。
+- 2026-08-24：计划首版落盘成功，`wc -l` -> 计划 586 行、台账 19 行；占位符扫描命中计划自身第 585 行的扫描命令文本，原始输出为该行；`git diff --check` 无输出。将改写扫描命令以排除其自身说明行后重跑。
+- 2026-08-24 计划自审：`rg -n "TBD|TODO|同 Task|适当的错误处理|待定" ... | rg -v "占位符扫描"` -> 无输出；`git diff --check` -> 无输出；结构扫描列出 Task 1~4 均有文件范围、Interfaces、基线判据、2~5 分钟动作、验收/反面断言，且计划含序列化边界、缺陷族、真机清单和收口步骤。
+- 2026-08-24 计划修订后复核：同一占位符扫描（排除说明行）无输出；`git diff --check` 无输出；`git status --short --branch` -> `## cards/C1.9-charter`，仅两个未跟踪文档：本卡计划与本卡台账；计划 591 行。
+- 2026-08-24 计划最终自审：占位符扫描（排除说明行）无输出；尾随空白扫描无输出；`git diff --check` 无输出；工作树仍为 `## cards/C1.9-charter`，计划 599 行、台账 22 行，只有计划和台账两个未跟踪文件。
+- 2026-08-24 首次收口提交：`git add docs/plans/2026-08-24-codegraph-viewer-migration-plan.md docs/ledgers/2026-08-24-codegraph-viewer-migration-ledger.md && git commit -m 'plan(webui): C1.9 viewer migration drilldown'` 退出 0；原始输出：`[cards/C1.9-charter 8898d3d] plan(webui): C1.9 viewer migration drilldown`、`2 files changed, 622 insertions(+)`。
+- 2026-08-24：提交后追加本次提交事实使台账产生 1 行未提交改动；`git diff --check && git status --short --branch && git diff --stat` -> `## cards/C1.9-charter`、台账 `1 insertion(+)`，无 whitespace 错误；下一步 amend 以保持收口干净。
+- 2026-08-24 最终提交前核验：`git status --short --branch && git rev-parse HEAD && git show --stat --oneline --decorate HEAD && git diff --check` -> `## cards/C1.9-charter`；HEAD `42fa8f349f055b6cba6cc81830e8f0f65ce0908d`；`42fa8f3 (HEAD -> cards/C1.9-charter) plan(webui): C1.9 viewer migration drilldown`；2 files changed, 624 insertions(+)；`git diff --check` 无输出。
