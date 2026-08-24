@@ -149,6 +149,17 @@ describe('C1.9 debt and migration projections', () => {
     })
   })
 
+  it('双向环只由互逆 contract 对构成，单向方向不得冒充环对', () => {
+    // 判别力夹具：1 对互逆 + 2 条无反向的单向。互逆判据反转时会把两条单向计成 2 对——必须红。
+    const mutualAndOneWay: CgTarget = { ...target, contracts: [
+      { from: 'ss_api', to: 'ss_store', entries: [] },
+      { from: 'ss_store', to: 'ss_api', entries: [] },
+      { from: 'ss_api', to: 'ss_x', entries: [] },
+      { from: 'ss_store', to: 'ss_y', entries: [] },
+    ] }
+    expect(debtReadout(mutualAndOneWay, report)?.bidirectionalPairs).toBe(1)
+  })
+
   it('方向详情保留窄缝、明确零值和反向对端', () => {
     const targetWithEntries: CgTarget = { ...target, contracts: [
       { from: 'ss_api', to: 'ss_store', entries: ['read'], legacyBudget: 2 },
