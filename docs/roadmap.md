@@ -62,3 +62,6 @@
 15a. **「账本 vs 仓」比对能否进 CI**：不能直接进——该比对需要本机 handoff 账本，GitHub runner 上没有。可进 CI 的是另一件事：仓内自洽性检查（`skills/` 正文经 regen 后的纪律块是否与已提交产物一致），但那要求把纪律块产物提交进仓，是一个独立决定（与 C1.4 把 `dist` 提交进仓同族），本期不开。来源：同上，OOS-4。
 15b. **`skills/` 与 `scripts/` 的 CI 覆盖**：今日 `.github/workflows/ci.yml` 的 paths 过滤只含 `graph/**`，方法论正文与脚本无任何 CI 门，charter 自举脚本的测试本期只在本地跑。仓里已有可照抄的门形态（ci.yml 的「Reject stale committed dist」：rebuild → diff → 拒绝）。来源：同上，OOS-5。
 15c. **acceptance 节点是否该有纪律块**：`scripts/regen_discipline.py` 的 compose 映射含七个派发节点，不含 acceptance（它是人工列、不派发），导致写在 acceptance 的纪律执行者永远读不到——「变异必须编译得过」就这样落在了现场够不着的地方。本期用「正文移到 implement + acceptance 改引用」绕过；根治要给人工列也发纪律块，那是改流程形状，另议。来源：同上，OOS-6。
+16. **`regen_discipline.py` 的原子写**：今天逐文件写（`scripts/regen_discipline.py:36-41`），写到第 4 个失败会留下 3 新 + 4 旧的半装纪律块，且无退出码语义。改临时文件 + rename。来源：2026-08-24 C4+C6 拆解稿缺陷族「生命周期」族。
+16a. **从 handoff 配置发现 discipline 目录**：`regen_discipline.py:9` 硬编码 `~/.handoff/discipline`，而 handoff 的 DataDir 是可配的（`internal/config/config.go:46`，配置文件而非环境变量）。DataDir 非默认时 regen 会**装错地方且无告警**。本期只给手动覆盖口（`--out`），自动发现留后。来源：同上，「跨平台假设」族。
+16b. **「改仓再装」的绕过入口无法技术性封堵**：改流程有两条路——改仓跑 install（合规）与直接 `handoff workflow put`（绕过）。charter 侧堵不住第二条（handoff 是通用工具、不认识 charter），唯一防线是 `check` 事后发现 + 单向纪律写进文档。**本期明确保留此敞口，不假装已解决。**来源：同上，「门禁绕过」族。

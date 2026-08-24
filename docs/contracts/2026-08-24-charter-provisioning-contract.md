@@ -115,6 +115,8 @@ d.Gates  = gates           // 取每个 node.Gate（DeepEqual 非空者）
 
 ### C-8 `template put` 无投影、无校验，忠实回灌
 
+> **⚠ 本条已被修订 R-2 更正**：「无投影」成立；**「无校验」只对 store 层成立，CLI 层有三字段必填校验**。见文末「拆解节点回写的修订记录」。
+
 `internal/ledger/templates.go:66-85`（`Store.PutTemplate`）：直接 `json.Marshal(def)`
 后 INSERT，无 `validate*` 调用、无 `with*` 投影。故 `TemplateDef` 的往返是恒等的，
 与 workflow 侧不对称。
@@ -160,6 +162,8 @@ implement 块**，不报错、不告警。handoff 自己在 `internal/ledger/tem
 ## 三、比对面（drift 检查的判据）
 
 ### C-11 「一致」的判据 = **只比 `nodes`**，必要且充分
+
+> **本条不变，但其与上游 spec 缝级断言②的口径关系已由修订 R-1 澄清**（断言②的输入必须以 `nodes` 差异为载体，并新增一条反向断言锁住本条）。见文末修订记录。
 
 由 C-5：`states` / `gates` 是 `nodes` 的纯函数，由 handoff 在写入期自行计算。
 因此比对账本与仓时：
@@ -279,3 +283,63 @@ implement 块**，不报错、不告警。handoff 自己在 `internal/ledger/tem
    `NodeDef` 内部字段（`internal/ledger/types.go:197-220`）随真源 JSON 原样携带，
    未逐字段列表。理由：真源是导出物不是手写物，逐字段冻结的收益低于维护成本；
    若将来要手写节点，再补。
+
+---
+
+## 拆解节点回写的修订记录（2026-08-24）
+
+由 breakdown 节点在 `docs/breakdowns/2026-08-24-charter-provisioning-breakdown.md` 出稿过程中
+做出的**边界澄清与事实更正**，按 breakdown 纪律「澄清即便不退回 contract 也要回写一行修订记录」
+落此。**C-1 ~ C-13 与 D-1 ~ D-3 的正文与决定均不变**，本节只改读法与一处事实精度。
+
+### R-1 澄清：spec 缝级断言②的可执行重述（不退回 contract）
+
+**冲突**：上游 spec 测试决定写「一对『states 或 gates 实质不同』的输入 → 判不等价」；
+C-11 与 D-2 写「只比 `nodes`、禁止复刻投影」。字面执行断言②要求实现去读 `states` / `gates`
+键，**直接违反 C-11 / D-2**。
+
+**裁定**：断言②里的「states 或 gates 实质不同」是**症状描述，不是输入构造法**。在 D-1 的
+nodes-only 真源制下，仓侧 def 根本没有这两个键，生产路径上它们的差异**只能以 `nodes` 差异为
+载体**。断言②重述为：
+
+> 构造一对 `nodes` 实质不同的输入，差异分别落在两类载体——**(i) 节点集合或顺序变化**
+> （投影体现为 states 变）、**(ii) 某节点的 `gate` 变化**（投影体现为 gates 变）——
+> 断言判不等价，且差异清单**指名到节点与字段**。
+
+**并加严一条（属加严不属加缝，故不退回 contract）**：新增第三条缝级断言——
+**一对 `nodes` 完全相同、而 `states` / `gates` 键故意矛盾的输入 → 判等价**。
+它是 D-2 这条承重决定**唯一能变红的锁**；没有它，将来有人「顺手把 states 也比一下」
+不会有任何测试拦他。
+
+**为什么是澄清不是分歧**：C-11 的判据不变、D-2 的决定不变、`nodes_equivalent` 的签名不变，
+变的只是 spec 一句自然语言的可执行读法。若协调者判定这是分歧，正确的退回动作是**改 spec
+的断言②措辞**，不是改 C-11——C-11 有代码级证明（`internal/ledger/workflows.go:20-43` 与 `:156`），
+断言②只有一句自然语言。
+
+### R-2 更正：C-8「`template put` 无校验」不成立（CLI 层有三字段必填校验）
+
+**本轮实读 `cmd/template.go:81-83`（`tplPutCmd.RunE`）**：
+
+```go
+if def.Executor == "" || def.Prompt == "" || def.Discipline == "" {
+    return fmt.Errorf("executor/prompt/discipline 三者必填")
+}
+```
+
+C-8 所引的 `internal/ledger/templates.go:66-85`（`Store.PutTemplate`）确实无 `validate*` 调用、
+无投影——**但 CLI 层有一道校验**，C-8 的行文把 store 层的结论说成了整条写入路径的结论。
+更正为：**store 层无校验，CLI 层有 `executor` / `prompt` / `discipline` 三字段必填校验。**
+
+**直接后果**：D-3 交办 implement 的「缺省 `discipline` 该改成什么」这个岔口上，
+**「整个字段留空」的选项不可行**——空串会被 CLI 当场拒绝。该选项在 C-9 的行文与 spec
+「定不了的」第四条里都还是活的，本条把它杀死。
+
+**为什么是更正不是退回**：D-1 / D-2 / D-3 三条决定均不受影响，受影响的只有一条事实描述的
+精度与它下游一个选项的可行性。相关负例已进拆解稿真机清单（M-4，零残留可安全执行）。
+
+### R-3 澄清：`nodes_equivalent` 的职责边界
+
+spec 断言②要求「指出差异在**哪一样**、哪个字段」。核对 spec 用户故事 2（「一条命令告诉我
+漂在哪一样、哪个字段」）后裁定：**「哪一样」= 三样东西之一（workflow / template / 纪律块），
+由 `check()` 主流程的三段结构负责**；`nodes_equivalent` 只负责**单份 workflow def 内部的
+节点级 / 字段级差异清单**。两者不是同一粒度，不要求一个函数同时承担。
