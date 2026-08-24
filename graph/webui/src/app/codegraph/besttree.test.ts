@@ -7,6 +7,7 @@ import {
   classifyFinding,
   containerSubsystems,
   enforcementReadout,
+  groupContainersBySubdomain,
   subsystemOf,
   topLevelSubsystemIds,
 } from './besttree'
@@ -100,5 +101,33 @@ describe('besttree', () => {
     expect(() => aggregateBestCards(best, report)).not.toThrow()
     expect(enforcementReadout(report)).toEqual({ fails: 2, misplaced: 2, unplaced: 1 })
     expect(enforcementReadout()).toBeNull()
+  })
+})
+
+describe('groupContainersBySubdomain', () => {
+  it('按嵌套层级前序折成分组，depth 与 totalCount 逐层累计', () => {
+    const groups = groupContainersBySubdomain(best, 'ss_api')
+    expect(groups.map((group) => [group.domainId, group.depth, group.containerIds, group.totalCount])).toEqual([
+      ['ss_api', 0, [], 2],
+      ['api_read', 1, ['c_api'], 2],
+      ['api_read_detail', 2, ['c_api_detail'], 1],
+    ])
+  })
+
+  it('整棵子树没有容器的领域不出现', () => {
+    const barren: CgBest = {
+      meta: { version: 1, project: 'demo' },
+      domains: {
+        ss_x: { label: 'X', responsibility: '' },
+        x_empty: { label: '空领域', responsibility: '', parent: 'ss_x' },
+        x_used: { label: '有容器', responsibility: '', parent: 'ss_x' },
+      },
+      containers: { c_one: 'x_used' },
+    }
+    expect(groupContainersBySubdomain(barren, 'ss_x').map((group) => group.domainId)).toEqual(['ss_x', 'x_used'])
+  })
+
+  it('子系统整体无容器或 id 未知时返回空数组', () => {
+    expect(groupContainersBySubdomain(best, 'ss_unknown')).toEqual([])
   })
 })

@@ -142,6 +142,51 @@ export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record
   return result
 }
 
+export interface BestContainerGroup {
+  domainId: string
+  label: string
+  depth: number
+  containerIds: string[]
+  totalCount: number
+}
+
+/**
+ * 把子系统下的归属容器按所属领域折成前序分组树，depth 即嵌套层级（0 为子系统本身）。
+ * 整棵子树都没有容器的领域不出现——它在容器视角下没有读数，列出来只会增加噪音。
+ */
+export function groupContainersBySubdomain(best: CgBest, subsystemId: string): BestContainerGroup[] {
+  if (!best.domains[subsystemId]) return []
+  const byDomain: Record<string, string[]> = {}
+  for (const [containerId, domainId] of Object.entries(best.containers)) {
+    (byDomain[domainId] ??= []).push(containerId)
+  }
+  for (const ids of Object.values(byDomain)) ids.sort((a, b) => a.localeCompare(b))
+
+  const out: BestContainerGroup[] = []
+  const seen = new Set<string>()
+  const walk = (domainId: string, depth: number): number => {
+    if (seen.has(domainId)) return 0
+    seen.add(domainId)
+    const own = byDomain[domainId] ?? []
+    const index = out.length
+    const group: BestContainerGroup = {
+      domainId,
+      label: best.domains[domainId]?.label ?? domainId,
+      depth,
+      containerIds: own,
+      totalCount: own.length,
+    }
+    out.push(group)
+    let total = own.length
+    for (const childId of childDomainIds(best, domainId)) total += walk(childId, depth + 1)
+    group.totalCount = total
+    if (total === 0) out.splice(index, 1)
+    return total
+  }
+  walk(subsystemId, 0)
+  return out
+}
+
 function directionKey(from: string, to: string): string {
   return `${from}->${to}`
 }
