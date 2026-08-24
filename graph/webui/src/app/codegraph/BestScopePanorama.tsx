@@ -147,8 +147,9 @@ export function BestScopePanorama(props: BestScopePanoramaProps) {
   const W = Math.max(1200, ...ids.map((id) => (pos[id]?.[0] ?? 0) + 420))
   const H = Math.max(620, ...ids.map((id) => (pos[id]?.[1] ?? 0) + 300))
   const directIds = new Set(graph.cards.filter((card) => !card.external).map((card) => card.id))
-  const trayItems = migrationItems.filter((item) => !item.currentDomainId || item.currentDomainId !== scopeId)
-  const arrowItems = migrationItems.filter((item) => directIds.has(item.expectedDomainId))
+  // 托盘与箭头同源：应归本层直接子领域、但现状未到位的容器（含现状就平铺在本域根上的主场景）。
+  const trayItems = migrationItems.filter((item) => directIds.has(item.expectedDomainId))
+  const arrowItems = trayItems
 
   return (
     <div ref={wrap} className="relative min-w-0 flex-1 cursor-grab overflow-hidden" onMouseDown={onPan}>

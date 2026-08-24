@@ -46,4 +46,15 @@ describe('BestScopePanorama', () => {
     fireEvent.click(container.querySelector('[data-migration-item="c_api"]')!)
     expect(onSelectMigration).toHaveBeenCalledWith(item)
   })
+
+  it('现状平铺在本域根上的容器必须进托盘——这是真实数据的主场景', () => {
+    // handoff 实测：k_web_* 的现状域就是 d_web（scope 自身），按 current!==scope 排除会把主场景清空。
+    const rooted: MigrationItem = { ...item, currentDomainId: 'ss_api', currentDomainLabel: 'API' }
+    const { container } = render(<BestScopePanorama best={best} target={nestedTarget} report={report}
+      scopeId="ss_api" selectedDomain="" selectedEdge="" migrationItems={[rooted]}
+      onSelectDomain={vi.fn()} onSelectEdge={vi.fn()} onEnter={vi.fn()} onSelectMigration={vi.fn()} />)
+    expect(container.querySelector('[data-unplaced-tray]')).toBeTruthy()
+    expect(container.querySelector('[data-migration-item="c_api"]')).toBeTruthy()
+    expect(container.querySelector('[data-migration-arrow][data-expected="api_read"]')).toBeTruthy()
+  })
 })

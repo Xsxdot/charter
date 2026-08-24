@@ -51,8 +51,10 @@ export function BestLeafGraph({ best, baseline, report, scopeId, selectedContain
 
   const containerFactsFor = (containerId: string): ContainerFacts => facts[containerId] ?? baselineFacts[containerId] ?? { dir: '', nodeCount: 0 }
   const labelFor = (containerId: string) => baseline.containers[containerId]?.label ?? containerId
+  // 幽灵 = 应归本叶但尚未迁到位的容器。expectedDomainId 派生自 best.containers，
+  // 「未到位」由 container-misplaced finding 保证（migrationGroups 只收错位项），无需再比 best 归属。
   const ghostIds = new Set(migrationItems
-    .filter((item) => item.expectedDomainId === scopeId && best.containers[item.containerId] !== scopeId)
+    .filter((item) => item.expectedDomainId === scopeId)
     .map((item) => item.containerId))
   void report
 
