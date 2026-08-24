@@ -47,6 +47,17 @@ describe('BestScopePanorama', () => {
     expect(onSelectMigration).toHaveBeenCalledWith(item)
   })
 
+  it('层锚点常驻：领域名+子领域数；无契约边时给出解释而不是空白', () => {
+    const { container } = render(<BestScopePanorama best={best} target={undefined} report={report}
+      scopeId="ss_api" selectedDomain="" selectedEdge="" migrationItems={[]}
+      onSelectDomain={vi.fn()} onSelectEdge={vi.fn()} onEnter={vi.fn()} onSelectMigration={vi.fn()} />)
+    expect(container.querySelector('[data-best-scope-title]')?.textContent).toContain('API')
+    expect(container.querySelector('[data-best-scope-title]')?.textContent).toContain('领域内部')
+    expect(container.querySelector('[data-best-scope-no-edges]')).toBeTruthy()
+    // 子领域无 type 时不得渲染「未分类」噪音
+    expect(container.textContent).not.toContain('未分类')
+  })
+
   it('现状平铺在本域根上的容器必须进托盘——这是真实数据的主场景', () => {
     // handoff 实测：k_web_* 的现状域就是 d_web（scope 自身），按 current!==scope 排除会把主场景清空。
     const rooted: MigrationItem = { ...item, currentDomainId: 'ss_api', currentDomainLabel: 'API' }

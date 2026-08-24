@@ -8,7 +8,7 @@ import type { DomainAgg, DomainCard, DomainEdge } from './domains'
 import type { ViewEdge } from './graphmath'
 import type { CgBest, CgCheckReport, CgTarget } from '../../api/types'
 import type { BestScopeGraph, MigrationItem } from './besttree'
-import { bestScopeGraph } from './besttree'
+import { bestDomainLabel, bestScopeGraph } from './besttree'
 
 const CARD_W = 252
 const CARD_H = 112
@@ -155,6 +155,16 @@ export function BestScopePanorama(props: BestScopePanoramaProps) {
     <div ref={wrap} className="relative min-w-0 flex-1 cursor-grab overflow-hidden" onMouseDown={onPan}>
       <button data-best-scope-relayout onClick={() => setPos(layoutDomains(agg, ids, pos))}
         className="absolute right-3 top-2.5 z-30 rounded border bg-background px-2 py-0.5 text-xs" title="重新布局">重新布局</button>
+      {/* 层锚点：没有它，两张卡浮在空画布上会被读成「渲染坏了」（2026-08-24 真机走查实证）。 */}
+      <div data-best-scope-title className="absolute left-3.5 top-2.5 z-30 rounded border bg-background/95 px-2.5 py-1 text-xs shadow-sm">
+        <span className="font-semibold">{bestDomainLabel(best, scopeId)}</span>
+        <span className="text-muted-foreground"> · 领域内部 · {graph.cards.filter((card) => !card.external).length} 子领域</span>
+        {graph.edges.length === 0 ? (
+          <span data-best-scope-no-edges className="text-muted-foreground">
+            {' '}· 子领域间暂无契约面读数（契约今天只定义到子系统级）
+          </span>
+        ) : null}
+      </div>
       <div className="relative" style={{ width: W, height: H, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
         <svg width={W} height={H} className="absolute inset-0" aria-hidden="true">
           {graph.edges.map((edge) => {
@@ -192,7 +202,7 @@ export function BestScopePanorama(props: BestScopePanoramaProps) {
               style={{ left, top, width: card.external ? EXT_W : CARD_W }}>
               <div className="flex items-center gap-1.5 px-3.5 pb-1 pt-2 text-[13.5px] font-bold">
                 {card.label}
-                <span className="text-[10.5px] font-normal text-muted-foreground">{card.type || '未分类'}</span>
+                {card.type ? <span className="text-[10.5px] font-normal text-muted-foreground">{card.type}</span> : null}
               </div>
               <div className="px-3.5 pb-2 text-[11.5px] leading-relaxed text-muted-foreground">{card.responsibility}</div>
               <div className="flex flex-wrap gap-2 border-t px-3.5 py-1.5 text-[11px] text-muted-foreground">
