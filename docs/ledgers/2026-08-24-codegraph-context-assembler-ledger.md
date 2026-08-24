@@ -22,3 +22,5 @@
 - 2026-08-25：在获准写 Git 元数据后执行 `git add docs/superpowers/specs/c1.5-contract.md docs/ledgers/2026-08-24-codegraph-context-assembler-ledger.md` 成功，退出码 `0`。
 - 2026-08-25：首次 `git diff --cached --check` 发现契约头部第 3~5 行尾随空格；已用 `apply_patch` 删除并重新暂存。复跑 `git diff --cached --check` 原始输出为空、退出码 `0`；暂存统计为 2 个新增文件、338 行。
 - 2026-08-25：收尾前复跑 `git diff --cached --check` 原始输出为空、退出码 `0`；`git diff --cached --stat` 显示 2 个新增文件、339 行；`git status --short --branch` 显示两文件均已暂存于 `cards/C1.5-charter`。
+- 2026-08-25：执行 `git commit -m 'docs(contract): freeze C1.5 context assembler'` 成功；原始输出为 `[cards/C1.5-charter 5dafd0b] docs(contract): freeze C1.5 context assembler`、`2 files changed, 340 insertions(+)`，当前提交已冻结契约文档与台账。
+- 2026-08-25：提交后的 `git diff --check` 原始输出为空，退出码 `0`；仅台账追加本提交记录，契约文档未再修改。
