@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-# 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（~/.handoff/discipline/charter-*.md）。
+# 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-*.md）。
 # 边界：只做「去 frontmatter + 附录拼接 + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
 # 注意：agentd 的 resolver 每次派发时现读盘，运行本脚本即全部生效，无需重启 agentd。
 # 回退 skill 后必须重跑本脚本，否则纪律块仍是新版正文（两个消费端会漂移）。
-import re, os
+#
+# 本文件同时是库：charter_provision 直接 import regen() 把块生成到临时目录做比对，
+# 故模块顶层不得有任何写盘副作用——import 只定义，不执行。
+import argparse
+import os
+import re
 
 SK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills")
 OUT = os.path.expanduser("~/.handoff/discipline")
 
 
 def body(name):
-    t = open(f"{SK}/{name}/SKILL.md").read()
+    with open(f"{SK}/{name}/SKILL.md") as f:
+        t = f.read()
     return re.sub(r'^---\n.*?\n---\n', '', t, flags=re.S).strip() + "\n"
 
 
@@ -19,23 +25,49 @@ def retitle(text, title):
     return re.sub(r'^# .*$', f'# 附：{title}', text, count=1, flags=re.M)
 
 
-arch = retitle(body("architecture-law"), "架构法（子系统与领域章）")
-defect = retitle(body("defect-families"), "缺陷族法")
+def compose_map():
+    """组成映射：breakdown 带缺陷族法、implement 带架构法、review 带两法，其余单体。
 
-# 组成映射：breakdown 带缺陷族法、implement 带架构法、review 带两法，其余单体
-compose = {
-    "contract":  [body("contract")],
-    "breakdown": [body("breakdown"), defect],
-    "plan":      [body("plan")],
-    "implement": [body("implement"), arch],
-    "review":    [body("review"), arch, defect],
-    "integrate": [body("integrate")],
-    "recon":     [body("recon")],
-}
+    返回 {块名: [正文段, ...]}。每次调用重读 skills/ 正文——调用方可能刚改完正文。
+    """
+    arch = retitle(body("architecture-law"), "架构法（子系统与领域章）")
+    defect = retitle(body("defect-families"), "缺陷族法")
+    return {
+        "contract":  [body("contract")],
+        "breakdown": [body("breakdown"), defect],
+        "plan":      [body("plan")],
+        "implement": [body("implement"), arch],
+        "review":    [body("review"), arch, defect],
+        "integrate": [body("integrate")],
+        "recon":     [body("recon")],
+    }
 
-for name, parts in compose.items():
-    path = f"{OUT}/charter-{name}.md"
-    with open(path, "w") as f:
-        f.write("\n---\n\n".join(parts))
-    os.chmod(path, 0o600)
-    print(name, os.path.getsize(path))
+
+def regen(out=OUT):
+    """把 skills/ 正文生成为纪律块，落到 out 目录。
+
+    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。目录必须已存在。
+    返回：{块名: 字节数}，供调用方打印或断言。
+    注意：逐文件写、非原子——中途失败会留下新旧混合的半装状态（已知欠账，见 roadmap 第 16 条）。
+    """
+    sizes = {}
+    for name, parts in compose_map().items():
+        path = f"{out}/charter-{name}.md"
+        with open(path, "w") as f:
+            f.write("\n---\n\n".join(parts))
+        os.chmod(path, 0o600)
+        sizes[name] = os.path.getsize(path)
+    return sizes
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description="从 skills/ 正文重新生成 charter 纪律块")
+    p.add_argument("--out", default=OUT, help=f"落盘目录（缺省 {OUT}）")
+    args = p.parse_args(argv)
+    for name, size in regen(args.out).items():
+        print(name, size)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

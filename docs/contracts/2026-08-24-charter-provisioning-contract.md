@@ -343,3 +343,34 @@ spec 断言②要求「指出差异在**哪一样**、哪个字段」。核对 s
 漂在哪一样、哪个字段」）后裁定：**「哪一样」= 三样东西之一（workflow / template / 纪律块），
 由 `check()` 主流程的三段结构负责**；`nodes_equivalent` 只负责**单份 workflow def 内部的
 节点级 / 字段级差异清单**。两者不是同一粒度，不要求一个函数同时承担。
+
+### R-4（implement 回写）：哨兵 `charter-must-override` 的含义
+
+**背景**：D-3 本轮决定「模板缺省 `discipline` 忠实导出、修法留给 implement」。
+breakdown 的岔口 F-6 由协调者裁为 **(c) 哨兵名**，implement 已落地为
+`flows/charter-default.template.json` 的 `"discipline": "charter-must-override"`。
+
+**为什么不是留空**：R-2 已证明 CLI 层强制该字段非空。「本模板没有合理缺省」这个真实语义
+**无法用留空表达**，哨兵是它在必填字段上唯一诚实的编码。
+
+**为什么不是 `charter-implement`**：那仍然是**静默**的——忘写 `override.discipline` 的
+新节点会安静地拿到 charter 的实现纪律，而它多半不是该节点想要的。C-9 记录的风险正是
+「静默拿到不对的块」，用另一个静默默认去治它等于没治。
+
+**它的运行期行为**（按 C-9 的解析三段式推导）：`<DataDir>/discipline/charter-must-override.md`
+**故意不存在**，也不是五个内置角色名之一，故 `Resolver.ByName` 走到第 3 段**报错**：
+`未知纪律块名字 "charter-must-override"：既无 …/charter-must-override.md 也无同名内置块`。
+名字本身就是给读到这条报文的人的指引——**该节点必须写 `override.discipline`**。
+
+**已知代价（协调者已认）**：裸 `handoff dispatch --template charter-default`（不经工作流节点
+的直接派发）从「能跑」变成「必失败」。可接受，因为该模板的 `prompt` 通篇是卡形状的
+（`{{CARD}}` / `{{TITLE}}` / `{{ACCEPT}}`），无卡直接派发本来就会渲染出一堆空占位符——
+那条路径**在本次改动前已经是语义损坏的**，让它响亮失败是修复不是回归。
+
+**零影响的依据**：现役 7 个 dispatch 节点**全部**写了 `override.discipline`
+（`flows/charter.workflow.json` 实读：contract/breakdown/plan/implement/review/integrate/图对账
+分别指向 7 个 `charter-*` 块），故哨兵在现役流程上永不被解析到。
+`check` 的 F-8 检查**只覆盖节点 override、不覆盖模板缺省值**，正是为此。
+
+**JSON 无注释，本条即哨兵含义的唯一落点。**看到那个「坏值」的下一个人请先读本条，
+不要「顺手把它改好」。
