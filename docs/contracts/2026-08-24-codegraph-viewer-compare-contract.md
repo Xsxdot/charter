@@ -46,3 +46,7 @@
 ## 交棒欠账
 
 无——Ticket 0 无越壳行为；金样本类条目无命中（JSON 形态由 C1/C5 的编译期镜像 + implement 期 httptest 锁定，无哈希/派生类向量）。
+
+## 修订记录
+
+- 2026-08-24（breakdown 边界澄清，结论「不退回 contract」）：查看器为渲染定义的聚合类型（子系统卡模型、方向读数模型等）是 `graph/webui` 包内 API，**不属 C5 镜像面**；C5 只冻结 wire 的逐字镜像（`CgBest` / `CgTarget` / `CgCheckReport` 及其成员）。渲染层类型可自由演进，不构成契约变更。
