@@ -1,0 +1,13 @@
+# C1.3-W codegraph viewer compare ledger
+
+- 2026-08-24：`pwd && git status --short --branch` -> `/root/.handoff/worktrees/85260771`；`## cards/C1.3-w-viewer`，初始工作树无改动。
+- 2026-08-24：已读取 `docs/specs/2026-08-24-codegraph-viewer-compare-spec.md`（65 行）、`docs/contracts/2026-08-24-codegraph-viewer-compare-contract.md`（52 行）、`docs/breakdowns/2026-08-24-codegraph-viewer-compare-breakdown.md`（199 行）；W1→W2→W3 串行，拍板 1/2/3/5 分别为 B/A/A/B。
+- 2026-08-24：`rg --files graph/webui/src | sort` -> 当前 webui 已有 `CodegraphPage`、`DomainPanorama`、`DomainDetail`、`domainlayout`、`domains` 及对应测试；`src/api/types.ts` 已存在且本任务不改其既有类型。
+- 2026-08-24：`git log --oneline --decorate -12` -> 当前 HEAD `b5c5979`，其父链包含 C1.3 spec、contract、breakdown 提交；本任务在 `cards/C1.3-w-viewer` 当前分支继续。
+- 2026-08-24：读取 `graph/codegraph/best.go`；已核实 Go 语义：`SubsystemOf` 对未知领域/断链/环返回空串，沿 `Parent` 链返回顶层领域；`Best.Containers` 是容器到叶领域映射。
+- 2026-08-24 W1 验证尝试：`npx vitest run src/app/codegraph/besttree.test.ts && npx tsc --noEmit -p tsconfig.app.json` 失败，原始输出：`npm error code EROFS`；`npm error syscall open`；`npm error path /root/.npm/_cacache/tmp/***`；`npm error rofs Invalid response body while trying to fetch https://registry.npmjs.org/vitest: EROFS: read-only file system`；`npm error Log files were not written due to an error writing to the directory: /root/.npm/_logs`。未据此判断代码结果。
+- 2026-08-24：`ls -l node_modules/.bin/vitest node_modules/.bin/tsc` -> `No such file or directory`；`test -d node_modules` -> `node_modules-absent`；`test -d graph/webui/node_modules` -> `webui-node_modules-absent`；发现 `graph/webui/package-lock.json`。
+- 2026-08-24：`npm ci --cache /root/.handoff/tmp/85260771/npm-cache` -> 退出 0，原始摘要：`added 168 packages, and audited 169 packages in 4s`；`found 0 vulnerabilities`。
+- 2026-08-24 W1 验证：`npx vitest run src/app/codegraph/besttree.test.ts && npx tsc --noEmit -p tsconfig.app.json` -> Vitest 原始摘要 `Test Files 1 passed (1)`、`Tests 5 passed (5)`；TypeScript 命令退出 0、无输出。
+- 2026-08-24 W1 双裁决第 1 轮：复核完整 `besttree.ts`/`besttree.test.ts` diff 后发现方向集合应严格只由 target contracts、legacyHits 键和 new-direction finding 组成；修正为不以 dead-contract/over-budget finding 新增方向，并让已声明方向尊重 report 的 over-budget 标记。随后 `npx vitest run src/app/codegraph/besttree.test.ts && npx tsc --noEmit -p tsconfig.app.json && git diff --check` 退出 0，Vitest `Test Files 1 passed (1)`、`Tests 5 passed (5)`，tsc/diff-check 无输出；spec 符合性与代码质量通过，无承重未决项。
+- 2026-08-24 W1 提交尝试：`git add graph/webui/src/app/codegraph/besttree.ts graph/webui/src/app/codegraph/besttree.test.ts docs/ledgers/2026-08-24-codegraph-viewer-compare-ledger.md && git commit -m 'impl(webui): C1.3 W1 besttree 纯函数层'` 失败，原始输出：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/85260771/index.lock': Read-only file system`。
