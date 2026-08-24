@@ -204,11 +204,13 @@ func contextPackages(v *View, g *Graph, subtree map[string]bool) []ContextPackag
 func contextInterfaces(v *View, subtree map[string]bool) []ContextInterface {
 	ids := map[string]bool{}
 	for _, edge := range v.Edges {
-		if edge.Status == "deleted" || v.Nodes[edge.From].Status == "deleted" || v.Nodes[edge.To].Status == "deleted" {
+		from, fromOK := v.Nodes[edge.From]
+		to, toOK := v.Nodes[edge.To]
+		if edge.Status == "deleted" || !fromOK || !toOK || from.Status == "deleted" || to.Status == "deleted" {
 			continue
 		}
-		fromDomain := nodeDomain(v, v.Nodes[edge.From].Node)
-		toDomain := nodeDomain(v, v.Nodes[edge.To].Node)
+		fromDomain := nodeDomain(v, from.Node)
+		toDomain := nodeDomain(v, to.Node)
 		if !subtree[fromDomain] && subtree[toDomain] {
 			ids[edge.To] = true
 		}
@@ -243,11 +245,13 @@ func contextFoci(v *View, subtree map[string]bool) []string {
 		}
 	}
 	for _, edge := range v.Edges {
-		if edge.Status == "deleted" || v.Nodes[edge.From].Status == "deleted" || v.Nodes[edge.To].Status == "deleted" {
+		from, fromOK := v.Nodes[edge.From]
+		to, toOK := v.Nodes[edge.To]
+		if edge.Status == "deleted" || !fromOK || !toOK || from.Status == "deleted" || to.Status == "deleted" {
 			continue
 		}
-		fromDomain := nodeDomain(v, v.Nodes[edge.From].Node)
-		toDomain := nodeDomain(v, v.Nodes[edge.To].Node)
+		fromDomain := nodeDomain(v, from.Node)
+		toDomain := nodeDomain(v, to.Node)
 		if !subtree[fromDomain] && subtree[toDomain] {
 			if focus[edge.To] == nil {
 				focus[edge.To] = &contextFocus{id: edge.To}

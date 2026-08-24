@@ -500,7 +500,12 @@ func graphQueryRunE(down, up bool) func(*cobra.Command, []string) error {
 			slog.Default().Error("graph query neighborhood failed", "command", cmd.Name(), "stage", "neighborhood", "error", err)
 			return err
 		}
-		assembled, err := codegraph.AssembleResult(v, r, graphRepo, graphQueryOptions())
+		opts := graphQueryOptions()
+		if err := validateGraphQueryOptions(opts); err != nil {
+			slog.Default().Error("graph query options rejected", "command", cmd.Name(), "stage", "options", "error", err)
+			return err
+		}
+		assembled, err := codegraph.AssembleResult(v, r, graphRepo, opts)
 		if err != nil {
 			slog.Default().Error("graph query assembly failed", "command", cmd.Name(), "stage", "assemble", "error", err)
 			return err
@@ -516,7 +521,11 @@ func graphQueryRunE(down, up bool) func(*cobra.Command, []string) error {
 			out.Stale = codegraph.CheckStale(graphRepo, subset)
 		}
 		slog.Default().Info("graph query completed", "command", cmd.Name(), "rawNodes", len(r.Nodes), "outputNodes", len(assembled.Nodes), "outputEdges", len(assembled.Edges), "truncated", assembled.Truncated != nil)
-		return graphPrintJSON(cmd, out)
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph query json output failed", "command", cmd.Name(), "stage", "json", "error", err)
+			return err
+		}
+		return nil
 	}
 }
 
@@ -528,6 +537,16 @@ func graphQueryOptions() codegraph.QueryOptions {
 func graphContextOptions() codegraph.QueryOptions {
 	return codegraph.QueryOptions{Full: graphFull, FoldExternal: graphFoldExternal, CollapseUtil: graphCollapseUtil,
 		WithSource: graphContextWithSource, SourceSpan: graphSourceSpan, MaxTokens: graphMaxTokens}
+}
+
+func validateGraphQueryOptions(opts codegraph.QueryOptions) error {
+	if opts.SourceSpan < 1 || opts.SourceSpan > codegraph.MaxSourceSpan {
+		return fmt.Errorf("source span %d out of range 1..%d", opts.SourceSpan, codegraph.MaxSourceSpan)
+	}
+	if opts.MaxTokens < 0 {
+		return fmt.Errorf("max tokens %d must be non-negative", opts.MaxTokens)
+	}
+	return nil
 }
 
 var graphChainCmd = &cobra.Command{
@@ -568,7 +587,12 @@ var graphContextCmd = &cobra.Command{
 			slog.Default().Error("graph context load failed", "domain", args[0], "stage", "load", "error", err)
 			return err
 		}
-		out, err := codegraph.AssembleContext(v, g, graphRepo, args[0], graphContextOptions())
+		opts := graphContextOptions()
+		if err := validateGraphQueryOptions(opts); err != nil {
+			slog.Default().Error("graph context options rejected", "domain", args[0], "stage", "options", "error", err)
+			return err
+		}
+		out, err := codegraph.AssembleContext(v, g, graphRepo, args[0], opts)
 		if err != nil {
 			slog.Default().Error("graph context assembly failed", "domain", args[0], "stage", "assemble", "error", err)
 			return err
@@ -577,7 +601,11 @@ var graphContextCmd = &cobra.Command{
 			out.Stale = nil
 		}
 		slog.Default().Info("graph context completed", "domain", args[0], "interfaces", len(out.Interfaces), "entities", len(out.Entities), "chainNodes", len(out.Chain.Nodes), "stale", len(out.Stale))
-		return graphPrintJSON(cmd, out)
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph context json output failed", "domain", args[0], "stage", "json", "error", err)
+			return err
+		}
+		return nil
 	},
 }
 

@@ -207,6 +207,139 @@ func TestAssembleResultSharedUtilNeedsThreeDomains(t *testing.T) {
 	}
 }
 
+func TestAssembleResultSharedUtilityWinsExternalFoldAndRepsHaveNoSource(t *testing.T) {
+	v := &View{
+		Containers: map[string]Container{
+			"focus": {Domain: "d_focus"}, "shared": {Domain: "d_external"},
+			"other-a": {Domain: "d_external"}, "other-b": {Domain: "d_external"},
+			"caller-a": {Domain: "d_a"}, "caller-b": {Domain: "d_b"}, "caller-c": {Domain: "d_c"},
+		},
+		Nodes: map[string]ViewNode{
+			"focus":    {Node: Node{Kind: "entry", Container: "focus", File: "cmd/run.go", Line: 1}},
+			"shared":   {Node: Node{Kind: "func", Container: "shared", Name: "Shared", File: "cmd/run.go", Line: 1}},
+			"other-a":  {Node: Node{Kind: "entry", Container: "other-a", File: "cmd/run.go", Line: 1}},
+			"other-b":  {Node: Node{Kind: "entry", Container: "other-b", File: "cmd/run.go", Line: 1}},
+			"caller-a": {Node: Node{Kind: "func", Container: "caller-a"}},
+			"caller-b": {Node: Node{Kind: "func", Container: "caller-b"}},
+			"caller-c": {Node: Node{Kind: "func", Container: "caller-c"}},
+		},
+		Edges: []ViewEdge{
+			{From: "caller-a", To: "shared"}, {From: "caller-b", To: "shared"}, {From: "caller-c", To: "shared"},
+		},
+	}
+	raw := &Result{View: "baseline", Foci: []string{"focus"}, Nodes: []ResultNode{
+		{ID: "focus", Dist: 0, ViewNode: v.Nodes["focus"]},
+		{ID: "shared", Dist: 1, ViewNode: v.Nodes["shared"]},
+		{ID: "other-a", Dist: 1, ViewNode: v.Nodes["other-a"]},
+		{ID: "other-b", Dist: 1, ViewNode: v.Nodes["other-b"]},
+	}}
+	result, err := AssembleResult(v, raw, "testdata/repo", QueryOptions{
+		FoldExternal: true, CollapseUtil: true, WithSource: true, SourceSpan: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shared *AssembledNode
+	var external *ExternalDomain
+	for _, item := range result.Nodes {
+		if item.Node != nil && item.Node.ID == "shared" {
+			shared = item.Node
+		}
+		if item.External != nil {
+			external = item.External
+		}
+	}
+	if shared == nil || shared.SharedBy != 3 || shared.Source == nil {
+		t.Fatalf("shared utility must remain an ordinary sourced item: %+v", shared)
+	}
+	if external == nil || external.Domain != "d_external" || external.Count != 2 || len(external.Representatives) != 2 {
+		t.Fatalf("external fold=%+v", external)
+	}
+	for _, representative := range external.Representatives {
+		if representative.Source != nil {
+			t.Fatalf("folded representative must not carry source: %+v", representative)
+		}
+	}
+}
+
+func TestAssembleResultKeepsDownstreamWithUncollapsedAlternatePath(t *testing.T) {
+	v := &View{
+		Containers: map[string]Container{
+			"focus": {Domain: "d_focus"}, "shared": {Domain: "d_shared"}, "alt": {Domain: "d_focus"},
+			"child": {Domain: "d_shared"}, "only": {Domain: "d_shared"},
+			"caller-a": {Domain: "d_a"}, "caller-b": {Domain: "d_b"}, "caller-c": {Domain: "d_c"},
+		},
+		Nodes: map[string]ViewNode{
+			"focus":    {Node: Node{Kind: "entry", Container: "focus"}},
+			"shared":   {Node: Node{Kind: "func", Container: "shared", Name: "Shared"}},
+			"alt":      {Node: Node{Kind: "func", Container: "alt", Name: "Alternate"}},
+			"child":    {Node: Node{Kind: "func", Container: "child", Name: "Child"}},
+			"only":     {Node: Node{Kind: "func", Container: "only", Name: "Only"}},
+			"caller-a": {Node: Node{Kind: "func", Container: "caller-a"}},
+			"caller-b": {Node: Node{Kind: "func", Container: "caller-b"}},
+			"caller-c": {Node: Node{Kind: "func", Container: "caller-c"}},
+		},
+		Edges: []ViewEdge{
+			{From: "caller-a", To: "shared"}, {From: "caller-b", To: "shared"}, {From: "caller-c", To: "shared"},
+			{From: "focus", To: "shared"}, {From: "shared", To: "child"}, {From: "shared", To: "only"},
+			{From: "focus", To: "alt"}, {From: "alt", To: "child"},
+		},
+	}
+	raw := &Result{View: "baseline", Foci: []string{"focus"}, Nodes: []ResultNode{
+		{ID: "focus", Dist: 0, ViewNode: v.Nodes["focus"]},
+		{ID: "shared", Dist: 1, ViewNode: v.Nodes["shared"]},
+		{ID: "alt", Dist: 1, ViewNode: v.Nodes["alt"]},
+		{ID: "child", Dist: 2, ViewNode: v.Nodes["child"]},
+		{ID: "only", Dist: 2, ViewNode: v.Nodes["only"]},
+	}}
+	result, err := AssembleResult(v, raw, "", QueryOptions{CollapseUtil: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, item := range result.Nodes {
+		if item.Node != nil {
+			got[item.Node.ID] = true
+		}
+	}
+	if !got["child"] {
+		t.Fatalf("alternate uncollapsed path must retain child: %v", got)
+	}
+	if got["only"] {
+		t.Fatalf("child reachable only through shared utility must be collapsed: %v", got)
+	}
+}
+
+func TestAssembleResultExternalRepresentativesUseRawIncomingEdges(t *testing.T) {
+	v := &View{
+		Containers: map[string]Container{
+			"focus": {Domain: "d_focus"}, "one": {Domain: "d_external"}, "two": {Domain: "d_external"}, "outside": {Domain: "d_outside"},
+		},
+		Nodes: map[string]ViewNode{
+			"focus":   {Node: Node{Kind: "entry", Container: "focus"}},
+			"one":     {Node: Node{Kind: "func", Container: "one", Name: "One"}},
+			"two":     {Node: Node{Kind: "func", Container: "two", Name: "Two"}},
+			"outside": {Node: Node{Kind: "func", Container: "outside", Name: "Outside"}},
+		},
+		Edges: []ViewEdge{{From: "focus", To: "two"}, {From: "outside", To: "one"}},
+	}
+	raw := &Result{View: "baseline", Foci: []string{"focus"}, Nodes: []ResultNode{
+		{ID: "focus", Dist: 0, ViewNode: v.Nodes["focus"]},
+		{ID: "one", Dist: 1, ViewNode: v.Nodes["one"]},
+		{ID: "two", Dist: 1, ViewNode: v.Nodes["two"]},
+	}}
+	result, err := AssembleResult(v, raw, "", QueryOptions{FoldExternal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Nodes) != 2 || result.Nodes[1].External == nil || len(result.Nodes[1].External.Representatives) != 2 {
+		t.Fatalf("external result=%+v", result.Nodes)
+	}
+	if got := result.Nodes[1].External.Representatives[0].ID; got != "two" {
+		t.Fatalf("representatives must rank raw-result incoming edges, got %q", got)
+	}
+}
+
 func TestAssembledItemJSONUnion(t *testing.T) {
 	node, err := json.Marshal(AssembledItem{Node: &AssembledNode{ID: "n", Dist: 0, Domain: "d"}})
 	if err != nil || !strings.Contains(string(node), `"id":"n"`) {

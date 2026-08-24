@@ -709,6 +709,37 @@ func TestGraphCLIQueryFlagsAndJSONWire(t *testing.T) {
 	if err == nil {
 		t.Fatal("context 必须拒绝多余领域参数")
 	}
+	_, _, err = runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo, "--source-span", "0")
+	if err == nil {
+		t.Fatal("source-span=0 必须拒绝，不能静默改成默认值")
+	}
+}
+
+func TestGraphQueryFlagsResetBeforeWhoCallsAndContext(t *testing.T) {
+	if _, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo,
+		"--full", "--fold-external=false", "--collapse-util=false", "--with-source", "--source-span", "1", "--max-tokens", "0"); err != nil {
+		t.Fatal(err)
+	}
+	who, _, err := runGraphSeparate(t, "who-calls", "n_do", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains([]byte(who), []byte(`"source"`)) || bytes.Contains([]byte(who), []byte(`"returns"`)) {
+		t.Fatalf("who-calls 不能继承前一条命令的 full/source flags: %s", who)
+	}
+	contextOut, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contextWire struct {
+		Chain json.RawMessage `json:"chain"`
+	}
+	if err := json.Unmarshal([]byte(contextOut), &contextWire); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contextWire.Chain, []byte(`"source"`)) {
+		t.Fatalf("context 默认必须保留源码窗口: %s", contextOut)
+	}
 }
 
 func TestGraphJSONWireKeepsIndentedEncoder(t *testing.T) {

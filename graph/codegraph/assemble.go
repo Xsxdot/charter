@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	// DefaultUtilSharedByDomains is the minimum number of caller domains for a shared node.
+	// DefaultUtilSharedByDomains fixes K≥3: 28 baseline nodes, versus 145 at K≥2 and 7 at K≥4.
 	DefaultUtilSharedByDomains = 3
-	// DefaultExternalRepresentatives bounds representatives in one folded domain item.
+	// DefaultExternalRepresentatives is 3: enough to identify a responsibility without replaying a list.
 	DefaultExternalRepresentatives = 3
-	// DefaultContextDepth is the fixed main-chain depth used by context.
+	// DefaultContextDepth is 3, aligned with the C1.10 cascade depth.
 	DefaultContextDepth = 3
-	// DefaultContextFocusQuota bounds context's main-chain focus set.
+	// DefaultContextFocusQuota is 5, using cross-domain incoming-edge order to bound focus volume.
 	DefaultContextFocusQuota = 5
 	// DefaultSourceSpan is the default source window size when source is requested.
 	DefaultSourceSpan = 40
@@ -124,16 +124,13 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 		slog.Default().Error("assemble result rejected nil input", "viewNil", v == nil, "resultNil", raw == nil)
 		return nil, fmt.Errorf("assemble result requires non-nil view and raw result")
 	}
-	if opts.SourceSpan == 0 && opts.WithSource {
-		opts.SourceSpan = DefaultSourceSpan
+	if opts.WithSource && opts.SourceSpan == 0 {
+		slog.Default().Error("assemble result rejected zero source span", "span", opts.SourceSpan)
+		return nil, fmt.Errorf("source span must be in range 1..%d", MaxSourceSpan)
 	}
 	if opts.SourceSpan < 0 || opts.SourceSpan > MaxSourceSpan {
 		slog.Default().Error("assemble result rejected source span", "span", opts.SourceSpan, "max", MaxSourceSpan)
 		return nil, fmt.Errorf("source span %d out of range 1..%d", opts.SourceSpan, MaxSourceSpan)
-	}
-	if opts.WithSource && opts.SourceSpan == 0 {
-		slog.Default().Error("assemble result rejected zero source span", "span", opts.SourceSpan)
-		return nil, fmt.Errorf("source span must be in range 1..%d", MaxSourceSpan)
 	}
 	if opts.MaxTokens < 0 {
 		slog.Default().Error("assemble result rejected token budget", "maxTokens", opts.MaxTokens)
@@ -157,11 +154,17 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 			}
 		}
 	}
-	collapsedDownstream := collapsedUtilityDownstream(v, sharedTargets)
 	focusIDs := map[string]bool{}
 	for _, id := range raw.Foci {
 		focusIDs[id] = true
 	}
+	rawIDs := map[string]bool{}
+	for _, rn := range raw.Nodes {
+		if vn, ok := v.Nodes[rn.ID]; ok && vn.Status != "deleted" {
+			rawIDs[rn.ID] = true
+		}
+	}
+	collapsedDownstream := collapsedUtilityDownstream(v, sharedTargets, rawIDs, focusIDs)
 	focusDomains := map[string]bool{}
 	for _, id := range raw.Foci {
 		if n, ok := v.Nodes[id]; ok && n.Status != "deleted" {
@@ -172,6 +175,7 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 	}
 
 	byExternal := map[string][]ResultNode{}
+	sourceCache := sourceFileCache{}
 	var candidates []assembledCandidate
 	for _, rn := range raw.Nodes {
 		vn, ok := v.Nodes[rn.ID]
@@ -184,11 +188,11 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 			continue
 		}
 		domain := nodeDomain(v, vn.Node)
-		if foldExternal && domain != "" && !focusDomains[domain] {
+		if foldExternal && !sharedTargets[rn.ID] && domain != "" && !focusDomains[domain] {
 			byExternal[domain] = append(byExternal[domain], rn)
 			continue
 		}
-		node, err := assembledNode(v, rn, opts, repoRoot, sharedValue(shared, rn.ID))
+		node, err := assembledNode(v, rn, opts, repoRoot, sourceCache, sharedValue(shared, rn.ID))
 		if err != nil {
 			return nil, err
 		}
@@ -197,8 +201,8 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 	for domain, nodes := range byExternal {
 		reps := append([]ResultNode(nil), nodes...)
 		sort.SliceStable(reps, func(i, j int) bool {
-			iCount := liveIncoming(v, reps[i].ID)
-			jCount := liveIncoming(v, reps[j].ID)
+			iCount := liveIncoming(v, reps[i].ID, rawIDs)
+			jCount := liveIncoming(v, reps[j].ID, rawIDs)
 			if iCount != jCount {
 				return iCount > jCount
 			}
@@ -209,7 +213,9 @@ func AssembleResult(v *View, raw *Result, repoRoot string, opts QueryOptions) (*
 		}
 		external := ExternalDomain{Domain: domain, Count: len(nodes), Representatives: make([]AssembledNode, 0, len(reps))}
 		for _, rn := range reps {
-			node, err := assembledNode(v, rn, opts, repoRoot, sharedValue(shared, rn.ID))
+			representativeOpts := opts
+			representativeOpts.WithSource = false
+			node, err := assembledNode(v, rn, representativeOpts, repoRoot, sourceCache, sharedValue(shared, rn.ID))
 			if err != nil {
 				return nil, err
 			}
@@ -289,7 +295,7 @@ func nodeDomain(v *View, n Node) string {
 	return ""
 }
 
-func assembledNode(v *View, rn ResultNode, opts QueryOptions, repoRoot string, sharedBy int) (AssembledNode, error) {
+func assembledNode(v *View, rn ResultNode, opts QueryOptions, repoRoot string, sourceCache sourceFileCache, sharedBy int) (AssembledNode, error) {
 	n := rn.Node
 	result := AssembledNode{ID: rn.ID, Dist: rn.Dist, Kind: n.Kind, Name: n.Name, File: n.File, Line: n.Line,
 		Signature: n.Signature, Summary: n.Summary, Status: rn.Status, Domain: nodeDomain(v, n), SharedBy: sharedBy}
@@ -301,7 +307,7 @@ func assembledNode(v *View, rn ResultNode, opts QueryOptions, repoRoot string, s
 	if opts.WithSource && !n.Unscanned && n.File != "" {
 		line, status := ReAnchor(repoRoot, n)
 		result.Line = line
-		window, err := ExtractSourceWindow(repoRoot, n, line, opts.SourceSpan)
+		window, err := sourceCache.window(repoRoot, n, line, opts.SourceSpan)
 		if err != nil {
 			slog.Default().Warn("source window unavailable", "file", n.File, "line", line, "status", status, "error", err)
 		} else {
@@ -315,10 +321,12 @@ func assembledNode(v *View, rn ResultNode, opts QueryOptions, repoRoot string, s
 func sharedCallerDomains(v *View) map[string]int {
 	callers := map[string]map[string]bool{}
 	for _, e := range v.Edges {
-		if e.Status == "deleted" || v.Nodes[e.From].Status == "deleted" || v.Nodes[e.To].Status == "deleted" {
+		from, fromOK := v.Nodes[e.From]
+		to, toOK := v.Nodes[e.To]
+		if e.Status == "deleted" || !fromOK || !toOK || from.Status == "deleted" || to.Status == "deleted" {
 			continue
 		}
-		domain := nodeDomain(v, v.Nodes[e.From].Node)
+		domain := nodeDomain(v, from.Node)
 		if domain == "" {
 			continue
 		}
@@ -334,25 +342,67 @@ func sharedCallerDomains(v *View) map[string]int {
 	return out
 }
 
-func collapsedUtilityDownstream(v *View, targets map[string]bool) map[string]bool {
-	out := map[string]bool{}
+func collapsedUtilityDownstream(v *View, targets, rawIDs, focusIDs map[string]bool) map[string]bool {
+	// A node is omitted only when every raw path from a focus crosses a shared
+	// target. Treat shared targets as barriers so an alternate uncollapsed path
+	// keeps its downstream node visible.
+	withoutShared := map[string]bool{}
+	frontier := make([]string, 0, len(focusIDs))
+	for id := range focusIDs {
+		if rawIDs[id] {
+			withoutShared[id] = true
+			frontier = append(frontier, id)
+		}
+	}
+	for len(frontier) > 0 {
+		id := frontier[0]
+		frontier = frontier[1:]
+		if targets[id] {
+			continue
+		}
+		for _, edge := range v.Edges {
+			if edge.From != id || edge.Status == "deleted" || !rawIDs[edge.To] || withoutShared[edge.To] {
+				continue
+			}
+			from, fromOK := v.Nodes[edge.From]
+			to, toOK := v.Nodes[edge.To]
+			if !fromOK || !toOK || from.Status == "deleted" || to.Status == "deleted" {
+				continue
+			}
+			withoutShared[edge.To] = true
+			frontier = append(frontier, edge.To)
+		}
+	}
+
+	throughShared := map[string]bool{}
 	for target := range targets {
-		frontier := []string{target}
+		if !rawIDs[target] {
+			continue
+		}
+		queue := []string{target}
 		seen := map[string]bool{target: true}
-		for len(frontier) > 0 {
-			id := frontier[0]
-			frontier = frontier[1:]
+		for len(queue) > 0 {
+			id := queue[0]
+			queue = queue[1:]
 			for _, edge := range v.Edges {
-				if edge.From != id || edge.Status == "deleted" || v.Nodes[edge.From].Status == "deleted" || v.Nodes[edge.To].Status == "deleted" {
+				if edge.From != id || edge.Status == "deleted" || !rawIDs[edge.To] || seen[edge.To] {
 					continue
 				}
-				if seen[edge.To] {
+				from, fromOK := v.Nodes[edge.From]
+				to, toOK := v.Nodes[edge.To]
+				if !fromOK || !toOK || from.Status == "deleted" || to.Status == "deleted" {
 					continue
 				}
 				seen[edge.To] = true
-				out[edge.To] = true
-				frontier = append(frontier, edge.To)
+				throughShared[edge.To] = true
+				queue = append(queue, edge.To)
 			}
+		}
+	}
+	out := map[string]bool{}
+	for id := range throughShared {
+		if !targets[id] && !focusIDs[id] && !withoutShared[id] {
+			out[id] = true
 		}
 	}
 	return out
@@ -365,10 +415,12 @@ func sharedValue(shared map[string]int, id string) int {
 	return 0
 }
 
-func liveIncoming(v *View, id string) int {
+func liveIncoming(v *View, id string, within map[string]bool) int {
 	count := 0
 	for _, e := range v.Edges {
-		if e.To == id && e.Status != "deleted" && v.Nodes[e.From].Status != "deleted" && v.Nodes[e.To].Status != "deleted" {
+		from, fromOK := v.Nodes[e.From]
+		to, toOK := v.Nodes[e.To]
+		if e.To == id && within[e.From] && e.Status != "deleted" && fromOK && toOK && from.Status != "deleted" && to.Status != "deleted" {
 			count++
 		}
 	}

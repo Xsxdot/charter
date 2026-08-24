@@ -74,3 +74,28 @@ func TestAssembleContextFocusQuota(t *testing.T) {
 		t.Fatalf("focus quota=%+v", result.FociTruncated)
 	}
 }
+
+func TestAssembleContextEntitiesFollowNodeIDOrder(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	for id, name := range map[string]string{"z_model": "Alpha", "a_model": "Zulu"} {
+		n := Node{Kind: "model", Container: "c_svc", Name: name, File: "svc/task.go", Line: 1, ModelKind: ModelKindEntity}
+		g.Nodes[id] = n
+		v.Nodes[id] = ViewNode{Node: n}
+	}
+	g.Containers["c_svc"] = Container{Domain: "d_svc"}
+	v.Containers["c_svc"] = g.Containers["c_svc"]
+	result, err := AssembleContext(v, g, "testdata/repo", "d_svc", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entities) < 2 {
+		t.Fatalf("entities=%+v", result.Entities)
+	}
+	if result.Entities[0].Model.ID != "a_model" || result.Entities[1].Model.ID != "z_model" {
+		t.Fatalf("entities must follow node id order: %+v", result.Entities)
+	}
+}
