@@ -9,6 +9,7 @@
 // 边界：项目选择不属于 viewer；只从 iframe 自身 URL 的 ?project= 读取。
 import { useMemo, useState } from 'react'
 import { CallTree } from './CallTree'
+import { BestDetail } from './BestDetail'
 import { BestPanorama } from './BestPanorama'
 import { DetailPanel } from './DetailPanel'
 import { DomainDetail } from './DomainDetail'
@@ -161,8 +162,11 @@ export function CodegraphPage() {
             </div>
           )}
           {bestPano ? (
-            <BestPanorama best={data.best!} target={data.target} report={data.report}
-              selectedSubsystem={selDomain} onSelectSubsystem={(id) => { setSelDomain(id); setSelEdge('') }} />
+            <>
+              <BestPanorama best={data.best!} target={data.target} report={data.report}
+                selectedSubsystem={selDomain} onSelectSubsystem={(id) => { setSelDomain(id); setSelEdge('') }} />
+              <BestDetail best={data.best!} baseline={data.baseline} report={data.report} subsystemId={selDomain} />
+            </>
           ) : pano ? (
             <>
               <DomainPanorama view={view} scope={scope} selectedDomain={selDomain} selectedEdge={selEdge}

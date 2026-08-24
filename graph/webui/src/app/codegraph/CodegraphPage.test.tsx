@@ -148,6 +148,15 @@ describe('CodegraphPage 三态下钻', () => {
     expect(container.querySelector('[data-enforcement="none"]')?.textContent).toBe('无数据')
   })
 
+  it('点击理想子系统卡后接出理想详情面板', async () => {
+    state.data = bestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-detail="s_api"]')).toBeTruthy())
+    expect(container.querySelector('[data-best-domain="s_api_read"]')).toBeTruthy()
+  })
+
   it('选中分支视图时回落现状域全景并显示主线对照说明', async () => {
     state.data = bestResp
     const { container } = render(<CodegraphPage />)
