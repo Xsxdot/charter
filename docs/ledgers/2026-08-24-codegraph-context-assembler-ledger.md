@@ -41,6 +41,7 @@
 - 2026-08-25：暂存审计：`git diff --cached --check` 退出码 `0`、原始输出为空；`git diff --cached --stat` 原始输出为台账 13 行新增、计划 513 行新增，共 2 文件/526 行；`git status --short --branch` 原始输出为 `## cards/C1.5-charter-3`、台账 M 和计划 A 均已暂存；`git diff --cached --name-only` 仅列法定台账与 `docs/superpowers/plans/c1.5-plan.md`。
 - 2026-08-25：计划结构扫描 `rg -n '^## (1|2|3|4|5|6|7)|^Task [A-E]|^### Interfaces|^### 实现步骤|^### 文件集' docs/superpowers/plans/c1.5-plan.md` 命中 A～E 五个 task、各自文件集/Interfaces/实现步骤，以及协调者真机与自审段；未发现任务缺失。
 - 2026-08-25：提交前复跑暂存门禁：`git diff --cached --check` 退出码 `0`、原始输出为空；`git diff --cached --stat` 原始输出为台账 15 行新增、计划 513 行新增，共 2 文件/528 行；`git status --short --branch` 原始输出为 `## cards/C1.5-charter-3`，仅法定台账和计划已暂存。
+- 2026-08-25：执行 `git commit -m 'docs(plan): C1.5 CLI context assembler implementation plan'` 成功；原始输出为 `[cards/C1.5-charter-3 d95d53b] docs(plan): C1.5 CLI context assembler implementation plan`、`2 files changed, 529 insertions(+)`，法定计划已入库。
 - 2026-08-25：本轮读取 `/root/.codex/skills/handoff/SKILL.md`、`skills/breakdown/SKILL.md`、`skills/architecture-law/SKILL.md`；任务属于 handoff executor 的 breakdown 节点，且平台不变量禁止调用 handoff CLI、派发或启动子任务。
 - 2026-08-25：`git status --short --branch` 原始输出为 `## cards/C1.5-charter-2`，当前工作树无已报告改动；分支与历史台账记录的 `cards/C1.5-charter` 不同，未据此切换分支。
 - 2026-08-25：`docs/specs/2026-08-23-codegraph-context-assembler-spec.md:3-5` 实读为上游 spec「已批准」且卡号 `C1.5`；本轮以该状态作为拆解上游状态位。
