@@ -2,7 +2,8 @@
 //
 // 职责：把 best/target/report 变成 BestPanorama 与 BestDetail 所需的稳定读数。
 // 边界：不读 baseline 的边、不发请求、不碰 DOM；组件只负责渲染和交互。
-import type { CgBest, CgBestDomain, CgCheckReport, CgFinding, CgTarget } from '../../api/types'
+//       唯一读 baseline 节点的地方是 containerFacts——它只取文件目录与节点计数这两个事实。
+import type { CgBest, CgBestDomain, CgCheckReport, CgFinding, CgGraph, CgTarget } from '../../api/types'
 
 export interface BestSubsystem {
   id: string
@@ -142,19 +143,76 @@ export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record
   return result
 }
 
+export interface ContainerFacts {
+  dir: string
+  nodeCount: number
+}
+
+export interface BestPackageGroup {
+  dir: string
+  label: string
+  containerIds: string[]
+}
+
 export interface BestContainerGroup {
   domainId: string
   label: string
   depth: number
   containerIds: string[]
+  packages: BestPackageGroup[]
   totalCount: number
 }
 
 /**
- * 把子系统下的归属容器按所属领域折成前序分组树，depth 即嵌套层级（0 为子系统本身）。
+ * 容器的两个事实读数：所在包目录与节点数。
+ * 包目录取容器内节点的文件目录；同一容器的节点分散在多个目录时留空——不猜一个出来。
+ */
+export function containerFacts(graph: CgGraph | undefined): Record<string, ContainerFacts> {
+  const dirs: Record<string, Set<string>> = {}
+  const counts: Record<string, number> = {}
+  for (const node of Object.values(graph?.nodes ?? {})) {
+    if (!node.container) continue
+    counts[node.container] = (counts[node.container] ?? 0) + 1
+    if (!node.file) continue
+    const slash = node.file.lastIndexOf('/')
+    ;(dirs[node.container] ??= new Set()).add(slash < 0 ? '' : node.file.slice(0, slash))
+  }
+  const result: Record<string, ContainerFacts> = {}
+  for (const containerId of Object.keys(graph?.containers ?? {})) {
+    const seen = dirs[containerId]
+    result[containerId] = {
+      dir: seen && seen.size === 1 ? [...seen][0] : '',
+      nodeCount: counts[containerId] ?? 0,
+    }
+  }
+  return result
+}
+
+/** 包目录折成展示名：取最后一段，未知包统一叫「未归包」。 */
+function packageLabel(dir: string): string {
+  if (!dir) return '未归包'
+  const slash = dir.lastIndexOf('/')
+  return slash < 0 ? dir : dir.slice(slash + 1)
+}
+
+function groupByPackage(containerIds: string[], facts: Record<string, ContainerFacts>): BestPackageGroup[] {
+  const byDir: Record<string, string[]> = {}
+  for (const containerId of containerIds) {
+    (byDir[facts[containerId]?.dir ?? ''] ??= []).push(containerId)
+  }
+  return Object.keys(byDir).sort().map((dir) => ({ dir, label: packageLabel(dir), containerIds: byDir[dir] }))
+}
+
+/**
+ * 把子系统下的归属容器按所属领域折成前序分组树，depth 即嵌套层级（0 为子系统本身），
+ * 每个领域内再按包目录折一级——包是代码事实（目录），不是应然结构，所以只活在这里，不进 best。
  * 整棵子树都没有容器的领域不出现——它在容器视角下没有读数，列出来只会增加噪音。
  */
-export function groupContainersBySubdomain(best: CgBest, subsystemId: string): BestContainerGroup[] {
+export function groupContainersBySubdomain(
+  best: CgBest,
+  subsystemId: string,
+  facts: Record<string, ContainerFacts> = {},
+): BestContainerGroup[] {
   if (!best.domains[subsystemId]) return []
   const byDomain: Record<string, string[]> = {}
   for (const [containerId, domainId] of Object.entries(best.containers)) {
@@ -174,6 +232,7 @@ export function groupContainersBySubdomain(best: CgBest, subsystemId: string): B
       label: best.domains[domainId]?.label ?? domainId,
       depth,
       containerIds: own,
+      packages: groupByPackage(own, facts),
       totalCount: own.length,
     }
     out.push(group)

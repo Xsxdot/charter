@@ -2,8 +2,10 @@
 //
 // 与 DomainDetail 平行但不混用语义：这里的领域和容器来自 best，应然归属；
 // misplaced 行再把 baseline 的现状领域接上，明确显示「现在在」与「应归」。
+import { useMemo } from 'react'
 import type { CgBest, CgCheckReport, CgGraph } from '../../api/types'
-import { bestSubsystems, groupContainersBySubdomain, subsystemOf } from './besttree'
+import type { ContainerFacts } from './besttree'
+import { bestSubsystems, containerFacts, groupContainersBySubdomain, subsystemOf } from './besttree'
 
 interface BestDetailProps {
   best: CgBest
@@ -14,6 +16,16 @@ interface BestDetailProps {
 
 // 容器多到需要折叠时才默认收起；小分组保持展开，避免每看一眼都要点开。
 const GROUP_OPEN_LIMIT = 12
+
+// 包分组一律默认收起：它存在的理由就是把几十行容器换成一行组名，默认展开等于没分组。
+function ContainerRow({ id, label, facts }: { id: string; label: string; facts?: ContainerFacts }) {
+  return (
+    <div data-best-container={id} className="flex justify-between gap-2 py-0.5 pl-4 text-xs">
+      <span className="font-mono">{label}</span>
+      {facts ? <span className="shrink-0 text-[11px] text-muted-foreground">{facts.nodeCount} 节点</span> : null}
+    </div>
+  )
+}
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -61,8 +73,10 @@ export function BestDetail({ best, baseline, report, subsystemId }: BestDetailPr
   const subsystem = bestSubsystems(best).find((item) => item.id === subsystemId)
   if (!subsystem) return <aside data-best-detail className={shell} />
 
-  const groups = groupContainersBySubdomain(best, subsystemId)
+  const facts = useMemo(() => containerFacts(baseline), [baseline])
+  const groups = groupContainersBySubdomain(best, subsystemId, facts)
   const assignedCount = groups.find((group) => group.depth === 0)?.totalCount ?? 0
+  const containerLabel = (containerId: string) => baseline.containers[containerId]?.label ?? containerId
 
   const misplaced = (report?.warns ?? []).flatMap((finding) => {
     if (finding.kind !== 'container-misplaced' || !finding.from) return []
@@ -102,33 +116,45 @@ export function BestDetail({ best, baseline, report, subsystemId }: BestDetailPr
       <Section label={`归属容器 · ${assignedCount}`}>
         {groups.length ? (
           <div data-best-containers>
-            {groups.map((group) => (
-              <details
-                key={group.domainId}
-                data-best-container-group={group.domainId}
-                open={group.containerIds.length > 0 && group.containerIds.length <= GROUP_OPEN_LIMIT}
-                style={{ marginLeft: group.depth * 10 }}
-                className="py-0.5"
-              >
-                <summary className="cursor-pointer list-none text-xs">
-                  <span className="mr-1 text-muted-foreground">{group.containerIds.length ? '▸' : '·'}</span>
-                  {group.label}
-                  <span className="ml-1.5 text-[11px] text-muted-foreground">
-                    {group.containerIds.length}
-                    {group.totalCount !== group.containerIds.length ? ` / ${group.totalCount}` : ''}
-                  </span>
-                </summary>
-                {group.containerIds.map((containerId) => (
-                  <div
-                    key={containerId}
-                    data-best-container={containerId}
-                    className="py-0.5 pl-4 font-mono text-xs"
-                  >
-                    {baseline.containers[containerId]?.label ?? containerId}
-                  </div>
-                ))}
-              </details>
-            ))}
+            {groups.map((group) => {
+              const grouped = group.packages.length > 1
+              return (
+                <details
+                  key={group.domainId}
+                  data-best-container-group={group.domainId}
+                  open={group.containerIds.length > 0 && (grouped || group.containerIds.length <= GROUP_OPEN_LIMIT)}
+                  style={{ marginLeft: group.depth * 10 }}
+                  className="py-0.5"
+                >
+                  <summary className="cursor-pointer list-none text-xs">
+                    <span className="mr-1 text-muted-foreground">{group.containerIds.length ? '▸' : '·'}</span>
+                    {group.label}
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">
+                      {group.containerIds.length}
+                      {group.totalCount !== group.containerIds.length ? ` / ${group.totalCount}` : ''}
+                      {grouped ? ` · ${group.packages.length} 包` : ''}
+                    </span>
+                  </summary>
+                  {grouped
+                    ? group.packages.map((pkg) => (
+                      <details key={pkg.dir} data-best-package-group={pkg.dir || '未归包'} className="ml-3 py-0.5">
+                        <summary className="cursor-pointer list-none text-xs">
+                          <span className="mr-1 text-muted-foreground">▸</span>
+                          <span className="font-mono">{pkg.label}</span>
+                          <span className="ml-1.5 text-[11px] text-muted-foreground">{pkg.containerIds.length}</span>
+                          {pkg.dir ? <div className="pl-4 text-[11px] text-muted-foreground">{pkg.dir}</div> : null}
+                        </summary>
+                        {pkg.containerIds.map((containerId) => (
+                          <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]} />
+                        ))}
+                      </details>
+                    ))
+                    : group.containerIds.map((containerId) => (
+                      <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]} />
+                    ))}
+                </details>
+              )
+            })}
           </div>
         ) : <div className="text-xs text-muted-foreground">暂无归属容器</div>}
       </Section>

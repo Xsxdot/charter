@@ -24,7 +24,11 @@ const baseline: CgGraph = {
     c_in: { label: '输入容器', kind: '服务', domain: 's_store' },
     c_out: { label: '输出容器', kind: '服务', domain: 's_api_inner' },
   },
-  nodes: {},
+  nodes: {
+    n_in: { kind: 'func', container: 'c_in', name: 'In', file: 'internal/read/in.go', line: 1 },
+    n_in2: { kind: 'func', container: 'c_in', name: 'In2', file: 'internal/read/in2.go', line: 2 },
+    n_out: { kind: 'model', container: 'c_out', name: 'Out', file: 'internal/store/out.go', line: 1 },
+  },
   edges: [],
 }
 const report: CgCheckReport = {
@@ -50,6 +54,30 @@ describe('BestDetail', () => {
     const rows = [...container.querySelectorAll('[data-best-misplaced-item]')].map((row) => row.textContent)
     expect(rows).toContain('c_in现在在 现状存储 · 应归 读取')
     expect(rows).toContain('c_out现在在 现状 API 内部 · 应归 存储')
+  })
+
+  it('一个领域跨多个包时折出包分组，默认收起且带目录', () => {
+    const multi: CgBest = {
+      meta: { version: 1, project: 'demo' },
+      domains: { s_api: { label: 'API', responsibility: '对外服务', type: 'boundary' } },
+      containers: { c_in: 's_api', c_out: 's_api' },
+    }
+    const { container } = render(<BestDetail best={multi} baseline={baseline} subsystemId="s_api" />)
+    const packages = [...container.querySelectorAll('[data-best-package-group]')]
+    expect(packages.map((group) => group.getAttribute('data-best-package-group'))).toEqual(['internal/read', 'internal/store'])
+    expect(packages.every((group) => !(group as HTMLDetailsElement).open)).toBe(true)
+    expect(screen.getByText('internal/read')).toBeTruthy()
+  })
+
+  it('领域只有一个包时不加多余层级，容器直接列出', () => {
+    const single: CgBest = {
+      meta: { version: 1, project: 'demo' },
+      domains: { s_api: { label: 'API', responsibility: '对外服务' } },
+      containers: { c_in: 's_api' },
+    }
+    const { container } = render(<BestDetail best={single} baseline={baseline} subsystemId="s_api" />)
+    expect(container.querySelectorAll('[data-best-package-group]').length).toBe(0)
+    expect(container.querySelector('[data-best-container="c_in"]')?.textContent).toContain('2 节点')
   })
 
   it('未选择子系统时渲染稳定空壳', () => {

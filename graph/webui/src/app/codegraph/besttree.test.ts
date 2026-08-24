@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { CgBest, CgCheckReport, CgTarget } from '../../api/types'
+import type { CgBest, CgCheckReport, CgGraph, CgTarget } from '../../api/types'
 import {
   aggregateBestCards,
   assembleDirections,
   bestSubsystems,
   classifyFinding,
+  containerFacts,
   containerSubsystems,
   enforcementReadout,
   groupContainersBySubdomain,
@@ -129,5 +130,63 @@ describe('groupContainersBySubdomain', () => {
 
   it('子系统整体无容器或 id 未知时返回空数组', () => {
     expect(groupContainersBySubdomain(best, 'ss_unknown')).toEqual([])
+  })
+})
+
+const graph: CgGraph = {
+  meta: { project: 'demo', branch: 'main', commit: 'abc', scannedAt: 'today', generator: 'test' },
+  containers: {
+    c_api: { label: 'API 容器', kind: '类型方法' },
+    c_api_detail: { label: '详情容器', kind: '类型方法' },
+    c_store: { label: '存储容器', kind: '实体' },
+    c_split: { label: '跨目录容器', kind: '函数组' },
+  },
+  nodes: {
+    n1: { kind: 'func', container: 'c_api', name: 'A', file: 'internal/api/a.go', line: 1 },
+    n2: { kind: 'func', container: 'c_api', name: 'B', file: 'internal/api/b.go', line: 1 },
+    n3: { kind: 'func', container: 'c_api_detail', name: 'C', file: 'internal/api/detail/c.go', line: 1 },
+    n4: { kind: 'model', container: 'c_store', name: 'D', file: 'internal/store/d.go', line: 1 },
+    n5: { kind: 'func', container: 'c_split', name: 'E', file: 'internal/one/e.go', line: 1 },
+    n6: { kind: 'func', container: 'c_split', name: 'F', file: 'internal/two/f.go', line: 1 },
+  },
+  edges: [],
+}
+
+describe('containerFacts', () => {
+  it('目录唯一时给出包目录，并数出节点数', () => {
+    const facts = containerFacts(graph)
+    expect(facts.c_api).toEqual({ dir: 'internal/api', nodeCount: 2 })
+    expect(facts.c_api_detail).toEqual({ dir: 'internal/api/detail', nodeCount: 1 })
+  })
+
+  it('同一容器跨目录时不猜包目录，留空', () => {
+    expect(containerFacts(graph).c_split).toEqual({ dir: '', nodeCount: 2 })
+  })
+
+  it('零节点容器仍然出现在结果里', () => {
+    const empty: CgGraph = { ...graph, nodes: {} }
+    expect(containerFacts(empty).c_api).toEqual({ dir: '', nodeCount: 0 })
+  })
+})
+
+describe('groupContainersBySubdomain 的包分层', () => {
+  it('按包目录折出二级分组，标签取目录最后一段', () => {
+    const nested: CgBest = {
+      meta: { version: 1, project: 'demo' },
+      domains: { ss_x: { label: 'X', responsibility: '' } },
+      containers: { c_api: 'ss_x', c_api_detail: 'ss_x', c_store: 'ss_x' },
+    }
+    const groups = groupContainersBySubdomain(nested, 'ss_x', containerFacts(graph))
+    expect(groups[0].packages.map((pkg) => [pkg.dir, pkg.label, pkg.containerIds])).toEqual([
+      ['internal/api', 'api', ['c_api']],
+      ['internal/api/detail', 'detail', ['c_api_detail']],
+      ['internal/store', 'store', ['c_store']],
+    ])
+  })
+
+  it('缺 facts 时全部落进单个未归包分组，不凭容器 id 猜包', () => {
+    const groups = groupContainersBySubdomain(best, 'ss_api')
+    const readDomain = groups.find((group) => group.domainId === 'api_read')!
+    expect(readDomain.packages).toEqual([{ dir: '', label: '未归包', containerIds: ['c_api'] }])
   })
 })
