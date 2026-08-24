@@ -114,6 +114,13 @@ export function BestDetail({
     <aside data-best-detail={subsystemId} className={shell}>
       <h3 className="font-mono text-sm font-semibold">
         {subsystem.label} <span className="font-sans text-[11px] font-normal text-muted-foreground">{subsystem.type || '未分类'}</span>
+        {onEnterDomain ? (
+          <button type="button" data-best-enter-subsystem={subsystemId} title="进入子系统内部（嵌套全景）"
+            onClick={() => onEnterDomain(subsystemId)}
+            className="ml-2 rounded border px-1.5 text-[10px] font-sans font-normal hover:bg-muted">
+            进入 ▸
+          </button>
+        ) : null}
       </h3>
       <div className="mb-2.5 font-mono text-[11px] text-muted-foreground">理想子系统 · {subsystem.responsibility}</div>
 

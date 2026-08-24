@@ -97,3 +97,15 @@ describe('BestDetail', () => {
     expect(container.querySelector('[data-best-container="c_in"][data-selected="true"]')).toBeTruthy()
   })
 })
+
+describe('BestDetail 子系统级进入', () => {
+  it('标题旁提供进入子系统嵌套层的按钮——原型基准：每层可入', () => {
+    const onEnterDomain = vi.fn()
+    const { container } = render(<BestDetail best={best} baseline={baseline} report={report}
+      subsystemId="s_api" onEnterDomain={onEnterDomain} />)
+    const btn = container.querySelector('[data-best-enter-subsystem="s_api"]') as HTMLElement
+    expect(btn).toBeTruthy()
+    fireEvent.click(btn)
+    expect(onEnterDomain).toHaveBeenCalledWith('s_api')
+  })
+})
