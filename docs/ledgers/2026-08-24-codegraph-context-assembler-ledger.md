@@ -168,3 +168,4 @@
 - 2026-08-25：首次执行显式 `git add` 失败，退出码 `128`；原始报错为 `fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/8c8cbd7a/index.lock': Read-only file system`。未据此回退源码，待获 Git 元数据写权限后重试。
 - 2026-08-25：获 Git 元数据写权限后重试显式 `git add` 成功，随后 `git diff --cached --check && git diff --cached --stat && git status --short --branch` 成功；cached diff check 无输出，暂存统计为 `8 files changed, 398 insertions(+), 44 deletions(-)`，8 个文件均 staged，分支 `cards/C1.5-review-1`。
 - 2026-08-25：再次暂存台账后执行 `git diff --cached --check && git diff --cached --stat` 成功；cached diff check 无输出，统计为 `8 files changed, 399 insertions(+), 44 deletions(-)`。
+- 2026-08-25：执行 `git commit -m 'fix(codegraph): tighten context assembly output'` 成功，原始输出为 `[cards/C1.5-review-1 1063eee] fix(codegraph): tighten context assembly output`、`8 files changed, 400 insertions(+), 44 deletions(-)`；未 push。
