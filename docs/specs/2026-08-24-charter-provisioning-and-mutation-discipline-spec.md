@@ -74,12 +74,22 @@ charter 这套方法论今天**装不回去，也测不出它有没有漂**。
 
 ### 顺带发现的一颗雷（纳入本期）
 
-模板 `charter-default` v4 的缺省 `discipline` 字段值为 `"implement"`，而
-`~/.handoff/discipline/` 下只有 `charter-*.md` 七个文件，**没有 `implement.md`**。
-今天不炸是因为工作流定义里每个派发节点都写了 `override.discipline`（如 `charter-contract`）
-盖掉它。将来新增一个忘写 override 的节点，就会解析到一个不存在的纪律块。
+> **contract 节点更正（2026-08-24）**：本节初稿断言缺省 `discipline: "implement"` 会
+> 「解析到一个不存在的纪律块」，**该断言经查证不成立**，性质恰好相反，已按代码事实改写如下。
+> 更正依据见契约文档 `docs/contracts/2026-08-24-charter-provisioning-contract.md` 条 C-9。
 
-导出模板到仓内时必然要面对这个字段，顺手修掉，不留给下一个人。
+模板 `charter-default` v4 的缺省 `discipline` 字段值为 `"implement"`。它是一个**合法的
+内置角色名**（handoff 内置五个：implement / review / spec-draft / plan-writing / finishing），
+解析时先找 `~/.handoff/discipline/implement.md`（不存在），再落到**内置 implement 块**——
+按执行器能力选 subagent 或 single-context 档。所以它既不报错，也不悬空。
+
+真正的风险是它**不报错**：charter 的七个纪律块是以覆盖文件形态存在的
+（`~/.handoff/discipline/charter-*.md`），必须由节点的 `override.discipline` 点名才会被用上。
+将来新增一个忘写 override 的派发节点，会**静默拿到通用内置 implement 块**，不报错、不告警——
+执行者以为自己在跑 charter 纪律，实际跑的是通用实现纪律。handoff 自己在
+`internal/ledger/templates.go:27-30` 记过同形态的教训（「审阅模板悄悄拿到实现块」）。
+
+导出模板到仓内时必然要面对这个字段，顺手处置，不留给下一个人。
 
 ## 定级判决
 
