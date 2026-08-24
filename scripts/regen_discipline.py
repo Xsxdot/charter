@@ -46,10 +46,15 @@ def compose_map():
 def regen(out=OUT):
     """把 skills/ 正文生成为纪律块，落到 out 目录。
 
-    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。目录必须已存在。
+    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。不存在则建。
     返回：{块名: 字节数}，供调用方打印或断言。
     注意：逐文件写、非原子——中途失败会留下新旧混合的半装状态（已知欠账，见 roadmap 第 16 条）。
+
+    为什么要自己建目录：handoff 只建 DataDir，它的 discipline 子目录是「谁先写谁建」，
+    而 agentd 只在自己写块时才建。全新机器上装 charter 时它并不存在——不建就是
+    换机重装（本方案的头号场景）必失败，且本机验证因目录早已存在而看不见。
     """
+    os.makedirs(out, exist_ok=True)
     sizes = {}
     for name, parts in compose_map().items():
         path = f"{out}/charter-{name}.md"

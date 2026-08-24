@@ -688,7 +688,14 @@ class LedgerUnavailable(RuntimeError):
 1. 步骤 1 退出码 0；
 2. 步骤 2 全绿；
 3. 步骤 4 输出 7 行、权限 `0600`；
-4. **步骤 5 的 workflow 段与 template 段报一致**；**纪律块段允许漂移**——按拍板，本分支的正文尚未合并回 master，而本机块来自 `~/.claude/skills/charter`（符号链接 → master 工作树）。**漂移必须打印原因**，完整三段全绿推迟到 finish 合并后；
+4. **步骤 5 的 `check` 恰好报一处漂移，且是 template 段的 `discipline` 字段**
+   （仓内 `charter-must-override` / 账本 `implement`），workflow 段与纪律块段报一致，退出码 1。
+
+   > **协调者更正（review I-5，2026-08-24）**：本条初稿写的是「workflow 与 template 两段一致、
+   > 纪律块段允许漂移」，**那个判据不可满足**——T6 步骤 1 把哨兵写进仓、而真机 install 被裁到
+   > acceptance，template 段必然漂移；纪律块段则因步骤 4 的无参 regen 而必然一致。初稿把两段
+   > 说反了。这正是本批 T4 新增纪律的反例（判据写下时对、隔几步就不对），出在自家 plan 上，
+   > 照实记账不掩盖。完整三段全绿推迟到 finish 合并后由 acceptance 的 M-1 收口。
 5. `flows/*.json` 仍是合法 JSON，`charter.workflow.json` 顶层键仍为 `['nodes']`。
 
 **入口指针**：契约文档修订记录节。

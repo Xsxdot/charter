@@ -3,7 +3,9 @@
 # 边界：不碰真账本、不写 ~/.handoff——一切外部调用走 mock 或 tmpdir。
 #       真机验证（真的 put 一次）归 acceptance 的真机清单，不在这里假装。
 import contextlib
+import copy
 import io
+import json
 import os
 import sys
 import tempfile
@@ -73,7 +75,36 @@ class TestNodesEquivalent(unittest.TestCase):
         self.assertEqual(diffs, [])
 
 
+class TestRepoSources(unittest.TestCase):
+    def test_workflow_source_is_nodes_only(self):
+        """D-1：真源顶层只有 nodes。存 states 是改了不报错也不生效的编辑陷阱。
+
+        没有这条断言，把顶层键改名成 states 全部测试照样绿——而 D-1 正是这条约定。
+        """
+        d = cp.load_repo_def(cp.WORKFLOW_FILE)
+        self.assertEqual(list(d.keys()), ["nodes"])
+        self.assertTrue(d["nodes"])
+
+    def test_template_source_keeps_required_fields_nonempty(self):
+        """R-2：CLI 层强制 executor / prompt / discipline 三者非空，空串会被当场拒。"""
+        d = cp.load_repo_def(cp.TEMPLATE_FILE)
+        for key in ("executor", "prompt", "discipline"):
+            self.assertTrue(d.get(key), f"{key} 为空会被 handoff CLI 拒绝")
+
+
 class TestRegenParameterized(unittest.TestCase):
+    def test_regen_creates_missing_out_dir(self):
+        """全新机器上纪律块目录并不存在——handoff 只建 DataDir，不建它的 discipline 子目录。
+
+        没有这条，install 在头号场景（换机重装）必失败，而本机真机验证
+        因为目录早就存在，结构性看不见它。
+        """
+        with tempfile.TemporaryDirectory() as base:
+            target = os.path.join(base, "never-created", "discipline")
+            sizes = rd.regen(target)
+            self.assertTrue(sizes)
+            self.assertTrue(os.path.isdir(target))
+
     def test_regen_to_tmpdir_leaves_home_untouched(self):
         home_dir = rd.OUT
         before = {f: os.path.getmtime(os.path.join(home_dir, f))
@@ -89,21 +120,118 @@ class TestRegenParameterized(unittest.TestCase):
         self.assertEqual(before, after, "regen --out 污染了本机纪律块目录")
 
 
+def _ledger_stdout(def_obj):
+    """造一条 `handoff X show` 的真实形状输出：INFO 日志混行 + 完整对象 JSON。"""
+    return ("2026/08/24 20:00:00 INFO 账本库已打开\n"
+            + json.dumps({"Name": "x", "Version": 9, "Def": def_obj,
+                          "CreatedAt": "2026-08-24T00:00:00Z"}, ensure_ascii=False))
+
+
+def _run_check_with_ledger(workflow_def=None, template_def=None, calls=None):
+    """跑一次真实路径的 check：只 mock subprocess，不 mock load_ledger_def。
+
+    mock 掉 load_ledger_def 会让「check 不写账本」这条断言变成空转——
+    那样 subprocess 根本不被调用，断言在空列表上恒真（本批审查抓到过一次）。
+    """
+    if workflow_def is None:
+        workflow_def = cp.load_repo_def(cp.WORKFLOW_FILE)
+    if template_def is None:
+        template_def = cp.load_repo_def(cp.TEMPLATE_FILE)
+
+    def fake_run(cmd, *a, **kw):
+        if calls is not None:
+            calls.append(cmd)
+        which = workflow_def if cmd[1] == "workflow" else template_def
+        return mock.Mock(returncode=0, stdout=_ledger_stdout(which), stderr="")
+
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+         contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = cp.check()
+    return rc, out.getvalue() + err.getvalue()
+
+
 class TestCheckIsReadOnly(unittest.TestCase):
     def test_check_never_writes_ledger(self):
-        """承重属性的锁：check 全程不得发出任何 put。"""
+        """承重属性的锁：check 全程不得发出任何 put。
+
+        必须让 check 真的跑完三段——早退的 check 什么都没做，
+        「没发 put」在它身上恒真而毫无意义。
+        """
         calls = []
-
-        def fake_run(cmd, *a, **kw):
-            calls.append(cmd)
-            raise cp.NotInstalled("probe")
-
-        with mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
-             contextlib.redirect_stdout(io.StringIO()), \
-             contextlib.redirect_stderr(io.StringIO()):
-            cp.check()
+        rc, _ = _run_check_with_ledger(calls=calls)
+        # 先证明这一趟真的走到了读账本那一步，否则下面的断言是空转
+        self.assertGreaterEqual(len(calls), 2,
+                                "check 没走到读账本就返回了，本断言会空转")
+        self.assertEqual([c[1] for c in calls], ["workflow", "template"])
+        self.assertEqual(rc, 0, "与账本一致时应报 0")
         for cmd in calls:
             self.assertNotIn("put", cmd, f"check 发出了写命令: {cmd}")
+
+
+class TestCheckFindings(unittest.TestCase):
+    """check 的四条承重行为。审查实测这些此前零覆盖——F-8 可整段删、
+    纪律块比对可永远判一致、漂移可返回 0、三值退出码可作废，都不撞红任何东西。"""
+
+    def test_drift_returns_1_and_names_node_and_field(self):
+        wf = cp.load_repo_def(cp.WORKFLOW_FILE)
+        drifted = copy.deepcopy(wf)
+        drifted["nodes"][1]["next"] = "被改过的下一列"
+        rc, out = _run_check_with_ledger(workflow_def=drifted)
+        self.assertEqual(rc, 1, "漂移必须以 1 收场")
+        self.assertIn(wf["nodes"][1]["name"], out)
+        self.assertIn("next", out)
+
+    def test_not_installed_returns_2_not_1(self):
+        def fake_run(cmd, *a, **kw):
+            return mock.Mock(returncode=1, stdout="",
+                             stderr="Error: 工作流 charter v0: ledger: 记录不存在")
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cp.check()
+        self.assertEqual(rc, 2, "「未安装」与「漂了」的处置不同，不能压成同一个码")
+        self.assertIn("install", err.getvalue(), "报文要可行动")
+
+    def test_ledger_unavailable_returns_2(self):
+        def fake_run(cmd, *a, **kw):
+            return mock.Mock(returncode=1, stdout="",
+                             stderr="dial tcp 127.0.0.1:7777: connect: connection refused")
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cp.check()
+        self.assertEqual(rc, 2)
+        self.assertIn("账本不可用", err.getvalue())
+
+    def test_dispatch_node_without_override_is_reported(self):
+        # F-8：dispatch 节点没写 override.discipline → 必须报（它会落到模板缺省的哨兵上）
+        real_load = cp.load_repo_def
+        wf = copy.deepcopy(real_load(cp.WORKFLOW_FILE))
+        wf["nodes"].append({"name": "新节点", "dispatch": True,
+                            "template": cp.TEMPLATE_NAME})
+
+        def fake_load(path):
+            return wf if path == cp.WORKFLOW_FILE else real_load(path)
+
+        with mock.patch.object(cp, "load_repo_def", side_effect=fake_load):
+            rc, out = _run_check_with_ledger(workflow_def=wf)
+        self.assertEqual(rc, 1)
+        self.assertIn("新节点", out)
+        self.assertIn("override.discipline", out)
+
+    def test_discipline_block_mismatch_is_reported(self):
+        # 纪律块比对：已装的块与本仓正文不一致 → 必须点名那个块
+        with tempfile.TemporaryDirectory() as fake_out:
+            for name in rd.compose_map():
+                with open(os.path.join(fake_out, f"charter-{name}.md"), "w") as f:
+                    f.write("这不是本仓正文")
+            with mock.patch.object(rd, "OUT", fake_out):
+                rc, out = _run_check_with_ledger()
+        self.assertEqual(rc, 1)
+        self.assertIn("与本仓正文不一致", out)
 
 
 class TestInstall(unittest.TestCase):
@@ -192,6 +320,21 @@ class TestInstall(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn("纪律块", buf.getvalue())
         self.assertIn("磁盘满", buf.getvalue())
+
+    def test_ledger_unavailable_is_not_a_naked_stacktrace(self):
+        # 账本够不着时 install 必须给可读报文并返回非 0，而不是把异常裸抛出去。
+        # 与「新机器」场景直接叠加：handoff 不在 PATH 就是这条路径。
+        buf = io.StringIO()
+        with mock.patch.object(cp, "load_ledger_def",
+                               side_effect=cp.LedgerUnavailable("agentd 不在")), \
+             mock.patch.object(cp.subprocess, "run",
+                               return_value=mock.Mock(returncode=0)), \
+             mock.patch.object(cp.regen_discipline, "regen", return_value={}), \
+             contextlib.redirect_stderr(buf), \
+             contextlib.redirect_stdout(io.StringIO()):
+            rc = cp.install()          # 不得抛异常
+        self.assertNotEqual(rc, 0)
+        self.assertIn("账本不可用", buf.getvalue())
 
     def test_prints_repo_path(self):
         # 判据5：打印本次安装所用的仓路径（worktree 与 master 会不同，事后要能追）

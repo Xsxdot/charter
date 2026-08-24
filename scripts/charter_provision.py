@@ -88,7 +88,13 @@ def load_ledger_def(kind, name):
 # 反过来说：本机要求区分它们，等于要求区分一个不可区分的差别。
 # 注意 struct 字段的 omitempty 在 Go 里不生效，故账本侧会出现 "override":{} / "gate":{}
 # 这类空对象（本轮实读确认），剥零值正是为它们准备的。
-_ZEROS = ("", 0, False, None, {}, [])
+#
+# 不写 False：Python 里 False == 0，写了也只是重复 0 这一项。
+# 本前提承重且仓里无锁——它依赖对侧 NodeDef 的字段标注（handoff types.go:197-233
+# 逐字段核过：标量与切片全带 omitempty，Override/Gate 是 struct，唯一指针 Produces
+# 的空值被 validateNodes 第 8 条挡住）。对侧新增一个**不带 omitempty 且零值有意义**
+# 的字段时，本剥法会开始吃掉真差异——那种字段一旦出现，这里要跟着改。
+_ZEROS = ("", 0, None, {}, [])
 
 
 def _strip_zeros(obj):
@@ -181,6 +187,11 @@ def install():
             ledger_def = load_ledger_def(kind, name)
         except NotInstalled:
             print(f"{kind} {name}: 账本中不存在，安装")
+        except LedgerUnavailable as exc:
+            # 读不到账本时**不装**：装了也无从确认装成了什么，且可能白写一版。
+            # 与 check 同口径——失败方向是拒绝动作，不是盲干。
+            print(f"账本不可用：{exc}。未做任何改动。", file=sys.stderr)
+            return 2
         else:
             if kind == "workflow":
                 same, diffs = nodes_equivalent(repo_def, ledger_def)
@@ -243,7 +254,11 @@ def check():
     # 第三段：纪律块。按当前仓正文重新生成到临时目录，与已装的逐文件比对。
     block_findings = []
     with tempfile.TemporaryDirectory() as tmp:
-        regen_discipline.regen(tmp)
+        try:
+            regen_discipline.regen(tmp)
+        except Exception as exc:                   # 与 install 同口径：不吞，点名
+            print(f"纪律块生成失败，本段未比对：{exc}", file=sys.stderr)
+            return 2
         for fname in sorted(os.listdir(tmp)):
             installed = os.path.join(regen_discipline.OUT, fname)
             if not os.path.exists(installed):
