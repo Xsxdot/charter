@@ -24,3 +24,4 @@
 - 2026-08-24 W3 提交完成：`[cards/C1.3-w-viewer 86c0066] impl(webui): C1.3 W3 理想子系统详情面板`；提交范围为 `86c0066`。
 - 2026-08-24 整分支终审范围：`git log --oneline b5c5979..HEAD` -> `86c0066`、`7f98bd6`、`3246207` 三个 W1/W2/W3 提交；`git diff --name-only b5c5979..HEAD` 仅含本台账和 `graph/webui/src/app/codegraph/{BestDetail,BestPanorama,CodegraphPage,besttree}` 代码/测试；`git diff --check b5c5979..HEAD` 无输出；禁止路径扫描无输出；`DomainPanorama.tsx`、`DomainDetail.tsx`、`src/api/types.ts` 保护文件扫描无输出。
 - 2026-08-24 最终验收：`npx tsc -b && npx vitest run` -> 退出 0；Vitest 原始摘要 `Test Files 14 passed (14)`、`Tests 79 passed (79)`。
+- 2026-08-24 收口前复核：`git status --short --branch && git rev-parse HEAD && git diff --check b5c5979..HEAD && git diff --name-only b5c5979..HEAD | sort` -> `## cards/C1.3-w-viewer`、HEAD `8bcbd9d70fc564b462ee9bad5ca7e6add3f637d8`、diff-check 无输出；范围仍为本台账及 8 个 `graph/webui/src/app/codegraph` 文件。
