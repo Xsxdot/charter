@@ -13,6 +13,8 @@ export interface CgLifecycleRef { who: string; model: string; kind: 'creator' | 
 export interface CgGraph {
   meta: CgMeta; domains?: Record<string, CgDomain>; containers: Record<string, CgContainer>; nodes: Record<string, CgNode>
   edges: [string, string][]; implements?: [string, string][]; projections?: [string, string, string][]; lifecycle?: CgLifecycleRef[]
+  /** 包摘要段（目录 → 包 doc 摘要），v0.6.0 additive-only 键（B231）；消费归三期。 */
+  packages?: Record<string, { summary: string }>
 }
 export interface CgDiff {
   view: string; base?: string; summary?: string; containersAdded?: Record<string, CgContainer>

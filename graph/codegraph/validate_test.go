@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -407,5 +408,63 @@ func TestValidateDiffEnforcesModelKind(t *testing.T) {
 		if !found {
 			t.Errorf("diff 侧应报 %s 的 modelKind 问题，实际 issues: %v", want, issues)
 		}
+	}
+}
+
+// --- B231 packages 段 ---
+
+func packagesFixture() *Graph {
+	return &Graph{
+		Meta:       Meta{Project: "p"},
+		Containers: map[string]Container{"c": {Label: "C", Kind: "service"}},
+		Nodes: map[string]Node{
+			"n1": {Kind: "func", Container: "c", Name: "F", File: "internal/api/f.go", Line: 1},
+		},
+	}
+}
+
+func TestValidatePackagesDanglingKey(t *testing.T) {
+	g := packagesFixture()
+	g.Packages = map[string]Package{
+		"internal/api":  {Summary: "API 包"},
+		"internal/gone": {Summary: "没有任何节点在这个目录"},
+	}
+	issues := Validate(g)
+	if len(issues) != 1 || !strings.Contains(issues[0], "internal/gone") {
+		t.Fatalf("悬空 packages 键必须且只报一条，得到 %v", issues)
+	}
+}
+
+func TestValidatePackagesAbsentAndMissingEntryAreLegal(t *testing.T) {
+	g := packagesFixture()
+	if issues := Validate(g); len(issues) != 0 {
+		t.Fatalf("packages 缺席必须合法，得到 %v", issues)
+	}
+	g.Packages = map[string]Package{} // 有目录没条目：刻意不执法
+	if issues := Validate(g); len(issues) != 0 {
+		t.Fatalf("空 packages 必须合法，得到 %v", issues)
+	}
+}
+
+func TestPackagesRoundTripAndOmitempty(t *testing.T) {
+	g := packagesFixture()
+	raw, err := json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "packages") {
+		t.Fatalf("缺席的 packages 不得出现在 wire 上（omitempty）：%s", raw)
+	}
+	g.Packages = map[string]Package{"internal/api": {Summary: "API 包"}}
+	raw, err = json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Graph
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Packages["internal/api"].Summary != "API 包" {
+		t.Fatalf("packages round-trip 丢数据：%+v", back.Packages)
 	}
 }

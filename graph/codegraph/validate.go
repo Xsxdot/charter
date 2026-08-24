@@ -7,6 +7,7 @@ package codegraph
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Validate 检查基线的引用完整性，返回问题列表（空 = 干净）。
@@ -36,9 +37,37 @@ func Validate(g *Graph) []string {
 		issues = append(issues, validateProjection(g.Nodes, p, "投影")...)
 	}
 	issues = append(issues, validateLifecycle(g.Nodes, g.Lifecycle, "lifecycle")...)
+	issues = append(issues, validatePackages(g)...)
 	issues = append(issues, validateModelKind(g)...)
 	issues = append(issues, validateDomains(g)...)
 	sort.Strings(issues)
+	return issues
+}
+
+// validatePackages 执法包摘要段的悬空键：packages 的 key 必须是图中某个节点
+// 文件的目录。只判这一个方向（自相矛盾类）；反向的「目录缺条目」刻意不执法——
+// validate 无分档，硬红会在补录期逼出删条目的拐杖，完整性归扫描配方自检。
+func validatePackages(g *Graph) []string {
+	if len(g.Packages) == 0 {
+		return nil
+	}
+	dirs := make(map[string]bool, len(g.Nodes))
+	for _, n := range g.Nodes {
+		if n.File == "" {
+			continue
+		}
+		if i := strings.LastIndex(n.File, "/"); i >= 0 {
+			dirs[n.File[:i]] = true
+		} else {
+			dirs[""] = true
+		}
+	}
+	var issues []string
+	for dir := range g.Packages {
+		if !dirs[dir] {
+			issues = append(issues, fmt.Sprintf("packages 键 %s 不是图中任何节点的目录", dir))
+		}
+	}
 	return issues
 }
 

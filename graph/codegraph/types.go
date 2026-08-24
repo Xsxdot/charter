@@ -44,6 +44,13 @@ type Domain struct {
 	Parent  string `json:"parent,omitempty"`
 }
 
+// Package 是包摘要（B231，v0.6.0）。key 是包目录路径（与 Node.File 的目录一致）。
+// Summary 只许**转录**源码包 doc 注释（无注释即空串）——扫描配方不得自行概括，
+// 否则图里会写着一个代码里不存在的意图。应然职责归 best.json，这里只放事实。
+type Package struct {
+	Summary string `json:"summary"`
+}
+
 // TestRef 关联一个测试函数。File 形如 "pkg/x_test.go:41"。
 type TestRef struct {
 	Name    string `json:"name"`
@@ -107,6 +114,10 @@ type Graph struct {
 	// Lifecycle 是生命周期段（谁创建/谁写状态），additive-only 新键（v0.3.0，契约 §2）：
 	// 旧消费方可安全忽略；产出者是扫描配方，Validate 管引用完整性。
 	Lifecycle []LifecycleRef `json:"lifecycle,omitempty"`
+	// Packages 是包摘要段（目录 → 包 doc 摘要），additive-only 新键（v0.6.0，B231）：
+	// 旧消费方安全忽略。悬空键（目录不属于图中任何节点）由 Validate 判硬红——
+	// 那是自相矛盾；「有目录没条目」不执法，补齐靠扫描配方自检（防拐杖，见 roadmap 9①先例）。
+	Packages map[string]Package `json:"packages,omitempty"`
 }
 
 // Diff 是 codegraph/diffs/<view>.json：某分支/plan 相对基准的差异声明。
