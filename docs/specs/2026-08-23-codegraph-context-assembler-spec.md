@@ -1,6 +1,6 @@
 # Spec：codegraph CLI 去噪与上下文装配器（chain 瘦身 + --with-source + context 领域包）
 
-> 状态：**已批准**（2026-08-23，用户批准：「开吧」）
+> 状态：**已批准**（2026-08-23，用户批准：「开吧」）；**2026-08-24 复核修订，待用户确认修订项**（搁置期间世界改变了：C1.2 配方刀、C1.8 最优图、B231 职责面扫描相继落地，本刀读数与两处裁决随之更新——见文末「2026-08-24 复核修订」）
 > 级别与档位：**L3 轻档**（动契约：查询命令的默认输出形态变更 + 删一个 wire 死字段 + 新增子命令）→ contract → breakdown → 单轮 implement → review → acceptance → finish
 > 卡：`C1.5`（父卡 `C1` 代码图批次二；从 C1.3 查看器刀拆出——两半的阻塞关系不同）
 > 来源：`docs/roadmap.md` 第 10 条的「CLI 去噪与装配器下放」半边；2026-08-23 roadmap 前置讨论（用户原话：「agent 如果能直接拿到一个调用链，是不是就不再需要那么多轮次的调用了？甚至是直接拿到它想看的某些方法的源代码。关键是怎么才能真正的达到高效率」）
@@ -187,3 +187,73 @@ token 用字节数近似（实测约 3 字节/token，代码+中文混合），�
 - 本刀**不动一行业务代码**，也不动图算法；改的是输出层与说明书。
 - 图覆盖债：charter 仓无自托管代码图，读数来自读码与对 handoff 真基线的脚本统计。
 - **一处事实纠错留痕**：本轮探索中有一份 agent 报告称 `fitness.go` 的 `prefixFamilyFindings` / `oversizedPackageFindings` 是「未接线死代码」。已实测证伪——`graph/codegraph/check.go` 第 211~212 行明确接线，刀 3+4 的 fitness 判据正常生效。
+
+---
+
+## 2026-08-24 复核修订（搁置 → 复活）
+
+卡于 2026-08-23 随 C1 批次搁置，2026-08-24 复活。搁置期间 C1.2（配方刀·model 分种）、
+C1.8（最优图接管结构树）、C1.6（handoff 写 best.json）、B231（扫描补职责面 + `packages` 段）
+相继落地，本节按当日工作树与 handoff 真基线重测，**修订读数与四处裁决**。主体方案（一~六条）不变。
+
+### 一、读数重测：省 token 的收益比原稿更大
+
+| 读数 | 原稿（2026-08-23） | 复核（2026-08-24） | 出处 |
+|---|---|---|---|
+| `chain n_cmd_agentdCmd_RunE` 默认输出 | 56006 字节 ≈ 18.7k token | **81409 字节 ≈ 27k token**（83 节点 / 105 边） | 本机 `codegraph chain`，handoff 基线 3655 节点 |
+| `chain n_agentd_Manager_Dispatch` | 48777 | **76102** | 同上 |
+| `tests` 体积占比 | 36~42% | **32.6%** | 逐字段剥离实测（compact utf8 65829 基数） |
+| 本刀拟裁字段合计（tests/params/returns/fields/order/unscanned/projScanned） | 未单独测 | **48.4%** | 同上 |
+| `summary` 覆盖率 | 48.1% | **82.5%** | handoff baseline 3655 节点统计 |
+| `summary` 体积占比 | 未单独测 | 10.4%（**保留**：覆盖率翻倍后它是留下来的那半里最有信息量的） | 同上 |
+| `modelKind` 填充 | 全空（待 C1.2） | **entity 53 / dto 642 / config 13**，无空值 | 同上 |
+| `packages` 段 | 不存在 | **66 个目录，35 个有 doc 摘要** | 同上（v0.6.0 新段） |
+
+**结论方向不变、幅度更大**：B231 把 summary 覆盖率从 48% 拉到 82%，等于给每次查询又加了一成体积；
+默认输出从 18.7k 涨到 27k token。这条税每个会话都在缴，且还在涨。
+
+### 二、裁决修订四条
+
+1. **删 `TestRef.Snippet` 的改动面变了：它现在有渲染方。**
+   原稿写「1518 条全空、无写入方」——数据面仍然成立（0 条非空），但 C1.4 把前端搬进 charter 之后，
+   `graph/webui/src/api/types.ts#CgTestRef` 声明了 `snippet?`，`graph/webui/src/app/codegraph/DetailPanel.tsx`
+   有一行 `{t.snippet && <pre>…}` 在渲染它（渲染的是一个永远为空的字段），`DetailPanel.test.tsx` 的
+   fixture 里也填了它。**裁决不变（照删）**，但删除范围从「Go 一处」变成「Go 一处 + webui 三处」，
+   且 webui 那一行删掉时 `DetailPanel.test.tsx` 的对应断言要同步删——contract 节点按此核。
+   handoff 侧同名三处属于 C1.7 将整目录删除的旧副本，**不在本刀范围**（本刀落地时若 C1.7 尚未合，
+   handoff 的旧副本仍在自己仓里编译，不受影响：它读的是自己的 types.ts）。
+
+2. **`context <领域>` 的领域取哪套词表：取视图词表（现状），不取最优图词表。**
+   C1.8 之后仓里有两套领域 id 并存：视图侧 20 个（`baseline.json#domains`，`domains` 命令输出的就是它）
+   与最优图侧 23 个（`best.json#domains`，12 个顶层 + 11 个子域）。两者只交集 11 个
+   （实测 handoff：`d_coordination_task` 只在视图侧，`d_orchestration` 只在最优侧）。
+   **裁决：`context` 吃视图词表**——理由是 `context` 装配的是「现在的代码长什么样」，
+   而领域声明（`codegraph/domains/*.json`）本身就以视图 id 为键、`ValidateDecls` 也按视图 domains 校验。
+   给出最优图 id 时**不得报「领域不存在」了事**，错误文案必须点明词表差异并列出视图侧的近似候选
+   ——否则用户会以为图坏了。这是本条新增的可执行判据。
+
+3. **实体表的 C1.2 依赖已兑现，降级路径改口径。**
+   原稿第五条写「实体表……依赖 C1.2」，现已落地：`modelKind` 在 handoff 基线上零空值，
+   `context` 的实体表按 `modelKind == "entity"` 过滤即得 53 条而不是 708 条。
+   仍需保留的是**空值降级**：老基线（v0.3.0 之前扫描的项目）`modelKind` 为空，
+   此时实体表按契约 §2-1 不得把空值计入，改为整表标注「该项目未分种，实体数不可用」。
+
+4. **`context` 净增一段：本域容器的包 doc 摘要（`packages`）。**
+   B231 给基线加了 `packages`（目录 → 包 doc 摘要，只转录不概括）。
+   `context <领域>` 的价值是「一发看懂一个域」，而「这一组包各自是干什么的」正是今天要另外读源码才知道的事，
+   数据现成、成本近零（一次 map 查表）。**加进 `context` 的输出**，位置在「职责与不变式」之后、
+   「对外接口清单」之前；无摘要的目录留空串不编造（配方红线）。
+   这一段**不进 `chain`**——chain 是链视角，包摘要是组视角，塞进去就是又一份没人要的体积。
+
+### 三、复核确认不变的事实（原稿读数今日仍成立）
+
+- 子命令数仍是 **14**（`graph/cli/cli.go` 的 `Use:` 清单逐条数过；`cli_test.go#TestGraphCommandCountIncludesMigrate` 断言 14），本刀落地后 15。
+- **`--stale` 仍对全图跑**：`graph/cli/cli.go:486` 是 `codegraph.CheckStale(graphRepo, g)`，传的是全图 `g`。
+- **输出 `Edges` 仍漏过滤 `deleted`**：`graph/codegraph/query.go:120-126` 的收集循环只判两端在 `dist` 里；遍历阶段（同文件 66-68 行）过滤了。
+- `ReAnchor` 仍是「读整文件成行数组然后丢掉」的形态（`graph/codegraph/sym.go`）。
+- 领域声明覆盖仍是 **2/20**（`codegraph/domains/` 只有 `d_coordination_task.json`、`d_workspace.json`），
+  故 `context` 的「未声明降级路径」是**主路径不是边角**——18 个域走的都是它。原稿已写该路径，此处只更新它的权重。
+
+### 四、修订不改的
+
+级别与档位（L3 轻档）、五条方案主体、接缝清单、Out of Scope 逐条——均按原稿执行。
