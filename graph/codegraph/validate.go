@@ -36,9 +36,77 @@ func Validate(g *Graph) []string {
 		issues = append(issues, validateProjection(g.Nodes, p, "投影")...)
 	}
 	issues = append(issues, validateLifecycle(g.Nodes, g.Lifecycle, "lifecycle")...)
+	issues = append(issues, validateModelKind(g)...)
 	issues = append(issues, validateDomains(g)...)
 	sort.Strings(issues)
 	return issues
+}
+
+// validateModelKind 执法 model 分种（契约 21~23）。三条都是**自相矛盾**类：
+// 取值不在枚举内、字段挂在非 model 节点上、声称是 dto 却有人往它里面写状态。
+//
+// 刻意不执法的第四种（契约 24）：entity 却没有 lifecycle 条目。全仓 707 个
+// model 要分批补标，把「标了 entity 但生命周期还没补」判成硬红，会让 validate
+// 在整个补标期不可用，逼出的处置只能是回头去改 modelKind 迁就现状。它改为在
+// validate 命令里计数（与 unscannedEntries 同处），那个数字顺带成为补标进度表。
+func validateModelKind(g *Graph) []string {
+	return validateModelKindNodes(g.Nodes, g.Lifecycle, "")
+}
+
+// validateModelKindNodes 是上面那套判据的按节点集形态。label 非空时前缀进报文，
+// 供 diff 侧区分「基线里就有的矛盾」与「这份 diff 引进的矛盾」。
+func validateModelKindNodes(nodes map[string]Node, lifecycle []LifecycleRef, label string) []string {
+	var issues []string
+	writers := make(map[string]bool, len(lifecycle))
+	for _, ref := range lifecycle {
+		if ref.Kind == "writer" {
+			writers[ref.Model] = true
+		}
+	}
+	// 不在此处排序：Validate 末尾对 issues 整体 sort.Strings，且每条报文都带
+	// 节点 id、不存在需要 tiebreak 的同键项。曾经在这里放过一次 sort，理由写的是
+	// 「同键报文要稳定」——那是假的，删掉它输出一个字节都不变。
+	for id, n := range nodes {
+		if n.ModelKind == "" {
+			continue // 空 = 未分种，存量默认，放行
+		}
+		switch n.ModelKind {
+		case ModelKindEntity, ModelKindDTO, ModelKindConfig:
+		default:
+			issues = append(issues, label+fmt.Sprintf("节点 %s 的 modelKind %q 不在枚举内（entity/dto/config）", id, n.ModelKind))
+			continue // 取值都非法，后两条判据无从谈起
+		}
+		if n.Kind != "model" {
+			issues = append(issues, label+fmt.Sprintf("节点 %s 的 kind 是 %s，不该带 modelKind——该字段只对 model 有意义", id, n.Kind))
+			continue
+		}
+		if n.ModelKind == ModelKindDTO && writers[id] {
+			issues = append(issues, label+fmt.Sprintf("节点 %s 标为 dto 却在 lifecycle 段有 writer 条目：传输结构不该有人写它的状态", id))
+		}
+	}
+	return issues
+}
+
+// EntitiesWithoutLifecycle 数「modelKind 标了 entity，但 lifecycle 段里一条都没有」
+// 的节点。这是补标进度表，不是错误计数——见 validateModelKind 的注释。
+//
+// 口径两点，都刻意与注释字面一致（曾经写过头，被审计抓到）：
+//   - 判「有没有条目」，不分 creator/writer，也不管 Kind 字段是否合法——
+//     lifecycle 条目本身的合法性由 validateLifecycle 管，这里只问覆盖没覆盖。
+//   - 不看 node.Kind：非 model 节点带 entity 已由第 22 条报硬 issue，
+//     此处再筛一道只会让「报了错还不计数」这种更难解释的组合出现。
+func EntitiesWithoutLifecycle(g *Graph) int {
+	covered := make(map[string]bool, len(g.Lifecycle))
+	for _, ref := range g.Lifecycle {
+		covered[ref.Model] = true
+	}
+	n := 0
+	for id, node := range g.Nodes {
+		if node.ModelKind == ModelKindEntity && !covered[id] {
+			n++
+		}
+	}
+	return n
 }
 
 // validateDomains 检查领域段自洽与容器归属。
@@ -166,6 +234,19 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 	for _, p := range append(append([]Projection{}, d.ProjectionsAdded...), d.ProjectionsDeleted...) {
 		issues = append(issues, validateProjection(knownNodeMap, p, "diff 投影")...)
 	}
+	// modelKind 在 diff 侧同样执法：nodesAdded/nodesModified 是新节点与改动进图的
+	// 唯一入口，只查基线等于让每一次 diff 都能把矛盾数据合法带进来（契约 §4-21~23
+	// 的 2026-08-23 扩展回写）。lifecycle 取基线与本 diff 新增的并集——dto 的
+	// writer 可能是这份 diff 才加上的。
+	diffNodes := make(map[string]Node, len(d.NodesAdded)+len(d.NodesModified))
+	for id, n := range d.NodesAdded {
+		diffNodes[id] = n
+	}
+	for id, n := range d.NodesModified {
+		diffNodes[id] = n
+	}
+	mergedLifecycle := append(append([]LifecycleRef{}, g.Lifecycle...), d.LifecycleAdded...)
+	issues = append(issues, validateModelKindNodes(diffNodes, mergedLifecycle, "diff ")...)
 	issues = append(issues, validateLifecycle(knownNodeMap, d.LifecycleAdded, "diff lifecycle")...)
 	issues = append(issues, validateLifecycle(knownNodeMap, d.LifecycleDeleted, "diff lifecycle")...)
 	sort.Strings(issues)

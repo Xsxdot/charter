@@ -38,6 +38,7 @@ var (
 	graphDepth              = 2
 	graphView               string
 	graphStale              bool
+	graphEdges              bool
 	absorbCommit            string
 	absorbBranch            string
 	graphResolveDoc         string
@@ -94,6 +95,7 @@ func graphResetState() {
 	graphDepth = 2
 	graphView = ""
 	graphStale = false
+	graphEdges = false
 	absorbCommit = ""
 	absorbBranch = ""
 	graphResolveDoc = ""
@@ -114,6 +116,15 @@ var graphValidateCmd = &cobra.Command{
 			return err
 		}
 		issues := codegraph.Validate(g)
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return err
+		}
+		if best != nil {
+			for _, issue := range codegraph.ValidateBest(best) {
+				issues = append(issues, "[best] "+issue)
+			}
+		}
 		decls, err := codegraph.LoadDomainDecls(graphRepo)
 		if err != nil {
 			return err
@@ -178,6 +189,9 @@ var graphValidateCmd = &cobra.Command{
 			"nodes": len(g.Nodes), "edges": len(g.Edges),
 			"containers": len(g.Containers), "domains": len(g.Domains), "views": views,
 			"domainDecls": len(decls), "unscannedEntries": unscanned, "issues": issues, "edgeIssues": edgeIssues,
+			// 标了 entity 但还没补生命周期的 model 数。刻意不执法（契约 24），
+			// 与 unscannedEntries 同处：它是补标进度表，不是错误。
+			"entitiesWithoutLifecycle": codegraph.EntitiesWithoutLifecycle(g),
 		}
 		if graphStale {
 			out["stale"] = stale
@@ -194,12 +208,15 @@ var graphValidateCmd = &cobra.Command{
 
 var graphMigrateCmd = &cobra.Command{
 	Use:   "migrate",
-	Short: "将 target.json 从 v1 机械迁移到 v2",
+	Short: "将 v2 target.json 与 baseline.json 机械迁移到 v3 与 best.json",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
 		result, err := codegraph.MigrateTarget(graphRepo)
 		if err != nil {
 			return err
+		}
+		for _, note := range result.Notes {
+			fmt.Fprintln(cmd.ErrOrStderr(), note)
 		}
 		return graphPrintJSON(cmd, result)
 	},
@@ -219,15 +236,33 @@ var graphCheckCmd = &cobra.Command{
 		if issues := codegraph.ValidateTarget(t); len(issues) > 0 {
 			return fmt.Errorf("目标图自身不合法: %v", issues)
 		}
+		best, err := codegraph.LoadBest(graphRepo)
+		if err != nil {
+			return fmt.Errorf("最优图不可用，check 拒绝执行: %w", err)
+		}
+		if best == nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "最优图判据已跳过：未找到 codegraph/best.json")
+		} else if issues := codegraph.ValidateBest(best); len(issues) > 0 {
+			return fmt.Errorf("最优图自身不合法: %v", issues)
+		}
 		v, _, err := graphLoadView()
 		if err != nil {
 			return err
 		}
-		rep := codegraph.Check(t, v)
+		// 领域声明进 check：validate 管存在性，check 管正确性（锚归属）。
+		// 加载失败直接返回，不静默降级成「没有声明」——那会让锚判据无声失效，
+		// 报告全绿而问题还在（与 graphValidateCmd 的处置一致）。
+		decls, err := codegraph.LoadDomainDecls(graphRepo)
+		if err != nil {
+			return err
+		}
+		rep := codegraph.Check(t, best, v, decls)
+		// CLI 只负责用 git 取基准 target；判档、写入 Report 和重排都在 codegraph
+		// 的纯函数里（契约 §3-3）——分档逻辑留在 CLI 就成了第二套判据。
 		if base, baseErr := loadBudgetBase(graphRepo, graphBase); baseErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "预算棘轮判据已跳过：%v\n", baseErr)
 		} else {
-			appendBudgetRatchet(rep, t, base)
+			codegraph.ApplyBudgetRatchet(rep, t, base)
 		}
 		if err := graphPrintJSON(cmd, rep); err != nil {
 			return err
@@ -237,23 +272,6 @@ var graphCheckCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func appendBudgetRatchet(rep *codegraph.Report, cur, base *codegraph.Target) {
-	for _, finding := range codegraph.CheckBudgetRatchet(cur, base) {
-		note := ""
-		for _, contract := range cur.Contracts {
-			if contract.From == finding.From && contract.To == finding.To {
-				note = contract.LegacyBudgetNote
-				break
-			}
-		}
-		if strings.TrimSpace(note) != "" {
-			rep.Warns = append(rep.Warns, finding)
-		} else {
-			rep.Fails = append(rep.Fails, finding)
-		}
-	}
 }
 
 func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
@@ -279,8 +297,10 @@ func loadBudgetBase(repo, explicit string) (*codegraph.Target, error) {
 	}
 	var target codegraph.Target
 	// 这是对 LoadTarget 中 meta.version 白名单单点收口的有意例外：基准可能是
-	// schema v1，而 v1/v2 的 contracts 段形态相同；这里只取 contracts 喂棘轮，
-	// 不把宽松解析结果用于任何其他执法输入（契约 §7-R5、R9）。
+	// schema v1/v2，而三个版本的 contracts 段形态相同（契约 §7-R11）。本函数只
+	// 投影 contracts，产物只允许喂给棘轮比较（CheckBudgetRatchet /
+	// ApplyBudgetRatchet），**永远不得传给 Check**；预算字段只作比较、不作事实
+	// 来源，执法判据一律只吃走过版本门的当前 target。
 	if err := json.Unmarshal([]byte(raw), &target); err != nil {
 		return nil, fmt.Errorf("解析基准 %s 的 target.json：%w", revision, err)
 	}
@@ -493,11 +513,31 @@ var graphDomainsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if graphEdges {
+			best, bestErr := codegraph.LoadBest(graphRepo)
+			if bestErr != nil {
+				return bestErr
+			}
+			out := map[string]any{
+				"view":    v.Name,
+				"current": codegraph.DomainEdgeMatrix(v),
+			}
+			if best == nil {
+				out["bestSkipped"] = "best.json 不可用，已跳过最优矩阵：未找到 codegraph/best.json"
+			} else {
+				out["best"] = codegraph.BestEdgeMatrix(v, best)
+			}
+			return graphPrintJSON(cmd, out)
+		}
 		doms := codegraph.DomainTree(v)
-		if target, targetErr := codegraph.LoadTarget(graphRepo); targetErr == nil {
-			doms = codegraph.DomainTreeWithTarget(v, target)
+		best, bestErr := codegraph.LoadBest(graphRepo)
+		if bestErr != nil {
+			return bestErr
+		}
+		if best != nil {
+			doms = codegraph.DomainTreeWithBest(v, best)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "target.json 不可用，subsystems/crossSubsystem 已省略: %v\n", targetErr)
+			fmt.Fprintln(cmd.ErrOrStderr(), "best.json 不可用，subsystems/crossSubsystem 已省略：未找到 codegraph/best.json")
 		}
 		out := map[string]any{"view": v.Name, "domains": doms}
 		if doms == nil {
@@ -696,6 +736,7 @@ func init() {
 	graphCmd.PersistentFlags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	graphCmd.PersistentFlags().StringVar(&graphView, "view", "", "叠加的视图名（codegraph/diffs/<名>.json）")
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")
+	graphDomainsCmd.Flags().BoolVar(&graphEdges, "edges", false, "输出跨领域边矩阵")
 	graphAbsorbCmd.Flags().StringVar(&absorbCommit, "commit", "", "写入基线 meta 的提交号（缺省从 git HEAD 读取）")
 	graphAbsorbCmd.Flags().StringVar(&absorbBranch, "branch", "", "写入基线 meta 的分支名（缺省从 git 读取）")
 	graphResolveCmd.Flags().StringVar(&graphResolveDoc, "doc", "", "要检查的 Markdown 文档路径")

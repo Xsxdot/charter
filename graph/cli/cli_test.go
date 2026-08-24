@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -159,8 +160,8 @@ func TestGraphDomains(t *testing.T) {
 		t.Fatalf("嵌套子领域没出来: %s", out)
 	}
 	for _, d := range r.Domains {
-		if d.ID == "d_svc/store" && (!d.CrossSubsystem || len(d.Subsystems) != 2) {
-			t.Fatalf("跨子系统派生: %+v", d)
+		if d.ID == "d_svc/store" && (d.CrossSubsystem || !reflect.DeepEqual(d.Subsystems, []string{"d_svc"})) {
+			t.Fatalf("best 容器归属应提供单一子系统: %+v", d)
 		}
 	}
 }
@@ -179,28 +180,69 @@ func TestGraphValidateReportsDomainCount(t *testing.T) {
 	}
 }
 
-func TestGraphDomainsTargetIsSoftDependency(t *testing.T) {
-	for _, version := range []int{0, 1} {
-		repo := t.TempDir()
-		copyFixtureRepo(t, fixtureRepo, repo)
-		path := filepath.Join(repo, "codegraph", "target.json")
-		if version == 0 {
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-		} else if err := os.WriteFile(path, []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
-			t.Fatal(err)
+func TestGraphDomainsBestIsSoftDependency(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best.json 缺失时 domains 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if bytes.Contains([]byte(stdout), []byte(`"subsystems"`)) || bytes.Contains([]byte(stdout), []byte(`"crossSubsystem"`)) {
+		t.Fatalf("best.json 缺失时派生字段应省略: %s", stdout)
+	}
+	if !strings.Contains(stderr, "best.json") {
+		t.Fatalf("stderr 应提示 best.json 字段省略: %s", stderr)
+	}
+}
+
+func TestGraphDomainsEdgesWireAndBestComparison(t *testing.T) {
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--edges", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("domains --edges 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	var out struct {
+		View    string                     `json:"view"`
+		Current []codegraph.DomainEdgeStat `json:"current"`
+		Best    []codegraph.DomainEdgeStat `json:"best"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("domains --edges 应输出 JSON: %v\n%s", err, stdout)
+	}
+	if out.View != "baseline" || len(out.Current) == 0 || len(out.Best) == 0 {
+		t.Fatalf("应同时输出现状/最优矩阵: %+v", out)
+	}
+	for _, stat := range append(append([]codegraph.DomainEdgeStat{}, out.Current...), out.Best...) {
+		if stat.From == "" || stat.To == "" || stat.From == stat.To || stat.Count <= 0 {
+			t.Fatalf("矩阵记录必须是非空有向跨域正计数: %+v", stat)
 		}
-		stdout, stderr, err := runGraphSeparate(t, "domains", "--repo", repo)
-		if err != nil {
-			t.Fatalf("target version=%d 时 domains 应通过: %v stdout=%s stderr=%s", version, err, stdout, stderr)
-		}
-		if bytes.Contains([]byte(stdout), []byte(`"subsystems"`)) || bytes.Contains([]byte(stdout), []byte(`"crossSubsystem"`)) {
-			t.Fatalf("target version=%d 时派生字段应省略: %s", version, stdout)
-		}
-		if !strings.Contains(stderr, "subsystems") {
-			t.Fatalf("target version=%d 时 stderr 应提示字段省略: %s", version, stderr)
-		}
+	}
+	if bytes.Contains([]byte(stdout), []byte(`"fails"`)) || bytes.Contains([]byte(stdout), []byte(`"warns"`)) {
+		t.Fatalf("--edges 不得混入 check 报告: %s", stdout)
+	}
+	checkOut, err := runGraph(t, "check", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("check fixture 应通过: %v\n%s", err, checkOut)
+	}
+	if bytes.Contains([]byte(checkOut), []byte(`"current"`)) || bytes.Contains([]byte(checkOut), []byte(`"best"`)) {
+		t.Fatalf("check 输出不得混入矩阵: %s", checkOut)
+	}
+}
+
+func TestGraphDomainsEdgesWithoutBestIsExplicit(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "domains", "--edges", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best 缺失时 domains --edges 应通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if !bytes.Contains([]byte(stdout), []byte(`"current"`)) || bytes.Contains([]byte(stdout), []byte(`"best":`)) || !bytes.Contains([]byte(stdout), []byte("bestSkipped")) {
+		t.Fatalf("缺 best 时应只输出现状矩阵并显式跳过最优矩阵: %s", stdout)
 	}
 }
 
@@ -228,6 +270,13 @@ func TestGraphCheck(t *testing.T) {
 			t.Fatalf("check 输出缺字段 %s: %s", want, out)
 		}
 	}
+	var report codegraph.Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("check 输出必须是合法 Report: %v", err)
+	}
+	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers == 0 {
+		t.Fatalf("best 存在时 check 必须输出非空归属覆盖读数: %+v", report)
+	}
 }
 
 func TestGraphCheckMissingTargetFails(t *testing.T) {
@@ -235,6 +284,54 @@ func TestGraphCheckMissingTargetFails(t *testing.T) {
 	_, err := runGraph(t, "check", "--repo", t.TempDir())
 	if err == nil {
 		t.Fatal("无 target 的 check 必须失败")
+	}
+}
+
+func TestGraphCheckMissingBestSkipsWithNotice(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.Remove(filepath.Join(repo, "codegraph", "best.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err != nil {
+		t.Fatalf("best.json 缺失时 check 应降级通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "best.json") || !strings.Contains(stderr, "跳过") {
+		t.Fatalf("stderr 必须显式说明最优图判据已跳过: %s", stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	if len(report.Fails) != 0 {
+		t.Fatalf("best 缺失时不得执行契约 fail: %+v", report)
+	}
+}
+
+func TestGraphCheckInvalidBestFails(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "best.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runGraph(t, "check", "--repo", repo)
+	if err == nil || !strings.Contains(err.Error(), "最优图不可用") {
+		t.Fatalf("best.json 解析失败时 check 必须拒绝: %v", err)
+	}
+}
+
+func TestGraphCheckCoverageReadoutShowsZero(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	best := `{"meta":{"version":1,"project":"fixture"},"domains":{"d_svc":{"label":"服务","responsibility":"服务","type":"logic"}},"containers":{}}`
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "best.json"), []byte(best), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err == nil {
+		t.Fatalf("空容器 best 的死契约应让 check 非零: stdout=%s", stdout)
+	}
+	report := unmarshalReport(t, stdout)
+	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers != 0 || report.BestCoverage.ViewContainers == 0 {
+		t.Fatalf("归属覆盖为 0 时读数不得静默: %+v", report.BestCoverage)
 	}
 }
 
@@ -306,6 +403,164 @@ func TestGraphCheckBudgetRatchetAcceptsSchemaV1Base(t *testing.T) {
 	assertBudgetFinding(t, report, true)
 }
 
+// TestGraphCheckContractRatchetAgainstTrueSchemaV1Base 用**真 v1 躯干**作为基准，
+// 而不是「把 version 改成 1、字段还是 v2 那套」的伪 v1，锁住宽松解析只投影 contracts。
+func TestGraphCheckContractRatchetAgainstTrueSchemaV1Base(t *testing.T) {
+	repo, base := gitTrueV1BaseRepo(t, 2, "")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("真 v1 基准的契约预算上涨应非零退出: %s\nstderr=%s", stdout, stderr)
+	}
+	if strings.Contains(stderr, "跳过") {
+		t.Fatalf("真 v1 基准不得让棘轮降级跳过（宽松解析路径就是为它开的）: %s", stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	raised := ratchetFindings(report.Fails)
+	if len(raised) != 1 || len(ratchetFindings(report.Warns)) != 0 {
+		t.Fatalf("真 v1 基准应恰好一条无理由的 budget-raised fail: %+v", report)
+	}
+	if raised[0].From != "d_cmd" || raised[0].To != "d_svc" || !strings.Contains(raised[0].Detail, "0→2") {
+		t.Fatalf("真 v1 基准应保留契约方向与基准预算: %+v", raised[0])
+	}
+}
+
+// trueSchemaV1Target 是 v1 躯干的目标图：顶层 domains（不是 subsystems）、
+// assignments 的外键字段叫 domain，且没有任何目标领域/预算字段。形状取自
+// codegraph/migrate.go#migrateV1Target 这个 v1 的权威定义。
+const trueSchemaV1Target = `{
+  "meta": { "version": 1, "project": "fixture" },
+  "domains": [
+    { "id": "d_svc", "name": "服务", "type": "logic", "paths": ["svc/**"] },
+    { "id": "d_cmd", "name": "入口", "type": "logic", "paths": ["cmd/**"] },
+    { "id": "d_web", "name": "前端", "type": "boundary", "paths": ["web/**"] }
+  ],
+  "assembly": ["cmd/run.go"],
+  "contracts": [
+    { "from": "d_cmd", "to": "d_svc", "entries": ["svc.Server"], "legacyBudget": 0 }
+  ]
+}
+`
+
+// gitTrueV1BaseRepo 造「基准提交是真 v1、工作区是 v2 且契约预算上涨」的仓。
+func gitTrueV1BaseRepo(t *testing.T, budget int, note string) (string, string) {
+	t.Helper()
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	targetPath := filepath.Join(repo, "codegraph", "target.json")
+	if err := os.WriteFile(targetPath, []byte(trueSchemaV1Target), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "config", "user.email", "codegraph-test@example.com")
+	runGit(t, repo, "config", "user.name", "codegraph-test")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-q", "-m", "true v1 base target")
+	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+
+	// 基准提交落定后再把工作区换成 v2，并只修改契约预算。
+	copyFixtureRepo(t, fixtureRepo, repo)
+	writeTargetVersionBudget(t, repo, 3, budget, 3, 0, note)
+	return repo, base
+}
+
+// --repo 指向 git 顶层的子目录时，git show 必须带上 nested/ 前缀去读 target.json。
+func TestGraphCheckBudgetRatchetReadsNestedRepoPrefix(t *testing.T) {
+	repo, base := gitTargetRepoNested(t, "nested", 2, 3, "")
+	stdout, stderr, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("子目录仓的棘轮也应生效: %s\nstderr=%s", stdout, stderr)
+	}
+	if strings.Contains(stderr, "跳过") {
+		t.Fatalf("子目录仓不应降级跳过棘轮: %s", stderr)
+	}
+	raised := ratchetFindings(unmarshalReport(t, stdout).Fails)
+	if len(raised) != 1 || !strings.Contains(raised[0].Detail, "2→3") {
+		t.Fatalf("子目录仓应读到 nested/codegraph/target.json 的基准预算: %+v", raised)
+	}
+}
+
+// 棘轮 finding 追加后必须与其余 finding 一起重排：kind 字典序 budget-raised <
+// dead-contract，所以它必须排在首位。旧实现在 Check 排完序后才 append，
+// 于是它永远吊在末尾，check 输出顺序不再确定。
+func TestGraphCheckOutputStaysSortedAndByteStable(t *testing.T) {
+	repo, base := gitTargetRepo(t, 0, 1, "")
+	addDeadContract(t, repo)
+	first, _, err := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+	if err == nil {
+		t.Fatalf("前置条件：本用例应同时有棘轮与 dead-contract 两条 fail: %s", first)
+	}
+	report := unmarshalReport(t, first)
+	if len(report.Fails) != 2 || report.Fails[0].Kind != "budget-raised" || report.Fails[1].Kind != "dead-contract" {
+		t.Fatalf("fails 应按 kind 全序排列，budget-raised 在前: %+v", report.Fails)
+	}
+	for i := 0; i < 3; i++ {
+		again, _, _ := runGraphSeparate(t, "check", "--base", base, "--repo", repo)
+		if again != first {
+			t.Fatalf("第 %d 次重复运行输出漂移:\n首次=%s\n本次=%s", i+1, first, again)
+		}
+	}
+}
+
+func addDeadContract(t *testing.T, repo string) {
+	t.Helper()
+	path := filepath.Join(repo, "codegraph", "target.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target codegraph.Target
+	if err := json.Unmarshal(raw, &target); err != nil {
+		t.Fatal(err)
+	}
+	target.Contracts = append(target.Contracts, codegraph.Contract{From: "d_svc", To: "d_web"})
+	out, err := json.MarshalIndent(&target, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func unmarshalReport(t *testing.T, stdout string) codegraph.Report {
+	t.Helper()
+	var report codegraph.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("stdout 必须是合法 Report JSON: %v\n%s", err, stdout)
+	}
+	return report
+}
+
+func ratchetFindings(findings []codegraph.Finding) []codegraph.Finding {
+	var out []codegraph.Finding
+	for _, finding := range findings {
+		if finding.Kind == "budget-raised" {
+			out = append(out, finding)
+		}
+	}
+	return out
+}
+
+// gitTargetRepoNested 与 gitTargetRepo 相同，但让 --repo 指向 git 顶层的子目录。
+func gitTargetRepoNested(t *testing.T, repoSub string, baseBudget, currentBudget int, note string) (string, string) {
+	t.Helper()
+	gitRoot := t.TempDir()
+	repo := filepath.Join(gitRoot, repoSub)
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureRepo(t, fixtureRepo, repo)
+	writeTargetVersionBudget(t, repo, 2, baseBudget, 3, 0, "")
+	runGit(t, gitRoot, "init", "-q")
+	runGit(t, gitRoot, "config", "user.email", "codegraph-test@example.com")
+	runGit(t, gitRoot, "config", "user.name", "codegraph-test")
+	runGit(t, gitRoot, "add", ".")
+	runGit(t, gitRoot, "commit", "-q", "-m", "base target")
+	base := strings.TrimSpace(runGit(t, gitRoot, "rev-parse", "HEAD"))
+	writeTargetVersionBudget(t, repo, 3, currentBudget, 2, baseBudget, note)
+	return repo, base
+}
+
 func assertBudgetFinding(t *testing.T, report codegraph.Report, inFails bool) {
 	t.Helper()
 	var fails, warns int
@@ -335,14 +590,14 @@ func gitTargetRepoWithVersion(t *testing.T, oldBudget, currentBudget int, note s
 	t.Helper()
 	repo := t.TempDir()
 	copyFixtureRepo(t, fixtureRepo, repo)
-	writeTargetVersionBudget(t, repo, oldVersion, oldBudget, 2, 0, "")
+	writeTargetVersionBudget(t, repo, oldVersion, oldBudget, 3, 0, "")
 	runGit(t, repo, "init", "-q")
 	runGit(t, repo, "config", "user.email", "codegraph-test@example.com")
 	runGit(t, repo, "config", "user.name", "codegraph-test")
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-q", "-m", "base target")
 	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
-	writeTargetVersionBudget(t, repo, 2, currentBudget, oldVersion, oldBudget, note)
+	writeTargetVersionBudget(t, repo, 3, currentBudget, oldVersion, oldBudget, note)
 	return repo, base
 }
 
@@ -376,7 +631,7 @@ func runGit(t *testing.T, repo string, args ...string) string {
 }
 
 func TestGraphTargetVersionGate(t *testing.T) {
-	for _, version := range []int{1, 3} {
+	for _, version := range []int{1, 2} {
 		repo := t.TempDir()
 		copyFixtureRepo(t, fixtureRepo, repo)
 		path := filepath.Join(repo, "codegraph", "target.json")
@@ -384,7 +639,7 @@ func TestGraphTargetVersionGate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw = bytes.Replace(raw, []byte(`"version": 2`), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
+		raw = bytes.Replace(raw, []byte(`"version": 3`), []byte(fmt.Sprintf(`"version": %d`, version)), 1)
 		if err := os.WriteFile(path, raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -649,15 +904,28 @@ func TestGraphMigrate(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "codegraph"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "codegraph", "target.json"), []byte(`{"meta":{"version":1},"domains":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "target.json"), []byte(`{"meta":{"version":1,"project":"fixture"},"domains":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runGraph(t, "migrate", "--repo", repo)
-	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) {
-		t.Fatalf("migrate 输出: err=%v out=%s", err, out)
+	out, stderr, err := runGraphSeparate(t, "migrate", "--repo", repo)
+	if err != nil || !bytes.Contains([]byte(out), []byte(`"to": 2`)) {
+		t.Fatalf("v1→v2 migrate 输出: err=%v stdout=%s stderr=%s", err, out, stderr)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "baseline.json"), []byte(`{"meta":{"project":"fixture"},"containers":{},"nodes":{},"edges":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err = runGraphSeparate(t, "migrate", "--repo", repo)
+	if err != nil || !bytes.Contains([]byte(out), []byte(`"migrated": true`)) || !bytes.Contains([]byte(out), []byte(`"to": 3`)) {
+		t.Fatalf("v2→v3 migrate 输出: err=%v stdout=%s stderr=%s", err, out, stderr)
+	}
+	if !strings.Contains(stderr, "机械翻译") || !strings.Contains(stderr, "不是最优结构") {
+		t.Fatalf("migrate stderr 应有结构提示: %s", stderr)
 	}
 	if _, err := codegraph.LoadTarget(repo); err != nil {
 		t.Fatalf("migrate 后 target 应可加载: %v", err)
+	}
+	if _, err := codegraph.LoadBest(repo); err != nil {
+		t.Fatalf("migrate 后 best 应可加载: %v", err)
 	}
 }
 
@@ -687,5 +955,68 @@ func copyFixtureRepo(t *testing.T, src, dst string) {
 		if err := os.WriteFile(to, raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// check 侧真加载领域声明（契约 25）。夹具里本来就藏着一个真案例：
+// domains/d_cli.json 声明域 d_cli、锚 cmd/run.go#runE，而节点 n_runE 挂在容器
+// k_svc 下、属 d_svc/api——声明说是我的，图说不是你的。这条判据接上之前，
+// 这个矛盾在 check 里是全绿的。
+func TestGraphCheckLoadsDomainDeclsAndReportsAnchorOwnership(t *testing.T) {
+	out, err := runGraph(t, "check", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("锚归属只进 warn，不该让 check 非零退出: %v\n%s", err, out)
+	}
+	var rep struct {
+		Fails []struct{ Kind string } `json:"fails"`
+		Warns []struct {
+			Kind, From, To, Detail string
+		} `json:"warns"`
+	}
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("解析 check 输出: %v\n%s", err, out)
+	}
+	var hit int
+	for _, w := range rep.Warns {
+		if w.Kind != "anchor-off-domain" {
+			continue
+		}
+		hit++
+		if w.From != "d_cli" || w.To != "d_svc/api" {
+			t.Errorf("From 应是声明方 d_cli、To 应是实际所属 d_svc/api，实际 From=%q To=%q", w.From, w.To)
+		}
+		if !strings.Contains(w.Detail, "cmd/run.go#runE") {
+			t.Errorf("报文应含锚原文，实际: %s", w.Detail)
+		}
+	}
+	// lifecycle 的 from/to 两条 + stateMachine 一条，都指向同一个锚且刻意不去重
+	if hit != 3 {
+		t.Fatalf("应报 3 条 anchor-off-domain（from/to/stateMachine 各一，不去重），实际 %d 条: %+v", hit, rep.Warns)
+	}
+	for _, f := range rep.Fails {
+		if strings.HasPrefix(f.Kind, "anchor-") {
+			t.Errorf("锚判据不得进 fails: %+v", f)
+		}
+	}
+}
+
+// 契约 25：check 加载领域声明失败必须返回 err，不得静默降级成「没有声明」。
+//
+// 审计发现这条零守卫：把 `if err != nil { return err }` 换成 `decls, _ :=`，
+// 一份损坏的声明文件会让 check 打印 {"fails":[],"warns":[]} 并退出 0——
+// 全绿而问题还在，正是 cli.go 那处注释点名要防的失效形态，而当时没有测试守着。
+func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	bad := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	if err := os.WriteFile(bad, []byte("{ this is not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGraph(t, "check", "--repo", repo)
+	if err == nil {
+		t.Fatalf("声明文件损坏时 check 必须失败，不得静默当作没有声明。输出: %s", out)
+	}
+	if !strings.Contains(err.Error(), "d_cli.json") {
+		t.Errorf("报错应指出是哪个文件坏了，实际: %v", err)
 	}
 }

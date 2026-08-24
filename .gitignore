@@ -1,0 +1,4 @@
+# 前端依赖与增量构建缓存：本地产物，不进仓。
+# graph/webui/dist 是例外——它由 webui.go 以 go:embed 嵌入，必须提交。
+graph/webui/node_modules/
+graph/webui/*.tsbuildinfo

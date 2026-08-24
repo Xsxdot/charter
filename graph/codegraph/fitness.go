@@ -22,6 +22,25 @@ const (
 	KindPrefixFamily     = "prefix-family"
 	KindOversizedPackage = "oversized-package"
 	KindBudgetRaised     = "budget-raised"
+	KindDomainEmpty      = "domain-empty"
+)
+
+// 声明锚归属（刀 C1.2）的 finding kind。两者一律进 Warns：handoff 今天就有
+// 14 条命中，报硬红只会逼出「改声明去迁就现状」这一最坏的拐杖（契约 §2-2）。
+const (
+	KindAnchorOffDomain = "anchor-off-domain"
+	KindAnchorOffGraph  = "anchor-off-graph"
+)
+
+// 最优图 gap（刀 C1.8）的 finding kind。四条一律进 Warns——它们衡量的是最优图
+// 与现状分类的一致性，靠编辑 best.json 即可消解；把可编辑消解的东西设为 fail，
+// 等于给「改标签」发进度奖（契约 §1-3、§4）。
+// 不可伪造的迁移进度条是边的合法性，由既有 new-direction / over-budget /
+// legacyBudget 棘轮承担，本刀只换它们的归属输入。
+const (
+	KindContainerMisplaced = "container-misplaced"
+	KindContainerUnplaced  = "container-unplaced"
+	KindBestDangling       = "best-dangling"
 )
 
 // 阈值写死在包内，不进 target 配置，避免把 fitness 判据调高到不报为止。
@@ -31,37 +50,75 @@ const (
 	oversizedPackageFiles  = 40
 )
 
-// CheckBudgetRatchet 逐契约比对当前与基准 target 的 legacyBudget，上涨即产出 finding。
-// 基准缺席的契约按预算 0 处理，因为新增契约携带的存量债同样需要留下理由（契约
-// §7-R4）。本函数只产 findings，不在这里判档；分档必须由调用方读取当前契约的
-// LegacyBudgetNote 并写入 Report（契约 §7-R6）。
+// CheckBudgetRatchet 比对当前与基准 target 的契约 legacyBudget，上涨即产出 finding。
+//
+// 参数：cur 为当前 target，base 为基准 target（nil 表示取不到基准，返回 nil）。
+// 返回：按 cur.Contracts 的声明序排列的 budget-raised findings。
+//
+// 注意：基准缺席的契约预算一律按 0 参与比较，因为新引入时携带的存量债同样需要留下
+// 理由（契约 §3-3）。本函数只探测上涨，**不判档**——档位取决于当前 target
+// 的 note，那是装配期的事；探测器保持无 I/O 纯函数，也不写 Report。分档见
+// ApplyBudgetRatchet。
 func CheckBudgetRatchet(cur, base *Target) []Finding {
 	if base == nil {
 		return nil
 	}
-	baseBudgets := make(map[string]int, len(base.Contracts))
-	for _, c := range base.Contracts {
-		baseBudgets[c.From+"->"+c.To] = c.LegacyBudget
+	baseContracts := make(map[string]int, len(base.Contracts))
+	for _, contract := range base.Contracts {
+		baseContracts[contract.From+"->"+contract.To] = contract.LegacyBudget
 	}
 	var findings []Finding
-	for _, c := range cur.Contracts {
-		key := c.From + "->" + c.To
-		oldBudget, exists := baseBudgets[key]
+	for _, contract := range cur.Contracts {
+		key := contract.From + "->" + contract.To
+		old, exists := baseContracts[key]
 		if !exists {
-			oldBudget = 0
+			old = 0
 		}
-		if c.LegacyBudget <= oldBudget {
+		if contract.LegacyBudget <= old {
 			continue
 		}
-		detail := fmt.Sprintf("契约 %s 新增契约携带存量预算 %d（基准中缺席，按预算 0 处理）", c.From+"→"+c.To, c.LegacyBudget)
+		detail := fmt.Sprintf("契约 %s 新增契约携带存量预算 %d（基准中缺席，按预算 0 处理）", contract.From+"→"+contract.To, contract.LegacyBudget)
 		if exists {
-			detail = fmt.Sprintf("契约 %s 预算 %d→%d 上涨", c.From+"→"+c.To, oldBudget, c.LegacyBudget)
+			detail = fmt.Sprintf("契约 %s 预算 %d→%d 上涨", contract.From+"→"+contract.To, old, contract.LegacyBudget)
 		}
-		findings = append(findings, Finding{
-			Kind: KindBudgetRaised, From: c.From, To: c.To, Detail: detail,
-		})
+		findings = append(findings, Finding{Kind: KindBudgetRaised, From: contract.From, To: contract.To, Detail: detail})
 	}
 	return findings
+}
+
+// ApplyBudgetRatchet 把预算棘轮探测结果按理由分档写进 rep，并重排整份报告。
+//
+// 参数：rep 为 Check 已产出的报告（原地修改）；cur 为当前 target；base 为基准
+// target（nil 时探测器返回空，本函数只剩一次排序）。
+//
+// 分档口径：理由一律取**当前** target 的 LegacyBudgetNote；TrimSpace 后非空才降为 warn，否则进 fails。取当前而
+// 不取基准，是因为「这次为什么放宽」只有当前这份 target 能回答。
+//
+// 注意：只有 budget-raised 会被 note 降档；其他 fail 一律留在 Fails。
+//
+// 收尾必须重新 sortFindings：追加发生在 Check 排序之后，不重排 budget-raised 就会
+// 永远吊在末尾，check 输出顺序不再确定、CLI 重复运行无法 diff。
+// 本函数只操作内存，不做任何 I/O——git 取基准是 CLI 的边界。
+func ApplyBudgetRatchet(rep *Report, cur, base *Target) {
+	for _, finding := range CheckBudgetRatchet(cur, base) {
+		note := budgetRatchetNote(cur, finding)
+		if strings.TrimSpace(note) != "" {
+			rep.Warns = append(rep.Warns, finding)
+		} else {
+			rep.Fails = append(rep.Fails, finding)
+		}
+	}
+	sortFindings(rep)
+}
+
+// budgetRatchetNote 找到一条 budget-raised 对应的当前契约 note。找不到就返回空串 = 没有理由。
+func budgetRatchetNote(cur *Target, finding Finding) string {
+	for _, contract := range cur.Contracts {
+		if contract.From == finding.From && contract.To == finding.To {
+			return contract.LegacyBudgetNote
+		}
+	}
+	return ""
 }
 
 // prefixFamilyFindings 在视图文件集内按目录和文件名前四个字符分组。阈值选四个字符

@@ -176,6 +176,8 @@ ContainersAdded map[string]Container `json:"containersAdded,omitempty"`   // 已
 
 **约束两条**：该宽松路径**只用于取 `contracts` 段**，不得用它喂任何其他执法输入；代码注释必须写明这是对「`meta.version` 白名单在 `LoadTarget` 单点收口」的**有意例外**及其理由。
 
+> **2026-08-23 C1.1 回写**：上段「只用于取 `contracts` 段」的表述**已被 R11 取代**，改为按流向而非按字段段落约束——宽松解析出的 `*Target` 只允许流向棘轮比较，`subsystems` 段随之放行。「代码注释必须写明有意例外」一条不变。理由与边界见 §7 后的 **R11**。
+
 ### R6（C5）：分档读 `cur` 侧的 `LegacyBudgetNote`
 
 §2-2 的「该契约的 `LegacyBudgetNote`」未指明取 cur 还是 base。**定为 cur**——涨预算的人在新 target 里写理由，基准侧的旧理由不得用于给新涨幅降档。
@@ -215,7 +217,7 @@ ContainersAdded map[string]Container `json:"containersAdded,omitempty"`   // 已
 35. 基准 target 为 schema v1 时棘轮照常比对，不跳过。
 36. 降档读的是 `cur` 侧的 `LegacyBudgetNote`。
 37. `LegacyBudgetNote` 经 `strings.TrimSpace` 后为空则不降档（`" "` 不算理由）。
-38. 基准宽松解析路径只用于取 `contracts` 段。
+38. 基准宽松解析路径只用于取 `contracts` 段。**（2026-08-23 C1.1 回写取代，改述见 R11：产物只允许流向棘轮比较的两个预算字段，`contracts` 与 `subsystems` 两段均可取，但永远不得传给 `Check`。）**
 
 ### §7 收尾自检（本轮新鲜证据）
 
@@ -231,3 +233,15 @@ ContainersAdded map[string]Container `json:"containersAdded,omitempty"`   // 已
 `dc00cf163`（handoff 侧另一会话的 `contract(b192)` 冻结）向 `codegraph/target.json` 的两条契约写入了 entry `client.DispatchOpts.local_base_branch`。该串是**字段路径而非容器 label**，baseline 的 containers 中不存在此 label（实测确认）。旧版 check 对匹配不到的 entry 静默，故该哑条目此前零信号；`dead-entry` 判据首次运行即让它可见。已落 handoff 卡 **B206**。
 
 **冻结 4 改述为**：三类新 fail 只在「target.json 声明的契约面确有未建成项」时非零；对 2026-08-23 早的 handoff 真仓快照实测为 0，对含 B192 哑条目的当前快照实测为 2 且两条均可归因到真实缺陷。**判据的正确性由「每条 fail 都能归因到真实缺陷」验证，不由「fail 恒为 0」验证**——后者会把「工具没发现问题」与「代码没问题」混为一谈。
+
+### R11（2026-08-23 C1.1 目标领域刀回写）：宽松解析路径的约束从「按字段段落」改为「按流向」
+
+R5 与冻结 38 原文把宽松路径限制在「只用于取 `contracts` 段」。**该表述在 C1.1 落地时不再成立**：目标领域预算棘轮要比对基准侧的 `subsystems[].unplacedBudget`，而这个字段只能从同一条宽松路径读出来。若坚持只投 `contracts`，基准侧的子系统预算恒为 nil，棘轮的「相等或下降不产 finding」（冻结 33 同源口径）就变成死条文——预算一动不动也会被判成从 0 上涨，判据退化为每次 `check` 都响的假警报。
+
+**冻结 38 改述为**：基准宽松解析路径的产物**只允许流向棘轮比较**，即只喂 `Target.Contracts[].LegacyBudget` 与 `Target.Subsystems[].UnplacedBudget` 这两个预算字段的比对；它**不得作为任何执法判据的事实来源**。具体到代码即：宽松解析出的 `*Target` 只允许传给 `CheckBudgetRatchet` / `ApplyBudgetRatchet`，**永远不得传给 `Check`**。
+
+**为什么放宽是安全的**：原约束的真实风险是「未经版本门的数据被当成事实」——一份 v1 或结构走样的 target 若流进 `Check`，会凭空产出或洗掉 finding。两个预算字段在风险性质上同构：它们都只参与**比较**（当前值 vs 基准值），不作事实来源，读歪的后果上限是棘轮多报或少报一条 `budget-raised`，而 `budget-raised` 本身还要过当前 target 的 note 分档；执法判据（`Check` 的全部 kind）一律只吃走过 `LoadTarget` 版本门的当前 target。所以约束的正确切分面是**流向**，不是字段段落——按段落切会随每个新增的可比预算字段反复失效，按流向切一次到位。
+
+**代价与首跑悬崖（实测，见 `cli_test.go#TestGraphCheckSubsystemRatchetAgainstTrueSchemaV1Base`）**：真 v1 基准根本没有 `subsystems` 键（v1 顶层叫 `domains`），宽松解析出 `Subsystems == nil`，基准侧一律读到「未声明目标领域，按 0」。因此任何子系统**首次**声明带 `unplacedBudget > 0` 的目标领域时，第一次 `check` 必然命中一条 `budget-raised` fail，需要同时写 `unplacedBudgetNote` 才能降为 warn。这是冻结 33「基准缺席按 0」在目标领域侧的同构后果，**不是缺陷**；C1.6 给 handoff 建领域树时会第一次撞上。
+
+**R5 的第二条约束不变**：代码注释仍必须写明这是对「`meta.version` 白名单在 `LoadTarget` 单点收口」的有意例外及其理由，且注释须引用本条（R11）而非被取代的 R5 原文。

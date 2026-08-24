@@ -2,6 +2,7 @@ package codegraph
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -101,7 +102,7 @@ func TestFitnessFindingsAreWarnings(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		files = append(files, fmt.Sprintf("large/file%02d.go", i))
 	}
-	rep := Check(&Target{}, viewWithFiles(files...))
+	rep := checkNoDecls(&Target{}, viewWithFiles(files...))
 	if !hasFinding(rep.Warns, KindPrefixFamily) || !hasFinding(rep.Warns, KindOversizedPackage) {
 		t.Fatalf("两类 fitness finding 都应进 warns: %+v", rep)
 	}
@@ -159,6 +160,92 @@ func TestCheckBudgetRatchetIgnoresNewContractWithZeroBudget(t *testing.T) {
 	cur := twoDomainTarget(nil, 0)
 	if got := CheckBudgetRatchet(cur, base); len(got) != 0 {
 		t.Fatalf("基准缺席且当前预算 0 不应产生 finding: %+v", got)
+	}
+}
+
+func TestApplyBudgetRatchetGradesByCurrentNote(t *testing.T) {
+	cases := []struct {
+		name      string
+		note      string
+		wantFails int
+		wantWarns int
+	}{
+		{name: "无理由进 fails", note: "", wantFails: 1},
+		{name: "非空理由降为 warn", note: "竖切迁移中", wantWarns: 1},
+		{name: "纯空白理由不算理由", note: " \t\n ", wantFails: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cur, base := twoDomainTarget(nil, 3), twoDomainTarget(nil, 2)
+			cur.Contracts[0].LegacyBudgetNote = tc.note
+			rep := &Report{}
+			ApplyBudgetRatchet(rep, cur, base)
+			assertRatchetGrade(t, rep, tc.wantFails, tc.wantWarns)
+		})
+	}
+}
+
+func assertRatchetGrade(t *testing.T, rep *Report, wantFails, wantWarns int) {
+	t.Helper()
+	fails, warns := 0, 0
+	for _, f := range rep.Fails {
+		if f.Kind == KindBudgetRaised {
+			fails++
+		}
+	}
+	for _, f := range rep.Warns {
+		if f.Kind == KindBudgetRaised {
+			warns++
+		}
+	}
+	if fails != wantFails || warns != wantWarns {
+		t.Fatalf("budget-raised 分档不对: fails=%d(want %d) warns=%d(want %d) rep=%+v", fails, wantFails, warns, wantWarns, rep)
+	}
+}
+
+// 冻结 32：note 只降 budget-raised 的档，其他 fail 永远留在 fails。
+// 这两条如果共用降档分支，一个 note 就能把真实的契约违规洗成 warn。
+func TestApplyBudgetRatchetKeepsOverBudgetInFails(t *testing.T) {
+	cur := twoDomainTarget(nil, 1)
+	cur.Contracts[0].LegacyBudgetNote = "竖切迁移中"
+	base := twoDomainTarget(nil, 0)
+	rep := &Report{Fails: []Finding{{Kind: "over-budget", From: "d_a", To: "d_b", Detail: "a→b 2 条超出预算 1"}}}
+	ApplyBudgetRatchet(rep, cur, base)
+	if !hasFinding(rep.Fails, "over-budget") || hasFinding(rep.Warns, "over-budget") {
+		t.Fatalf("over-budget 不得被 note 降档: %+v", rep)
+	}
+	if !hasFinding(rep.Warns, KindBudgetRaised) || hasFinding(rep.Fails, KindBudgetRaised) {
+		t.Fatalf("有理由的 budget-raised 应降为 warn: %+v", rep)
+	}
+}
+
+// 回归锁：追加必须发生在排序之前（等价说法——装配函数追加完要重排）。
+// 旧 CLI 的 appendBudgetRatchet 在 Check 排完序之后才 append，于是 budget-raised
+// 永远吊在末尾，check 输出顺序不再确定、无法做 diff。
+func TestApplyBudgetRatchetReordersWholeReport(t *testing.T) {
+	rep := &Report{
+		Fails: []Finding{{Kind: "over-budget", From: "d_svc", To: "d_target", Detail: "z 超预算"}},
+		Warns: []Finding{{Kind: "outside-file", Detail: "图外文件: z.go"}},
+	}
+	cur := &Target{Contracts: []Contract{
+		{From: "d_zzz", To: "d_target", LegacyBudget: 2},
+		{From: "d_aaa", To: "d_target", LegacyBudget: 2, LegacyBudgetNote: "有理由"},
+	}}
+	ApplyBudgetRatchet(rep, cur, &Target{})
+
+	if len(rep.Fails) != 2 || rep.Fails[0].Kind != KindBudgetRaised {
+		t.Fatalf("budget-raised 追加后必须重排到 over-budget 之前: %+v", rep.Fails)
+	}
+	if len(rep.Warns) != 2 || rep.Warns[0].Kind != KindBudgetRaised {
+		t.Fatalf("warns 侧同样必须重排: %+v", rep.Warns)
+	}
+	// 幂等自证：再排一次不应改变顺序，说明返回的就是全序结果。
+	for _, findings := range [][]Finding{rep.Fails, rep.Warns} {
+		want := append([]Finding(nil), findings...)
+		sortFindings(&Report{Fails: want})
+		if !reflect.DeepEqual(want, findings) {
+			t.Fatalf("装配后的报告不是排好序的:\n got %+v\nwant %+v", findings, want)
+		}
 	}
 }
 

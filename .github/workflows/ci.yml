@@ -1,0 +1,60 @@
+# graph 模块的日常门（刀 0 · C1.4）。
+# 职责：每次推送/PR 跑两件事——查看器前端的测试与产物防漂移、graph 模块的 Go 静态检查与测试。
+# 边界：不发版、不打 tag、不建产物；发版路径见 release.yml。
+#
+# 为什么 Go 也要在这里跑：webui 的空壳守卫（graph/webui/webui_test.go 断言嵌入的
+# dist 里真有 index.html 与至少 3 个文件）此前只挂在 tag 触发的 release.yml 上，
+# 等于「发版那天才知道嵌进去的是不是空目录」。它必须在日常门上。
+name: graph-webui
+
+on:
+  push:
+    paths: ["graph/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["graph/**", ".github/workflows/ci.yml"]
+
+jobs:
+  webui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: graph/webui/package-lock.json
+      - name: Install viewer dependencies
+        working-directory: graph/webui
+        run: npm ci
+      - name: Run viewer tests
+        working-directory: graph/webui
+        run: npm test
+      - name: Preserve committed dist
+        working-directory: graph/webui
+        run: |
+          cp -a dist "$RUNNER_TEMP/committed-dist"
+      - name: Rebuild viewer
+        working-directory: graph/webui
+        run: npm run build
+      - name: Reject stale committed dist
+        working-directory: graph/webui
+        run: diff -ruN "$RUNNER_TEMP/committed-dist" dist
+
+  # 刻意不装 Node：dist 是提交物，消费方在无 Node 环境下必须能直接 go build
+  # （契约 §7-2）。这个 job 顺带把那条性质也验了——它一旦需要 Node 才能过，
+  # 说明产物没提交全。
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: graph
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: graph/go.mod
+          cache-dependency-path: graph/go.sum
+      - name: 静态检查
+        run: go vet ./...
+      - name: 测试
+        run: go test ./... -count=1

@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -10,8 +11,8 @@ func TestLoadTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载目标图: %v", err)
 	}
-	if tg.Meta.Version != 2 || len(tg.Subsystems) == 0 {
-		t.Fatalf("meta/subsystems 解析不对: %+v", tg.Meta)
+	if tg.Meta.Version != 3 || len(tg.Contracts) == 0 {
+		t.Fatalf("meta/contracts 解析不对: %+v", tg)
 	}
 }
 
@@ -22,27 +23,44 @@ func TestLoadTargetMissingIsError(t *testing.T) {
 	}
 }
 
-func TestValidateTarget(t *testing.T) {
-	bad := &Target{
-		Meta: TargetMeta{Version: 2},
-		Subsystems: []TargetSubsystem{
-			{ID: "d_a", Name: "A", Type: "logic", Paths: []string{"pkg/**"}},
-			{ID: "d_a", Name: "重复", Type: "magic", Paths: []string{"[bad"}},
-		},
-		Assignments: []Assignment{{Path: "x.go", Subsystem: "d_nope"}},
-		Contracts:   []Contract{{From: "d_a", To: "d_nope", LegacyBudget: -1}},
+func TestTargetV3JSONGolden(t *testing.T) {
+	target := Target{
+		Meta:      TargetMeta{Version: 3, Project: "handoff"},
+		Assembly:  []string{"cmd/run.go"},
+		Contracts: []Contract{{From: "d_cmd", To: "d_svc", Entries: []string{"svc.Server"}, LegacyBudget: 2}},
 	}
+	raw, err := json.Marshal(target)
+	if err != nil {
+		t.Fatalf("编码 v3 目标图: %v", err)
+	}
+	want := `{"meta":{"version":3,"project":"handoff"},"assembly":["cmd/run.go"],"contracts":[{"from":"d_cmd","to":"d_svc","entries":["svc.Server"],"legacyBudget":2}]}`
+	if string(raw) != want {
+		t.Fatalf("v3 目标图 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
+	}
+	for _, forbidden := range []string{`"subsystems"`, `"assignments"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("v3 wire 不得包含 %s: %s", forbidden, raw)
+		}
+	}
+	var decoded Target
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("解码 v3 目标图: %v", err)
+	}
+	if decoded.Meta.Version != 3 || len(decoded.Contracts) != 1 || decoded.Contracts[0].LegacyBudget != 2 {
+		t.Fatalf("v3 目标图回读结构错误: %+v", decoded)
+	}
+}
+
+func TestValidateTarget(t *testing.T) {
+	bad := &Target{Contracts: []Contract{{From: "d_a", To: "d_b", LegacyBudget: -1}}}
 	issues := ValidateTarget(bad)
-	for _, want := range []string{"重复", "type", "paths", "d_nope", "legacyBudget"} {
-		found := false
-		for _, is := range issues {
-			if strings.Contains(is, want) {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("缺少对 %q 的校验报告，实际: %v", want, issues)
-		}
+	if len(issues) != 1 || !strings.Contains(issues[0], "legacyBudget") {
+		t.Fatalf("只应报告负 legacyBudget: %v", issues)
+	}
+
+	// 归属完整性已下沉到 Best；Target 不得再以未知域名拒绝契约。
+	if issues := ValidateTarget(&Target{Contracts: []Contract{{From: "d_ghost", To: "d_ghost"}}}); len(issues) != 0 {
+		t.Fatalf("未知域名不属于 target 结构门: %v", issues)
 	}
 }
 
@@ -51,27 +69,5 @@ func TestContractBudgetDefaultZero(t *testing.T) {
 	var c Contract
 	if c.LegacyBudget != 0 {
 		t.Fatal("缺省预算必须是 0（硬拦）")
-	}
-}
-
-func TestSubsystemOf(t *testing.T) {
-	tg := &Target{
-		Subsystems: []TargetSubsystem{
-			{ID: "d_svc", Type: "logic", Paths: []string{"svc/**"}},
-			{ID: "d_cmd", Type: "logic", Paths: []string{"cmd/run.go"}},
-		},
-		Assignments: []Assignment{{Path: "svc/mirror.go", Subsystem: "d_cmd"}},
-	}
-	cases := []struct{ file, want string }{
-		{"svc/task.go", "d_svc"},   // 前缀规则
-		{"svc/mirror.go", "d_cmd"}, // assignments 优先于 paths
-		{"cmd/run.go", "d_cmd"},    // 精确规则
-		{"web/x.ts", ""},           // 图外
-		{"svcx/task.go", ""},       // 前缀必须整段匹配，svcx 不是 svc/
-	}
-	for _, c := range cases {
-		if got := tg.SubsystemOf(c.file); got != c.want {
-			t.Errorf("SubsystemOf(%q) = %q, want %q", c.file, got, c.want)
-		}
 	}
 }
