@@ -7,9 +7,10 @@ import { layoutDomains } from './domainlayout'
 import {
   aggregateBestCards,
   assembleDirections,
-  enforcementReadout,
+  debtReadout,
 } from './besttree'
 import type { DirectionReadout } from './besttree'
+import { DebtBanner } from './BestOverlays'
 import type { DomainAgg, DomainCard, DomainEdge } from './domains'
 import type { CgBest, CgCheckReport, CgTarget } from '../../api/types'
 import type { ViewEdge } from './graphmath'
@@ -17,12 +18,14 @@ import type { ViewEdge } from './graphmath'
 const CARD_W = 252
 const CARD_H = 112
 
-interface BestPanoramaProps {
+export interface BestPanoramaProps {
   best: CgBest
   target?: CgTarget
   report?: CgCheckReport
   selectedSubsystem: string
+  selectedEdge: string
   onSelectSubsystem: (id: string) => void
+  onSelectEdge: (key: string) => void
 }
 
 function layoutAggregate(
@@ -45,47 +48,45 @@ function layoutAggregate(
   return { cards: layoutCards, edges, ifaces: {} }
 }
 
-function directionColor(direction: DirectionReadout): { stroke: string; dash?: string } {
-  if (direction.status === 'new-direction') return { stroke: '#d97706', dash: '8 5' }
-  if (direction.status === 'over-budget') return { stroke: '#dc2626' }
-  if (direction.status === 'dead-contract') return { stroke: '#6b7280', dash: '4 4' }
-  return { stroke: '#2563eb' }
+function directionColor(direction: DirectionReadout): { stroke: string; dash?: string; bold: boolean } {
+  const stroke = direction.directCalls >= 100
+    ? '#c62f04'
+    : direction.directCalls >= 30
+      ? '#e2641f'
+      : direction.directCalls >= 10
+        ? '#ef9f4e'
+        : direction.directCalls > 0 ? '#f5c98a' : '#e5e7eb'
+  if (direction.status === 'new-direction') return { stroke, dash: '8 5', bold: direction.directCalls >= 100 }
+  if (direction.status === 'dead-contract') return { stroke, dash: '4 4', bold: direction.directCalls >= 100 }
+  return { stroke, bold: direction.directCalls >= 100 }
 }
 
 function directionText(direction: DirectionReadout): string {
-  if (direction.status === 'new-direction') return `未声明 · 直调 ${direction.directCalls}`
-  if (direction.status === 'dead-contract') return `未建成 · 直调 ${direction.directCalls}/${direction.legacyBudget ?? '—'}`
-  return `直调 ${direction.directCalls}/${direction.legacyBudget ?? '—'}`
-}
-
-/** 全局执法横幅；report 缺席时明确是无数据，不把缺席伪装成三个零。 */
-export function EnforcementBanner({ report }: { report?: CgCheckReport }) {
-  const readout = enforcementReadout(report)
-  return (
-    <div data-enforcement-banner role="status"
-      className="absolute left-3.5 top-12 z-30 inline-flex items-center gap-3 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
-      <b>执法读数</b>
-      {readout ? (
-        <>
-          <span data-enforcement="fails">fails {readout.fails}</span>
-          <span data-enforcement="misplaced">放错位 {readout.misplaced}</span>
-          <span data-enforcement="unplaced">未归属 {readout.unplaced}</span>
-        </>
-      ) : <span data-enforcement="none" className="text-muted-foreground">无数据</span>}
-    </div>
-  )
+  if (direction.status === 'new-direction') return `欠 ${direction.directCalls} · 未声明`
+  if (direction.status === 'dead-contract') return `欠 ${direction.directCalls}/${direction.legacyBudget ?? '—'} · 未建成`
+  return `欠 ${direction.directCalls}/${direction.legacyBudget ?? '—'}`
 }
 
 export function BestPanorama(props: BestPanoramaProps) {
-  const { best, target, report, selectedSubsystem, onSelectSubsystem } = props
+  const { best, target, report, selectedSubsystem, selectedEdge, onSelectSubsystem, onSelectEdge } = props
   const cards = useMemo(() => aggregateBestCards(best, report), [best, report])
   const directions = useMemo(() => assembleDirections(target, report), [target, report])
+  const readout = useMemo(() => debtReadout(target, report), [target, report])
   const ids = useMemo(() => Object.keys(cards).sort(), [cards])
   const agg = useMemo(() => layoutAggregate(cards, directions), [cards, directions])
+  const maxDirectCalls = useMemo(() => Math.max(0, ...directions.map((direction) => direction.directCalls)), [directions])
   const [pos, setPos] = useState<Record<string, [number, number]>>({})
   const wrap = useRef<HTMLDivElement>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
+
+  useEffect(() => {
+    console.debug('[codegraph] render best panorama', {
+      subsystemCount: ids.length,
+      directionCount: directions.length,
+      hasReport: !!report,
+    })
+  }, [ids.length, directions.length, report])
 
   useEffect(() => {
     const next = layoutDomains(agg, ids)
@@ -167,7 +168,7 @@ export function BestPanorama(props: BestPanoramaProps) {
 
   return (
     <div ref={wrap} className="relative min-w-0 flex-1 cursor-grab overflow-hidden" onMouseDown={onPan}>
-      <EnforcementBanner report={report} />
+      <DebtBanner readout={readout} />
       <button data-best-relayout onClick={() => setPos(layoutDomains(agg, ids, pos))}
         className="absolute right-3 top-2.5 z-30 rounded border bg-background px-2 py-0.5 text-xs"
         title="重新布局理想树">重新布局</button>
@@ -179,7 +180,8 @@ export function BestPanorama(props: BestPanoramaProps) {
             const color = directionColor(direction)
             return (
               <line key={direction.key} x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={color.stroke} strokeDasharray={color.dash} strokeWidth={1.5 + Math.min(direction.directCalls, 8) * 0.45} />
+                stroke={color.stroke} strokeDasharray={color.dash}
+                strokeWidth={color.bold ? 3.5 : 1.5 + Math.min(direction.directCalls, 8) * 0.45} />
             )
           })}
         </svg>
@@ -188,8 +190,12 @@ export function BestPanorama(props: BestPanoramaProps) {
           const [x2, y2] = center(direction.to)
           return (
             <div key={direction.key} data-best-direction={direction.key} data-direction-status={direction.status}
-              onClick={() => onSelectSubsystem(direction.to)}
+              data-debt={direction.directCalls}
+              data-debt-level={maxDirectCalls ? Math.round(direction.directCalls / maxDirectCalls * 10) : 0}
+              onClick={(event) => { event.stopPropagation(); onSelectEdge(direction.key) }}
               className={'absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full border bg-background px-2 py-0.5 font-mono text-[10.5px] '
+                + (selectedEdge === direction.key ? 'outline outline-2 outline-primary ' : '')
+                + (directionColor(direction).bold ? 'font-bold ' : '')
                 + (direction.status === 'over-budget' ? 'border-red-600 text-red-600 '
                   : direction.status === 'new-direction' ? 'border-amber-600 text-amber-700 '
                     : direction.status === 'dead-contract' ? 'border-gray-500 text-gray-600' : '')}

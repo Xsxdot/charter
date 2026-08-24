@@ -1,0 +1,72 @@
+# C1.9 codegraph viewer migration ledger
+
+- 2026-08-24：`pwd && git status --short --branch` -> `/root/.handoff/worktrees/762e73d2`；`## cards/C1.9-charter`；初始工作树无改动。
+- 2026-08-24：读取 `docs/specs/2026-08-24-codegraph-viewer-migration-spec.md`；spec 标注已批准、L2 单子系统、仅动 `graph/webui`、消费 C1.3 已冻结字段且宿主/ wire 契约不改。
+- 2026-08-24：`git log --oneline --decorate -12` -> `fb2d8fe (HEAD -> cards/C1.9-charter, origin/master, origin/HEAD) spec(codegraph): C1.9 查看器二期 spec 批准回写（嵌套下钻+迁移视角+欠账读数，L2）`；当前分支基于已合并 C1.3 查看器实现。
+- 2026-08-24：读取 `skills/plan/SKILL.md` 与 `skills/defect-families/SKILL.md`；本节点产出计划文档，不写实现代码；计划必须包含精确文件、完整接口、基线判据、日志/注释步骤、缺陷族与序列化边界自审。
+- 2026-08-24：`rg --files | rg '(^|/)prototypes/' || true` -> 无输出；spec 声明的 `prototypes/codegraph-phase2/` 形态基准不在当前仓库工作树，计划以 spec 明文与已落地 C1.3 viewer 组件/测试为可读基线，并把原型缺失列为未验证形态事实。
+- 2026-08-24：读取 `graph/webui/package.json` -> 脚本为 `dev`、`build: tsc -b && vite build`、`test: vitest run`、`typecheck: tsc -b`；依赖含 React 19、Vitest 4、Testing Library 16、TypeScript 5.8。
+- 2026-08-24：读取 `graph/webui/src/api/types.ts` 与 C1.3 viewer 源码 -> `CodegraphResp` 已有可选 `best?: CgBest`、`target?: CgTarget`、`report?: CgCheckReport`；现有 `besttree.ts` 已提供 `aggregateBestCards`、`assembleDirections`、`enforcementReadout`，`BestPanorama`/`BestDetail`/`CodegraphPage` 已消费这些字段，现状 `DomainPanorama`/`DomainDetail` 为回退形态。
+- 2026-08-24：读取现有 viewer 测试 -> 已有 C1.3 的 best 全景、详情、无 report 降级、baseline/domain 下钻与面包屑、diff 视图回退用例；新增计划必须复用这些夹具/Testing Library 模式并保留一期用例。
+- 2026-08-24 基线验收尝试：`npm run typecheck && npm test`（工作目录 `graph/webui`）失败，原始输出：`> codegraph-webui@0.0.0 typecheck`；`> tsc -b`；`sh: 1: tsc: not found`。未据此判断源码结果，需先安装锁定依赖后重跑。
+- 2026-08-24：`npm ci --cache /root/.handoff/tmp/762e73d2/npm-cache`（工作目录 `graph/webui`）退出 0，原始摘要：`added 168 packages, and audited 169 packages in 4s`；`found 0 vulnerabilities`。
+- 2026-08-24 基线验收：`npm run typecheck && npm test`（工作目录 `graph/webui`）退出 0；TypeScript 无输出；Vitest 原始摘要：`Test Files 14 passed (14)`、`Tests 89 passed (89)`。
+- 2026-08-24 基线构建：`npm run build`（工作目录 `graph/webui`）退出 0；原始摘要：`vite v6.4.3 building for production`、`✓ 42 modules transformed`、`✓ built in 621ms`。
+- 2026-08-24 构建后工作树核查：`git diff --check && git status --short --branch` -> `## cards/C1.9-charter`；构建改写已跟踪 `graph/webui/dist/index.html` 并删除旧资产、生成未跟踪 `index-CzXZ2eZM.css`/`index-DM1dP66r.js`；台账为本节点新增文件。该生成物变更属于验收副作用，收口前恢复 dist 基线。
+- 2026-08-24：首次 `git restore -- graph/webui/dist/assets/index-G41Q0Rap.js graph/webui/dist/assets/index-PlCD2zKm.css` 失败，原始输出：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/762e73d2/index.lock': Read-only file system`。
+- 2026-08-24：经提升权限重跑同一恢复命令退出 0；原始状态摘要：`## cards/C1.9-charter`、仅有 `?? docs/ledgers/2026-08-24-codegraph-viewer-migration-ledger.md`。
+- 2026-08-24：`rg -n "console\\.|logger|structured" graph/webui/src graph/webui` -> 既有可观测性使用 `console.info/debug/warn` 的结构化对象参数，入口/成功/失败节点在 `src/app/codegraph/useCodegraph.ts:12-25` 与 `src/api/client.ts:28-50`；计划沿既有 logger 形态只为新增页面状态入口、选择与错误分支加上下文字段，不引入第二套 logger。
+- 2026-08-24 计划落盘尝试：使用 `apply_patch` 新增 `docs/plans/2026-08-24-codegraph-viewer-migration-plan.md` 失败，原始输出：`apply_patch verification failed: invalid hunk at line 689, 'git diff --check' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'`；未生成计划文件。
+- 2026-08-24：计划首版落盘成功，`wc -l` -> 计划 586 行、台账 19 行；占位符扫描命中计划自身第 585 行的扫描命令文本，原始输出为该行；`git diff --check` 无输出。将改写扫描命令以排除其自身说明行后重跑。
+- 2026-08-24 计划自审：`rg -n "TBD|TODO|同 Task|适当的错误处理|待定" ... | rg -v "占位符扫描"` -> 无输出；`git diff --check` -> 无输出；结构扫描列出 Task 1~4 均有文件范围、Interfaces、基线判据、2~5 分钟动作、验收/反面断言，且计划含序列化边界、缺陷族、真机清单和收口步骤。
+- 2026-08-24 计划修订后复核：同一占位符扫描（排除说明行）无输出；`git diff --check` 无输出；`git status --short --branch` -> `## cards/C1.9-charter`，仅两个未跟踪文档：本卡计划与本卡台账；计划 591 行。
+- 2026-08-24 计划最终自审：占位符扫描（排除说明行）无输出；尾随空白扫描无输出；`git diff --check` 无输出；工作树仍为 `## cards/C1.9-charter`，计划 599 行、台账 22 行，只有计划和台账两个未跟踪文件。
+- 2026-08-24 首次收口提交：`git add docs/plans/2026-08-24-codegraph-viewer-migration-plan.md docs/ledgers/2026-08-24-codegraph-viewer-migration-ledger.md && git commit -m 'plan(webui): C1.9 viewer migration drilldown'` 退出 0；原始输出：`[cards/C1.9-charter 8898d3d] plan(webui): C1.9 viewer migration drilldown`、`2 files changed, 622 insertions(+)`。
+- 2026-08-24：提交后追加本次提交事实使台账产生 1 行未提交改动；`git diff --check && git status --short --branch && git diff --stat` -> `## cards/C1.9-charter`、台账 `1 insertion(+)`，无 whitespace 错误；下一步 amend 以保持收口干净。
+- 2026-08-24 最终提交前核验：`git status --short --branch && git rev-parse HEAD && git show --stat --oneline --decorate HEAD && git diff --check` -> `## cards/C1.9-charter`；HEAD `42fa8f349f055b6cba6cc81830e8f0f65ce0908d`；`42fa8f3 (HEAD -> cards/C1.9-charter) plan(webui): C1.9 viewer migration drilldown`；2 files changed, 624 insertions(+)；`git diff --check` 无输出。
+- 2026-08-24：本执行节点开始核对 -> `git status --short --branch` 输出 `## cards/C1.9-charter-2`；`git log --oneline -5` 顶部为 `7f9de15 plan(webui): C1.9 viewer migration drilldown`；工作树无未提交改动，按当前分支继续，不切分支。
+- 2026-08-24：读取本卡计划与规格 -> 实现边界仅 `graph/webui`；Task 1~4 分别覆盖纯函数投影、覆盖层、嵌套/叶子视图、页面接线；补充裁决要求债务梯度使用 `#f5c98a/#ef9f4e/#e2641f/#c62f04`，后续实现以该补充为准。
+- 2026-08-24 Task 1 红测尝试：`npx vitest run src/app/codegraph/besttree.test.ts`（工作目录 `graph/webui`）失败；原始输出：`npm error code EROFS`、`npm error syscall open`、`npm error path /root/.npm/_cacache/tmp/***`、`npm error rofs Invalid response body while trying to fetch https://registry.npmjs.org/vitest: EROFS: read-only file system`；新增断言尚未执行，当前失败不是功能结果，先安装本工作树依赖。
+- 2026-08-24：`npm ci --cache /root/.handoff/tmp/da90509a/npm-cache`（工作目录 `graph/webui`）退出 0；原始摘要：`added 168 packages, and audited 169 packages in 4s`、`found 0 vulnerabilities`。
+- 2026-08-24 Task 1 红测确认：依赖安装后 `npx vitest run src/app/codegraph/besttree.test.ts` 运行到 17 个测试，13 通过、4 失败；四个新增失败均为缺失功能导出调用：`TypeError: debtReadout is not a function`、`migrationGroups is not a function`、`directionDetail is not a function`、`bestScopeGraph is not a function`。确认测试因功能缺失变红，开始最小实现。
+- 2026-08-24 Task 1 实现：在 `besttree.ts` 新增并导出 `DebtReadout`、`MigrationGroup`、`BestDirectionDetail`、`BestScopeGraph` 及计划接口函数；`childDomainIds` 收口为唯一导出 `childBestDomainIds`，遍历使用 Set，结果按 id/key 稳定排序；未改 wire 类型。
+- 2026-08-24 Task 1 局部绿测：实现后 `npx vitest run src/app/codegraph/besttree.test.ts` 退出 0；原始摘要：`Test Files 1 passed (1)`、`Tests 17 passed (17)`。
+- 2026-08-24 Task 1 全量类型检查首次失败：`npx vitest run src/app/codegraph/besttree.test.ts && npm run typecheck` 中 Vitest 通过后 `tsc -b` 失败，原始输出：`src/app/codegraph/besttree.ts(604,11): error TS7022: 'parent' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.`；将在该局部变量改为显式 string 命名后重跑。
+- 2026-08-24 Task 1 类型检查复跑：`npx vitest run src/app/codegraph/besttree.test.ts && npm run typecheck` 退出 0；原始摘要：`Test Files 1 passed (1)`、`Tests 17 passed (17)`、`tsc -b` 无输出。
+- 2026-08-24 Task 1 `git diff --check` 退出 0，无输出。
+- 2026-08-24 Task 2 红测确认：`npx vitest run src/app/codegraph/BestPanorama.test.tsx src/app/codegraph/BestOverlays.test.tsx` 运行到 2 个文件，`BestOverlays.test.tsx` 因 `Failed to resolve import "./BestOverlays"` 全套失败；`BestPanorama.test.tsx` 5 个新增/改写断言失败，现有 DOM 仍为旧 `data-enforcement` 与旧方向文本。确认覆盖层缺失和新契约未接线，开始实现。
+- 2026-08-24 Task 2 实现：新增 `BestOverlays.tsx` 的 `DebtBanner`、`MigrationSidebar`、`BestEdgeDetail`；`BestPanorama` 接入 `selectedEdge/onSelectEdge`、report/target 缺席语义、`data-debt`/`data-debt-level` 和暖色债务梯度（1~9 `#f5c98a`、10~29 `#ef9f4e`、30~99 `#e2641f`、100+ `#c62f04`）。
+- 2026-08-24 Task 2 局部绿测：`npx vitest run src/app/codegraph/BestPanorama.test.tsx src/app/codegraph/BestOverlays.test.tsx` 退出 0；原始摘要：`Test Files 2 passed (2)`、`Tests 8 passed (8)`。
+- 2026-08-24 Task 2 全量类型检查首次失败：`npm run typecheck` 退出 2，原始输出：`src/app/codegraph/CodegraphPage.tsx(166,16): error TS2739: Type '{ best: CgBest; target: CgTarget | undefined; report: CgCheckReport | undefined; selectedSubsystem: string; onSelectSubsystem: (id: string) => void; }' is missing the following properties from type 'BestPanoramaProps': selectedEdge, onSelectEdge`；这是新 props 尚未接入页面的编译契约错误，接入页面当前根视角的最小透传后继续。
+- 2026-08-24 Task 2 类型检查复跑：更新 `CodegraphPage.tsx` 根视角透传 `selEdge` 与 `onSelectEdge` 后，`npx vitest run src/app/codegraph/BestPanorama.test.tsx src/app/codegraph/BestOverlays.test.tsx && npm run typecheck` 退出 0；原始摘要：`Test Files 2 passed (2)`、`Tests 8 passed (8)`、`tsc -b` 无输出。
+- 2026-08-24 Task 2 `git diff --check` 退出 0，无输出。
+- 2026-08-24 Task 3 红测确认：`npx vitest run src/app/codegraph/BestScopePanorama.test.tsx src/app/codegraph/BestLeafGraph.test.tsx` 两套均未执行测试，原始错误分别为 `Failed to resolve import "./BestLeafGraph"` 与 `Failed to resolve import "./BestScopePanorama"`；确认新组件缺失，开始最小实现。
+- 2026-08-24 Task 3 实现：新增 `BestScopePanorama.tsx`（bestScopeGraph 一层投影、同构布局、圈外卡、迁移托盘/箭头、wheel/mouse cleanup）与 `BestLeafGraph.tsx`（bestContainerFacts/groupContainersBySubdomain、包分组、节点数、幽灵待迁入容器）；未添加路由、请求或写路径。
+- 2026-08-24 Task 3 局部绿测：`npx vitest run src/app/codegraph/BestScopePanorama.test.tsx src/app/codegraph/BestLeafGraph.test.tsx` 退出 0；原始摘要：`Test Files 2 passed (2)`、`Tests 2 passed (2)`。
+- 2026-08-24 Task 3 类型检查：`npm run typecheck` 退出 0；原始摘要：`tsc -b` 无输出。
+- 2026-08-24 Task 3 `git diff --check` 退出 0，无输出。
+- 2026-08-24 Task 4 红测确认：`npx vitest run src/app/codegraph/CodegraphPage.test.tsx src/app/codegraph/BestDetail.test.tsx` 运行 24 个测试，21 通过、3 失败；原始失败为 BestDetail 新进入按钮不存在（`Unable to fire a "click" event - please provide a DOM element`），页面迁移侧栏/嵌套 scope/边详情查询均为 `expected null to be truthy`。确认页面接线与详情回调缺失，开始实现。
+- 2026-08-24 Task 4 实现：`CodegraphPage` 新增独立 best scope/edge/container/history 状态；根、嵌套、叶子视图互斥，面包屑逐级返回，迁移点击进入应然子系统并保留高亮，边点击接 `BestEdgeDetail`；`BestDetail` 增加子领域进入按钮与容器选择回调；视图切换清理 best 状态，branch/no-best 回退路径保留。
+- 2026-08-24 Task 4 局部绿测：`npx vitest run src/app/codegraph/CodegraphPage.test.tsx src/app/codegraph/BestDetail.test.tsx` 退出 0；原始摘要：`Test Files 2 passed (2)`、`Tests 24 passed (24)`。
+- 2026-08-24 Task 4 触及回归/类型检查首次失败：`npx vitest run src/app/codegraph/CodegraphPage.test.tsx src/app/codegraph/BestDetail.test.tsx src/app/codegraph/DomainPanorama.test.tsx src/app/codegraph/DomainDetail.test.tsx && npm run typecheck` 中 4 文件 36/36 通过，但 `tsc -b` 失败，原始输出：`src/app/codegraph/CodegraphPage.tsx(58,9): error TS6133: 'bestLeaf' is declared but its value is never read.`；删除未使用派生变量后重跑。
+- 2026-08-24 Task 4 触及回归/类型检查复跑：删除未使用 `bestLeaf` 后同一命令退出 0；原始摘要：`Test Files 4 passed (4)`、`Tests 36 passed (36)`、`tsc -b` 无输出。
+- 2026-08-24 Task 4 `git diff --check` 退出 0，无输出。
+- 2026-08-24 收口全量验收：`npm run typecheck && npm test && npm run build`（工作目录 `graph/webui`）退出 0；原始摘要：`Test Files 17 passed (17)`、`Tests 104 passed (104)`、Vite `✓ 45 modules transformed`、`✓ built in 718ms`。
+- 2026-08-24 收口构建副作用核查：构建改写 tracked `graph/webui/dist/index.html`、删除旧 `index-G41Q0Rap.js`/`index-PlCD2zKm.css`，生成未跟踪 `index-CcgOwkzK.js`/`index-DhibVEn-.css`；这些是本次构建产物，不属于实现范围，按计划恢复并移除这四个精确目标。
+- 2026-08-24 构建产物恢复首次尝试：`git restore -- graph/webui/dist/index.html graph/webui/dist/assets/index-G41Q0Rap.js graph/webui/dist/assets/index-PlCD2zKm.css` 失败，原始输出：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/da90509a/index.lock': Read-only file system`；未据此判断源码结果，需以提升权限重跑。
+- 2026-08-24：提升权限重跑同一 `git restore` 退出 0；tracked dist 基线已恢复，接着删除本次构建生成的两个精确未跟踪资产。
+- 2026-08-24：`rm graph/webui/dist/assets/index-CcgOwkzK.js graph/webui/dist/assets/index-DhibVEn-.css` 退出 0；仅移除本次构建生成的两个未跟踪 dist 资产，可由同一构建重新生成。
+- 2026-08-24 补充红测：增强 `BestLeafGraph.test.tsx` 断言幽灵容器保留 baseline 节点数后，`npx vitest run src/app/codegraph/BestLeafGraph.test.tsx` 运行 1 个测试失败；原始断言输出：`Received: 'API 容器 · 待迁入0 节点'`，期望包含 `1 节点`；确认幽灵事实不能回退为零，开始最小修复。
+- 2026-08-24：`BestLeafGraph` 增加 baseline 全量 `containerFacts` 回退，幽灵容器沿真实包目录与节点数展示；修复后 `npx vitest run src/app/codegraph/BestLeafGraph.test.tsx` 退出 0，原始摘要：`Test Files 1 passed (1)`、`Tests 1 passed (1)`。
+- 2026-08-24 最终源码验收：`npm run typecheck && npm test`（工作目录 `graph/webui`）退出 0；原始摘要：`tsc -b` 无输出、`Test Files 17 passed (17)`、`Tests 104 passed (104)`。
+- 2026-08-24 最终构建复验：`npm run build`（工作目录 `graph/webui`）退出 0；原始摘要：`✓ 45 modules transformed`、`✓ built in 656ms`；本次生成 tracked dist 改动与未跟踪 `index-B_svNaqK.js`/`index-DhibVEn-.css`，随后按计划恢复/移除。
+- 2026-08-24：最终构建副作用的提升权限 `git restore` 退出 0，tracked dist 三文件恢复基线。
+- 2026-08-24：`rm graph/webui/dist/assets/index-B_svNaqK.js graph/webui/dist/assets/index-DhibVEn-.css` 退出 0；最终构建生成的两个未跟踪 dist 资产已移除。
+- 2026-08-24 收口范围审计：`git diff --check` 退出 0，无输出；`git status --short --branch` 仅列本卡台账及 `graph/webui/src/app/codegraph/` 计划文件；`git diff --name-only && git ls-files --others --exclude-standard` 未列 `types.ts`、`graph/codegraph/**`、宿主或 dist 文件。
+- 2026-08-24 占位符扫描尝试：`rg -n "TBD|TODO|同 Task|适当的错误处理|待定" docs/plans/2026-08-24-codegraph-viewer-migration-plan.md | rg -v "占位符扫描"` 退出 1，原始输出为空；按纪律仅记录该命令结果，未将其改写为通过结论。
+- 2026-08-24 收口前 `git diff --check` 复核退出 0，无输出。
+- 2026-08-24 首次暂存尝试失败：对本卡 16 个计划文件执行 `git add` 退出 128，原始输出：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/da90509a/index.lock': Read-only file system`；需提升权限重跑同一暂存命令。
+- 2026-08-24：提升权限重跑同一 16 文件 `git add` 退出 0；实现、测试和台账已进入暂存区。
+- 2026-08-24 暂存区核查：`git status --short --branch` 显示当前分支及 15 个暂存文件（含 6 个新增 viewer 文件）；`git diff --cached --check` 退出 0，无输出；暂存范围仅台账与 `graph/webui/src/app/codegraph/`。
+- 2026-08-24 首次实现提交：`git commit -m "feat(webui): C1.9 viewer drilldown migration overlays"` 退出 0；原始输出：`[cards/C1.9-charter-2 dcd369f] feat(webui): C1.9 viewer drilldown migration overlays`、`15 files changed, 1305 insertions(+), 69 deletions(-)`；未 push。
+- 2026-08-24 提交台账回写并 amend：`git commit --amend --no-edit` 退出 0；原始输出：`[cards/C1.9-charter-2 f30dbaa] feat(webui): C1.9 viewer drilldown migration overlays`、`15 files changed, 1306 insertions(+), 69 deletions(-)`；仍未 push。

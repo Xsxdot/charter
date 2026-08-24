@@ -4,11 +4,16 @@ import {
   aggregateBestCards,
   assembleDirections,
   bestSubsystems,
+  bestScopeGraph,
   classifyFinding,
   containerFacts,
   containerSubsystems,
+  debtReadout,
+  directionDetail,
   enforcementReadout,
   groupContainersBySubdomain,
+  isBestLeaf,
+  migrationGroups,
   subsystemOf,
   topLevelSubsystemIds,
 } from './besttree'
@@ -102,6 +107,86 @@ describe('besttree', () => {
     expect(() => aggregateBestCards(best, report)).not.toThrow()
     expect(enforcementReadout(report)).toEqual({ fails: 2, misplaced: 2, unplaced: 1 })
     expect(enforcementReadout()).toBeNull()
+  })
+})
+
+describe('C1.9 debt and migration projections', () => {
+  it('区分 report 缺席、target 缺席和明确零值，并计算四件套', () => {
+    const targetWithEntries: CgTarget = { ...target, contracts: [
+      { from: 'ss_api', to: 'ss_store', entries: ['read'], legacyBudget: 2 },
+      { from: 'ss_store', to: 'ss_api', entries: ['write'], legacyBudget: 0 },
+      { from: 'ss_api', to: 'ss_api_read', entries: [], legacyBudget: 1 },
+    ] }
+    const reportWithZero: CgCheckReport = { ...report,
+      fails: [...report.fails, { kind: 'over-budget', from: 'ss_api', to: 'ss_store', detail: '超预算' }],
+      legacyHits: { 'ss_api->ss_store': 3, 'ss_store->ss_api': 0 },
+    }
+    expect(debtReadout(targetWithEntries, reportWithZero)).toEqual({
+      fails: 3, directCalls: 3, coveredDirections: 2, totalDirections: 3,
+      misplaced: 2, bidirectionalPairs: 1, targetAvailable: true,
+    })
+    expect(debtReadout(undefined, reportWithZero)).toMatchObject({
+      directCalls: 3, coveredDirections: 0, totalDirections: 0, targetAvailable: false,
+    })
+    expect(debtReadout(targetWithEntries, undefined)).toBeNull()
+  })
+
+  it('按应然领域分组全部 misplaced，稳定排序并保留未知目标组', () => {
+    const baselineWithDomains: CgGraph = { ...graph,
+      domains: { old: { label: '现状旧域', kind: 'logic' }, current: { label: '现状域', kind: 'logic' } },
+      containers: { ...graph.containers,
+        c_api: { ...graph.containers.c_api, domain: 'old' },
+        c_api_detail: { ...graph.containers.c_api_detail, domain: 'current' },
+      },
+    }
+    const groups = migrationGroups(best, baselineWithDomains, report)
+    expect(groups.map((group) => [group.expectedDomainId, group.count])).toEqual([
+      ['api_read', 1], ['api_read_detail', 1],
+    ])
+    expect(groups[0].items[0]).toMatchObject({
+      containerId: 'c_api', containerLabel: 'API 容器', currentDomainLabel: '现状旧域',
+      expectedDomainLabel: '读取领域', expectedSubsystemId: 'ss_api',
+    })
+  })
+
+  it('双向环只由互逆 contract 对构成，单向方向不得冒充环对', () => {
+    // 判别力夹具：1 对互逆 + 2 条无反向的单向。互逆判据反转时会把两条单向计成 2 对——必须红。
+    const mutualAndOneWay: CgTarget = { ...target, contracts: [
+      { from: 'ss_api', to: 'ss_store', entries: [] },
+      { from: 'ss_store', to: 'ss_api', entries: [] },
+      { from: 'ss_api', to: 'ss_x', entries: [] },
+      { from: 'ss_store', to: 'ss_y', entries: [] },
+    ] }
+    expect(debtReadout(mutualAndOneWay, report)?.bidirectionalPairs).toBe(1)
+  })
+
+  it('方向详情保留窄缝、明确零值和反向对端', () => {
+    const targetWithEntries: CgTarget = { ...target, contracts: [
+      { from: 'ss_api', to: 'ss_store', entries: ['read'], legacyBudget: 2 },
+      { from: 'ss_store', to: 'ss_api', entries: [], legacyBudget: 0 },
+    ] }
+    expect(directionDetail('ss_store->ss_api', targetWithEntries, report)).toEqual({
+      key: 'ss_store->ss_api', from: 'ss_store', to: 'ss_api', directCalls: 0,
+      legacyBudget: 0, narrowEntries: [], counterpartKey: 'ss_api->ss_store', bidirectional: true,
+    })
+    expect(directionDetail('missing->direction', targetWithEntries, report)).toBeNull()
+  })
+
+  it('递归投影只给直接子领域，圈外折成 ext 卡，叶子可判定', () => {
+    const nestedTarget: CgTarget = { ...target, contracts: [
+      { from: 'api_read', to: 'api_read_detail', entries: ['detail'] },
+      { from: 'api_read', to: 'ss_store', entries: ['store'] },
+    ] }
+    const nested = bestScopeGraph(best, nestedTarget, report, 'ss_api')
+    expect(nested.leaf).toBe(false)
+    expect(nested.cards.map((card) => [card.id, card.external])).toEqual([
+      ['api_read', false], ['ext:ss_store', true],
+    ])
+    expect(nested.edges).toEqual([
+      { key: 'api_read->ext:ss_store', from: 'api_read', to: 'ext:ss_store', directCalls: 0, directions: ['api_read->ss_store'] },
+    ])
+    expect(bestScopeGraph(best, nestedTarget, report, 'api_read').leaf).toBe(false)
+    expect(isBestLeaf(best, 'api_read_detail')).toBe(true)
   })
 })
 

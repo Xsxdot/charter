@@ -1,7 +1,7 @@
 // besttree —— 理想树对照的纯算法层。
 //
-// 职责：把 best/target/report 变成 BestPanorama 与 BestDetail 所需的稳定读数。
-// 边界：不读 baseline 的边、不发请求、不碰 DOM；组件只负责渲染和交互。
+// 职责：只读 best/target/report，投影出查看器所需的稳定读数。
+// 边界：不读 DOM、不发请求、不写入数据；组件只负责渲染和交互。
 //       唯一读 baseline 节点的地方是 containerFacts——它只取文件目录与节点计数这两个事实。
 import type { CgBest, CgBestDomain, CgCheckReport, CgFinding, CgGraph, CgTarget } from '../../api/types'
 
@@ -37,6 +37,70 @@ export interface DirectionReadout {
   deadContract: boolean
   newDirection: boolean
   status: DirectionStatus
+}
+
+export interface DebtReadout {
+  fails: number
+  directCalls: number
+  coveredDirections: number
+  totalDirections: number
+  misplaced: number
+  bidirectionalPairs: number
+  targetAvailable: boolean
+}
+
+export interface MigrationItem {
+  containerId: string
+  containerLabel: string
+  currentDomainId: string
+  currentDomainLabel: string
+  expectedDomainId: string
+  expectedDomainLabel: string
+  expectedSubsystemId: string
+}
+
+export interface MigrationGroup {
+  expectedDomainId: string
+  expectedDomainLabel: string
+  items: MigrationItem[]
+  count: number
+}
+
+export interface BestDirectionDetail {
+  key: string
+  from: string
+  to: string
+  directCalls: number
+  legacyBudget?: number
+  narrowEntries: string[]
+  counterpartKey?: string
+  bidirectional: boolean
+}
+
+export interface BestScopeCard {
+  id: string
+  label: string
+  responsibility: string
+  type: string
+  external: boolean
+  containerCount: number
+  misplacedCount: number
+  childCount: number
+}
+
+export interface BestScopeEdge {
+  key: string
+  from: string
+  to: string
+  directCalls: number
+  directions: string[]
+}
+
+export interface BestScopeGraph {
+  scopeId: string | null
+  cards: BestScopeCard[]
+  edges: BestScopeEdge[]
+  leaf: boolean
 }
 
 export interface EnforcementReadout {
@@ -80,7 +144,8 @@ export function containerSubsystems(best: CgBest): Record<string, string> {
   return result
 }
 
-function childDomainIds(best: CgBest, parentId: string): string[] {
+/** 返回指定领域的直接子领域；未知 parent 返回空数组并按 id 排序。 */
+export function childBestDomainIds(best: CgBest, parentId: string): string[] {
   return Object.entries(best.domains)
     .filter(([, domain]) => domain.parent === parentId)
     .map(([id]) => id)
@@ -89,14 +154,14 @@ function childDomainIds(best: CgBest, parentId: string): string[] {
 
 function descendantDomainIds(best: CgBest, parentId: string): string[] {
   const result: string[] = []
-  const queue = childDomainIds(best, parentId)
+  const queue = childBestDomainIds(best, parentId)
   const seen = new Set<string>()
   while (queue.length) {
     const id = queue.shift()!
     if (seen.has(id)) continue
     seen.add(id)
     result.push(id)
-    queue.push(...childDomainIds(best, id))
+    queue.push(...childBestDomainIds(best, id))
   }
   return result.sort()
 }
@@ -111,7 +176,7 @@ export function bestSubsystems(best: CgBest): BestSubsystem[] {
       label: domain.label,
       responsibility: domain.responsibility,
       type: domain.type ?? '',
-      childIds: childDomainIds(best, id),
+      childIds: childBestDomainIds(best, id),
       descendantIds: descendants,
     }
   })
@@ -237,7 +302,7 @@ export function groupContainersBySubdomain(
     }
     out.push(group)
     let total = own.length
-    for (const childId of childDomainIds(best, domainId)) total += walk(childId, depth + 1)
+    for (const childId of childBestDomainIds(best, domainId)) total += walk(childId, depth + 1)
     group.totalCount = total
     if (total === 0) out.splice(index, 1)
     return total
@@ -339,6 +404,251 @@ export function enforcementReadout(report?: CgCheckReport): EnforcementReadout |
     fails: report.fails.length,
     misplaced: report.warns.filter((finding) => finding.kind === 'container-misplaced').length,
     unplaced: report.warns.filter((finding) => finding.kind === 'container-unplaced').length,
+  }
+}
+
+/**
+ * 汇总欠账四件套；report 缺席返回 null，target 缺席只影响窄缝与双向环的目标侧读数。
+ * legacyHits 中明确的 0 会被保留为有效直调数。
+ */
+export function debtReadout(target: CgTarget | undefined, report: CgCheckReport | undefined): DebtReadout | null {
+  if (!report) return null
+  const contracts = target?.contracts ?? []
+  const contractKeys = new Set(contracts.map((contract) => directionKey(contract.from, contract.to)))
+  const bidirectional = new Set<string>()
+  for (const key of contractKeys) {
+    const parsed = parseDirectionKey(key)
+    if (!parsed || parsed[0] === parsed[1]) continue
+    const reverse = directionKey(parsed[1], parsed[0])
+    if (!contractKeys.has(reverse)) continue
+    bidirectional.add([parsed[0], parsed[1]].sort().join('<->'))
+  }
+  return {
+    fails: report.fails.length,
+    directCalls: Object.values(report.legacyHits ?? {}).reduce((sum, hits) => sum + hits, 0),
+    coveredDirections: contracts.filter((contract) => (contract.entries ?? []).length > 0).length,
+    totalDirections: contracts.length,
+    misplaced: report.warns.filter((finding) => finding.kind === 'container-misplaced').length,
+    bidirectionalPairs: bidirectional.size,
+    targetAvailable: !!target,
+  }
+}
+
+/** 从 best/现状报告派生迁移清单；未知 best 目标保留在「未映射目标」组。 */
+export function migrationGroups(
+  best: CgBest,
+  baseline: CgGraph,
+  report: CgCheckReport | undefined,
+): MigrationGroup[] {
+  const groups = new Map<string, MigrationGroup>()
+  for (const finding of report?.warns ?? []) {
+    if (finding.kind !== 'container-misplaced' || !finding.from) continue
+    const containerId = finding.from
+    const currentDomainId = baseline.containers[containerId]?.domain ?? ''
+    const expectedDomainId = best.containers[containerId] ?? ''
+    const currentDomainLabel = currentDomainId && baseline.domains?.[currentDomainId]
+      ? baseline.domains[currentDomainId].label
+      : '未归属'
+    const expectedDomainLabel = expectedDomainId
+      ? best.domains[expectedDomainId]?.label ?? expectedDomainId
+      : '未映射目标'
+    const item: MigrationItem = {
+      containerId,
+      containerLabel: baseline.containers[containerId]?.label ?? containerId,
+      currentDomainId,
+      currentDomainLabel,
+      expectedDomainId,
+      expectedDomainLabel,
+      expectedSubsystemId: expectedDomainId ? subsystemOf(best, expectedDomainId) : '',
+    }
+    const group = groups.get(expectedDomainId) ?? {
+      expectedDomainId,
+      expectedDomainLabel,
+      items: [],
+      count: 0,
+    }
+    group.items.push(item)
+    group.count = group.items.length
+    groups.set(expectedDomainId, group)
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort((a, b) => a.containerId.localeCompare(b.containerId)),
+    }))
+    .sort((a, b) => a.expectedDomainId.localeCompare(b.expectedDomainId))
+}
+
+/** 精确读取一个 target/report 方向及其反向 contract；未知方向返回 null。 */
+export function directionDetail(
+  key: string,
+  target: CgTarget | undefined,
+  report: CgCheckReport | undefined,
+): BestDirectionDetail | null {
+  const direction = assembleDirections(target, report).find((candidate) => candidate.key === key)
+  if (!direction) return null
+  const contract = (target?.contracts ?? []).find((candidate) => directionKey(candidate.from, candidate.to) === key)
+  const parsed = parseDirectionKey(key)
+  if (!parsed) return null
+  const counterpartKey = directionKey(parsed[1], parsed[0])
+  const counterpart = (target?.contracts ?? []).some(
+    (candidate) => directionKey(candidate.from, candidate.to) === counterpartKey,
+  )
+  return {
+    key,
+    from: parsed[0],
+    to: parsed[1],
+    directCalls: direction.directCalls,
+    legacyBudget: contract?.legacyBudget,
+    narrowEntries: [...(contract?.entries ?? [])],
+    ...(counterpart ? { counterpartKey, bidirectional: true } : { bidirectional: false }),
+  }
+}
+
+/** 返回从领域到根的 best 路径；未知领域或成环返回已知前缀，不抛异常。 */
+export function bestDomainPath(best: CgBest, domainId: string): string[] {
+  const path: string[] = []
+  const seen = new Set<string>()
+  let current = domainId
+  while (current && best.domains[current] && !seen.has(current)) {
+    seen.add(current)
+    path.unshift(current)
+    current = best.domains[current].parent ?? ''
+  }
+  return current && !best.domains[current] ? [] : path
+}
+
+/** 判断领域是否存在且没有直接子领域；未知 id 不是叶子。 */
+export function isBestLeaf(best: CgBest, domainId: string): boolean {
+  return !!best.domains[domainId] && childBestDomainIds(best, domainId).length === 0
+}
+
+/** 读取 best 领域展示名；未知 id 回退为 id，避免图卡静默消失。 */
+export function bestDomainLabel(best: CgBest, domainId: string): string {
+  return best.domains[domainId]?.label ?? domainId
+}
+
+/** 返回直接归属该领域的容器 id，按稳定顺序排列。 */
+export function bestDomainContainerIds(best: CgBest, domainId: string): string[] {
+  return Object.entries(best.containers)
+    .filter(([, assignedDomainId]) => assignedDomainId === domainId)
+    .map(([containerId]) => containerId)
+    .sort()
+}
+
+/** 返回指定 best 领域的容器事实；缺失 baseline 事实时使用零节点空包占位。 */
+export function bestContainerFacts(
+  best: CgBest,
+  baseline: CgGraph,
+  domainId: string,
+): Record<string, ContainerFacts> {
+  const facts = containerFacts(baseline)
+  const result: Record<string, ContainerFacts> = {}
+  for (const containerId of bestDomainContainerIds(best, domainId)) {
+    result[containerId] = facts[containerId] ?? { dir: '', nodeCount: 0 }
+  }
+  return result
+}
+
+function subtreeDomainIds(best: CgBest, rootId: string): Set<string> {
+  const result = new Set<string>()
+  if (!best.domains[rootId]) return result
+  const queue = [rootId]
+  while (queue.length) {
+    const current = queue.shift()!
+    if (result.has(current) || !best.domains[current]) continue
+    result.add(current)
+    queue.push(...childBestDomainIds(best, current))
+  }
+  return result
+}
+
+function scopeCard(best: CgBest, report: CgCheckReport | undefined, domainId: string, external: boolean): BestScopeCard {
+  const domainIds = subtreeDomainIds(best, domainId)
+  const containerCount = Object.values(best.containers).filter((assignedDomainId) => domainIds.has(assignedDomainId)).length
+  const misplacedCount = (report?.warns ?? []).filter(
+    (finding) => finding.kind === 'container-misplaced' && !!finding.from && domainIds.has(best.containers[finding.from] ?? ''),
+  ).length
+  const domain = best.domains[domainId]
+  return {
+    id: external ? `ext:${domainId}` : domainId,
+    label: domain?.label ?? domainId,
+    responsibility: domain?.responsibility ?? '',
+    type: domain?.type ?? '',
+    external,
+    containerCount,
+    misplacedCount,
+    childCount: childBestDomainIds(best, domainId).length,
+  }
+}
+
+interface ProjectedScopeEndpoint {
+  id: string
+  external: boolean
+  domainId: string
+}
+
+function scopeEndpoint(best: CgBest, scopeId: string | null, domainId: string): ProjectedScopeEndpoint | null {
+  if (!best.domains[domainId]) return null
+  if (scopeId === null) {
+    const rootId = subsystemOf(best, domainId)
+    return rootId ? { id: rootId, external: false, domainId: rootId } : null
+  }
+  if (!best.domains[scopeId]) return null
+
+  let current = domainId
+  const seen = new Set<string>()
+  while (current && best.domains[current] && !seen.has(current)) {
+    if (current === scopeId) return null
+    seen.add(current)
+    const parentId: string = best.domains[current].parent ?? ''
+    if (parentId === scopeId) return { id: current, external: false, domainId: current }
+    current = parentId
+  }
+
+  const rootId = subsystemOf(best, domainId)
+  return rootId ? { id: `ext:${rootId}`, external: true, domainId: rootId } : null
+}
+
+/**
+ * 把当前 scope 投影成直接子领域卡与聚合边；圈外端点折成 ext 卡，保留横跳可见性，
+ * 避免嵌套页丢失跨域边。未知 scope 返回空图，不把坏数据变成伪卡。
+ */
+export function bestScopeGraph(
+  best: CgBest,
+  target: CgTarget | undefined,
+  report: CgCheckReport | undefined,
+  scopeId: string | null,
+): BestScopeGraph {
+  if (scopeId !== null && !best.domains[scopeId]) {
+    return { scopeId, cards: [], edges: [], leaf: false }
+  }
+  const visibleIds = scopeId === null ? topLevelSubsystemIds(best) : childBestDomainIds(best, scopeId)
+  const cardDomains = new Set(visibleIds)
+  const edges = new Map<string, BestScopeEdge>()
+  for (const direction of assembleDirections(target, report)) {
+    const from = scopeEndpoint(best, scopeId, direction.from)
+    const to = scopeEndpoint(best, scopeId, direction.to)
+    if (!from || !to || from.id === to.id || (from.external && to.external)) continue
+    if (from.external) cardDomains.add(from.domainId)
+    if (to.external) cardDomains.add(to.domainId)
+    const key = `${from.id}->${to.id}`
+    const edge = edges.get(key) ?? { key, from: from.id, to: to.id, directCalls: 0, directions: [] }
+    edge.directCalls += direction.directCalls
+    edge.directions.push(direction.key)
+    edges.set(key, edge)
+  }
+
+  const cards = [...cardDomains]
+    .map((domainId) => scopeCard(best, report, domainId, !visibleIds.includes(domainId)))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  return {
+    scopeId,
+    cards,
+    edges: [...edges.values()]
+      .map((edge) => ({ ...edge, directions: [...new Set(edge.directions)].sort() }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    leaf: scopeId !== null && isBestLeaf(best, scopeId),
   }
 }
 
