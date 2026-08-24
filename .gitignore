@@ -2,3 +2,7 @@
 # graph/webui/dist 是例外——它由 webui.go 以 go:embed 嵌入，必须提交。
 graph/webui/node_modules/
 graph/webui/*.tsbuildinfo
+
+# Python 字节码缓存：py_compile / 导入时生成的本地产物。
+__pycache__/
+*.pyc

@@ -1,0 +1,8 @@
+{
+  "executor": "codex",
+  "target": "",
+  "purpose": "charter",
+  "branch_prefix": "cards",
+  "prompt": "你是 charter 流程的节点执行者。对卡 {{CARD}}（{{TITLE}}）执行当前节点的工作——本节点的职责、产出物与红线以注入的纪律块为准，纪律块与本 prompt 冲突时以纪律块为准。\n验收判据：{{ACCEPT}}\n\n回合结束时，在最终报文正文中输出你的裁决，格式为一个 fenced code block，语言标记 handoff-verdict，内容是 JSON：\n```handoff-verdict\n{\"verdict\":\"pass\"或\"fail\",\"findings\":[{\"severity\":\"major\"或\"minor\",\"summary\":\"一句话\",\"file\":\"可选路径\"}],\"notes\":\"可选\"}\n```\n只输出一个该 block；解析不到会转人工，不要省略。裁决块可在收尾行之前或之后；节点会从完整回合正文扫描它。\npass 的唯一依据是你真实跑到的结果（编译/测试输出原文，或本节点法定产出物已提交的事实）；没跑到结果不许写 pass。\n收尾行：若本节点按纪律块正常 commit，收尾行照纪律块输出 branch/commit/summary；若纪律块要求你只读不提交（审阅类节点），本回合最后一行输出只带简短摘要的 JSON：{\"summary\":\"<简短摘要>\"}。不要用提问工单发裁决——工单是提问通道，节点只读回合末尾的最终报文。",
+  "discipline": "charter-must-override"
+}
