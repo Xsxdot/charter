@@ -36,6 +36,32 @@ const resp: CodegraphResp = {
   stale: [],
 }
 
+const bestResp: CodegraphResp = {
+  ...resp,
+  best: {
+    meta: { version: 1, project: 'demo' },
+    domains: {
+      s_api: { label: 'API 子系统', responsibility: '对外服务', type: 'boundary' },
+      s_api_read: { label: '读取领域', responsibility: '查询', parent: 's_api' },
+      s_store: { label: '存储子系统', responsibility: '持久化', type: 'logic' },
+    },
+    containers: { c_cli: 's_api_read', k_svc: 's_store' },
+  },
+  target: {
+    meta: { version: 3, project: 'demo' },
+    contracts: [{ from: 's_api', to: 's_store', legacyBudget: 1 }],
+  },
+  report: {
+    fails: [{ kind: 'over-budget', from: 's_api', to: 's_store', detail: '超预算' }],
+    warns: [
+      { kind: 'container-misplaced', from: 'c_cli', detail: '放错位' },
+      { kind: 'container-unplaced', from: 'c_missing', detail: '未归属' },
+    ],
+    legacyHits: { 's_api->s_store': 2 },
+  },
+  views: { branch: { view: 'branch:demo' } },
+}
+
 vi.mock('./useCodegraph', () => ({
   useCodegraph: (project: string) => {
     state.projects.push(project)
@@ -103,6 +129,33 @@ describe('CodegraphPage 三态下钻', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-node]').length).toBeGreaterThan(0))
     expect(container.querySelector('[data-domain]')).toBeNull()
     expect(screen.getByText(/未包含领域划分/)).toBeTruthy()
+  })
+
+  it('有 best 时 baseline 主视角切到理想树，并显示 gap 与执法读数', async () => {
+    state.data = bestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+    expect(screen.getByText('理想树全景')).toBeTruthy()
+    expect(container.querySelector('[data-gap="containers"]')).toBeTruthy()
+    expect(container.querySelector('[data-enforcement="fails"]')?.textContent).toBe('fails 1')
+    expect(container.querySelector('[data-domain]')).toBeNull()
+  })
+
+  it('有 best 无 report 时理想树照画且执法横幅显示无数据', async () => {
+    state.data = { ...bestResp, report: undefined }
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+    expect(container.querySelector('[data-enforcement="none"]')?.textContent).toBe('无数据')
+  })
+
+  it('选中分支视图时回落现状域全景并显示主线对照说明', async () => {
+    state.data = bestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'branch' } })
+    await waitFor(() => expect(container.querySelector('[data-domain="d_cli"]')).toBeTruthy())
+    expect(container.querySelector('[data-best-subsystem]')).toBeNull()
+    expect(screen.getByText(/分支视图暂用现状域全景/)).toBeTruthy()
   })
 })
 

@@ -9,6 +9,7 @@
 // 边界：项目选择不属于 viewer；只从 iframe 自身 URL 的 ?project= 读取。
 import { useMemo, useState } from 'react'
 import { CallTree } from './CallTree'
+import { BestPanorama } from './BestPanorama'
 import { DetailPanel } from './DetailPanel'
 import { DomainDetail } from './DomainDetail'
 import { DomainPanorama } from './DomainPanorama'
@@ -41,6 +42,8 @@ export function CodegraphPage() {
 
   const single = !!view && !hasDomains(view)               // 旧图：整张图当一个领域看
   const pano = !!view && !single && (scope === null || childDomainsOf(view, scope).length > 0)
+  const bestPano = !!view && viewName === 'baseline' && !!data?.best
+  const branchCompareFallback = !!view && viewName !== 'baseline' && !!data?.best
   const leafScope = single ? null : scope
 
   const effFoci = useMemo(() => {
@@ -123,7 +126,12 @@ export function CodegraphPage() {
         <CodegraphPlaceholder loading={loading} error={error} project={project} onRetry={reload} />
       ) : (
         <div className="relative flex min-h-0 flex-1">
-          {!single && (
+          {bestPano ? (
+            <div className="absolute left-3.5 top-2.5 z-30 inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
+              <b>理想树全景</b>
+              <span className="text-[11px] text-muted-foreground">主线对照 · 点子系统卡查看详情 · 空白拖动平移 · ⌘/⌃+滚轮缩放</span>
+            </div>
+          ) : !single && (
             <div className="absolute left-3.5 top-2.5 z-30 inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
               {scope === null ? (
                 <>
@@ -152,7 +160,10 @@ export function CodegraphPage() {
               )}
             </div>
           )}
-          {pano ? (
+          {bestPano ? (
+            <BestPanorama best={data.best!} target={data.target} report={data.report}
+              selectedSubsystem={selDomain} onSelectSubsystem={(id) => { setSelDomain(id); setSelEdge('') }} />
+          ) : pano ? (
             <>
               <DomainPanorama view={view} scope={scope} selectedDomain={selDomain} selectedEdge={selEdge}
                 onSelectDomain={(id) => { setSelDomain(id); setSelEdge('') }}
@@ -179,6 +190,11 @@ export function CodegraphPage() {
               <DetailPanel project={project} view={view} nodeId={selected || effFoci[effFoci.length - 1] || ''}
                 stale={staleIds} onJump={enterNode} />
             </>
+          )}
+          {branchCompareFallback && (
+            <div data-compare-fallback className="pointer-events-none absolute bottom-3 left-3.5 z-30 rounded border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+              分支视图暂用现状域全景——对照面向主线，per-view 对照见二期
+            </div>
           )}
         </div>
       )}
