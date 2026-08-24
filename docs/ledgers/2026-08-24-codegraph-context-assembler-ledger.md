@@ -45,3 +45,4 @@
 - 2026-08-25：收口前执行 `git diff --check && git status --short --branch`；原始输出为空检查结果，状态为 `## cards/C1.5-charter-2`，改动为契约、拆解稿与台账三项。
 - 2026-08-25：执行 `git add docs/superpowers/specs/c1.5-breakdown.md docs/superpowers/specs/c1.5-contract.md docs/ledgers/2026-08-24-codegraph-context-assembler-ledger.md` 成功，原始输出为空、退出码 `0`。
 - 2026-08-25：再次暂存台账后执行 `git diff --cached --check && git diff --cached --stat && git status --short --branch`；原始检查输出为空、暂存统计为 3 文件/317 行，状态为契约 M、拆解稿 A、台账 M，分支 `cards/C1.5-charter-2`。
+- 2026-08-25：执行 `git commit -m 'docs(breakdown): C1.5 context assembler decomposition'` 成功；原始输出为 `[cards/C1.5-charter-2 39be4ee] docs(breakdown): C1.5 context assembler decomposition`、`3 files changed, 318 insertions(+)`，法定拆解稿、契约边界澄清与台账已入库。
