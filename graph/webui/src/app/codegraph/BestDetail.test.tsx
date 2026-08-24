@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import type { CgBest, CgCheckReport, CgGraph } from '../../api/types'
 import { BestDetail } from './BestDetail'
 
@@ -83,5 +83,17 @@ describe('BestDetail', () => {
   it('未选择子系统时渲染稳定空壳', () => {
     const { container } = render(<BestDetail best={best} baseline={baseline} subsystemId="" />)
     expect(container.querySelector('[data-best-detail]')).toBeTruthy()
+  })
+
+  it('子领域进入按钮与容器选择只回调页面状态', () => {
+    const onEnterDomain = vi.fn()
+    const onSelectContainer = vi.fn()
+    const { container } = render(<BestDetail best={best} baseline={baseline} report={report} subsystemId="s_api"
+      selectedDomain="" onEnterDomain={onEnterDomain} selectedContainer="c_in" onSelectContainer={onSelectContainer} />)
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    expect(onEnterDomain).toHaveBeenCalledWith('s_api_read')
+    fireEvent.click(container.querySelector('[data-best-container="c_in"]')!)
+    expect(onSelectContainer).toHaveBeenCalledWith('c_in')
+    expect(container.querySelector('[data-best-container="c_in"][data-selected="true"]')).toBeTruthy()
   })
 })

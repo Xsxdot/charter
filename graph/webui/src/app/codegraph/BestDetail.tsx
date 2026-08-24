@@ -7,23 +7,36 @@ import type { CgBest, CgCheckReport, CgGraph } from '../../api/types'
 import type { ContainerFacts } from './besttree'
 import { bestSubsystems, containerFacts, groupContainersBySubdomain, subsystemOf } from './besttree'
 
-interface BestDetailProps {
+export interface BestDetailProps {
   best: CgBest
   baseline: CgGraph
   report?: CgCheckReport
   subsystemId: string
+  selectedDomain?: string
+  onEnterDomain?: (id: string) => void
+  selectedContainer?: string
+  onSelectContainer?: (id: string) => void
 }
 
 // 容器多到需要折叠时才默认收起；小分组保持展开，避免每看一眼都要点开。
 const GROUP_OPEN_LIMIT = 12
 
 // 包分组一律默认收起：它存在的理由就是把几十行容器换成一行组名，默认展开等于没分组。
-function ContainerRow({ id, label, facts }: { id: string; label: string; facts?: ContainerFacts }) {
+function ContainerRow({ id, label, facts, selected, onSelect }: {
+  id: string
+  label: string
+  facts?: ContainerFacts
+  selected: boolean
+  onSelect?: (id: string) => void
+}) {
   return (
-    <div data-best-container={id} className="flex justify-between gap-2 py-0.5 pl-4 text-xs">
+    <button type="button" data-best-container={id} data-selected={selected ? 'true' : undefined}
+      onClick={() => onSelect?.(id)}
+      className={'flex w-full justify-between gap-2 py-0.5 pl-4 text-left text-xs hover:bg-muted '
+        + (selected ? 'bg-muted outline outline-1 outline-primary' : '')}>
       <span className="font-mono">{label}</span>
       {facts ? <span className="shrink-0 text-[11px] text-muted-foreground">{facts.nodeCount} 节点</span> : null}
-    </div>
+    </button>
   )
 }
 
@@ -68,7 +81,10 @@ function baselineLabel(baseline: CgGraph, domainId: string): string {
   return baseline.domains?.[domainId]?.label ?? domainId
 }
 
-export function BestDetail({ best, baseline, report, subsystemId }: BestDetailProps) {
+export function BestDetail({
+  best, baseline, report, subsystemId, selectedDomain = '', onEnterDomain,
+  selectedContainer = '', onSelectContainer,
+}: BestDetailProps) {
   const shell = 'w-[340px] shrink-0 overflow-y-auto border-l p-3.5 text-sm'
   const subsystem = bestSubsystems(best).find((item) => item.id === subsystemId)
   if (!subsystem) return <aside data-best-detail className={shell} />
@@ -107,6 +123,13 @@ export function BestDetail({ best, baseline, report, subsystemId }: BestDetailPr
             {subsystem.descendantIds.map((id) => (
               <div key={id} data-best-domain={id} className="py-0.5">
                 {bestDomainPath(best, id).map((ancestor) => bestLabel(best, ancestor)).join(' · ')}
+                {onEnterDomain ? (
+                  <button type="button" title={`下钻到领域内部：${bestLabel(best, id)}`} onClick={() => onEnterDomain(id)}
+                    className={'ml-2 rounded border px-1 text-[10px] hover:bg-muted '
+                      + (selectedDomain === id ? 'border-primary text-primary' : '')}>
+                    进入 ▸
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
@@ -145,12 +168,14 @@ export function BestDetail({ best, baseline, report, subsystemId }: BestDetailPr
                           {pkg.dir ? <div className="pl-4 text-[11px] text-muted-foreground">{pkg.dir}</div> : null}
                         </summary>
                         {pkg.containerIds.map((containerId) => (
-                          <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]} />
+                          <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]}
+                            selected={selectedContainer === containerId} onSelect={onSelectContainer} />
                         ))}
                       </details>
                     ))
                     : group.containerIds.map((containerId) => (
-                      <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]} />
+                      <ContainerRow key={containerId} id={containerId} label={containerLabel(containerId)} facts={facts[containerId]}
+                        selected={selectedContainer === containerId} onSelect={onSelectContainer} />
                     ))}
                 </details>
               )

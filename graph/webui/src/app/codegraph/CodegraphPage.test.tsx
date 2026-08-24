@@ -43,6 +43,7 @@ const bestResp: CodegraphResp = {
     domains: {
       s_api: { label: 'API 子系统', responsibility: '对外服务', type: 'boundary' },
       s_api_read: { label: '读取领域', responsibility: '查询', parent: 's_api' },
+      s_api_read_detail: { label: '读取详情', responsibility: '详情查询', parent: 's_api_read' },
       s_store: { label: '存储子系统', responsibility: '持久化', type: 'logic' },
     },
     containers: { c_cli: 's_api_read', k_svc: 's_store' },
@@ -137,7 +138,7 @@ describe('CodegraphPage 三态下钻', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
     expect(screen.getByText('理想树全景')).toBeTruthy()
     expect(container.querySelector('[data-gap="containers"]')).toBeTruthy()
-    expect(container.querySelector('[data-enforcement="fails"]')?.textContent).toBe('fails 1')
+    expect(container.querySelector('[data-debt="fails"]')?.textContent).toBe('fails 1')
     expect(container.querySelector('[data-domain]')).toBeNull()
   })
 
@@ -145,7 +146,7 @@ describe('CodegraphPage 三态下钻', () => {
     state.data = { ...bestResp, report: undefined }
     const { container } = render(<CodegraphPage />)
     await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
-    expect(container.querySelector('[data-enforcement="none"]')?.textContent).toBe('无数据')
+    expect(container.querySelector('[data-debt="none"]')?.textContent).toBe('无数据')
   })
 
   it('点击理想子系统卡后接出理想详情面板', async () => {
@@ -155,6 +156,54 @@ describe('CodegraphPage 三态下钻', () => {
     fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
     await waitFor(() => expect(container.querySelector('[data-best-detail="s_api"]')).toBeTruthy())
     expect(container.querySelector('[data-best-domain="s_api_read"]')).toBeTruthy()
+  })
+
+  it('真实 JSON roundtrip 不混淆缺席与零值，零债务方向仍可见', async () => {
+    const wire = JSON.parse(JSON.stringify({
+      ...bestResp,
+      target: { meta: { version: 3, project: 'demo' }, contracts: [
+        { from: 's_api', to: 's_store', entries: [], legacyBudget: 0 },
+      ] },
+      report: { fails: [], warns: [], legacyHits: { 's_api->s_store': 0 } },
+    })) as CodegraphResp
+    state.data = wire
+    const { container, rerender } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-direction="s_api->s_store"]')).toBeTruthy())
+    expect(container.querySelector('[data-best-direction="s_api->s_store"]')?.textContent).toContain('欠 0')
+    expect(container.querySelector('[data-debt="coverage"]')?.textContent).toBe('窄缝覆盖 0/1')
+    state.data = JSON.parse(JSON.stringify({ ...wire, report: undefined })) as CodegraphResp
+    rerender(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-debt="none"]')).toBeTruthy())
+    expect(container.querySelector('[data-debt="directCalls"]')).toBeNull()
+  })
+
+  it('迁移条目跳到应然子系统下钻并高亮容器，面包屑可逐级返回', async () => {
+    state.data = bestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-migration-item="c_cli"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-migration-item="c_cli"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read"]')).toBeTruthy())
+    expect(container.querySelector('[data-migration-item="c_cli"][data-selected="true"]')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '理想树全景' }))
+    await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+  })
+
+  it('best root → nested → leaf 逐层互斥，边选择显示方向详情', async () => {
+    state.data = bestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-direction="s_api->s_store"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-edge-detail]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-detail="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    expect(container.querySelector('[data-best-subsystem]')).toBeNull()
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-leaf]')).toBeTruthy())
+    expect(container.querySelector('[data-best-scope-card]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '理想树全景' }))
+    await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
   })
 
   it('选中分支视图时回落现状域全景并显示主线对照说明', async () => {

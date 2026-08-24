@@ -7,15 +7,20 @@
 // 整图没有领域段时降级为单领域视图并明示提示——不按包名伪造领域。
 //
 // 边界：项目选择不属于 viewer；只从 iframe 自身 URL 的 ?project= 读取。
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CallTree } from './CallTree'
 import { BestDetail } from './BestDetail'
 import { BestPanorama } from './BestPanorama'
+import { BestEdgeDetail } from './BestOverlays'
+import { BestLeafGraph } from './BestLeafGraph'
+import { BestScopePanorama } from './BestScopePanorama'
+import { MigrationSidebar } from './BestOverlays'
 import { DetailPanel } from './DetailPanel'
 import { DomainDetail } from './DomainDetail'
 import { DomainPanorama } from './DomainPanorama'
 import { FocusGraph } from './FocusGraph'
 import { childDomainsOf, domainAncestors, hasDomains, leafRoots, nodeDomainPathOf } from './domains'
+import { bestDomainPath, bestScopeGraph, isBestLeaf, migrationGroups } from './besttree'
 import { mergeView, scannedEntries } from './graphmath'
 import { useCodegraph } from './useCodegraph'
 
@@ -33,6 +38,10 @@ export function CodegraphPage() {
   const [histIdx, setHistIdx] = useState(-1)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState('')
+  const [bestScope, setBestScope] = useState<string | null>(null)
+  const [bestEdge, setBestEdge] = useState('')
+  const [bestContainer, setBestContainer] = useState('')
+  const [bestHistory, setBestHistory] = useState<string[]>([])
 
   const view = useMemo(() => {
     if (!data) return null
@@ -43,9 +52,24 @@ export function CodegraphPage() {
 
   const single = !!view && !hasDomains(view)               // 旧图：整张图当一个领域看
   const pano = !!view && !single && (scope === null || childDomainsOf(view, scope).length > 0)
-  const bestPano = !!view && viewName === 'baseline' && !!data?.best
+  const bestMode = !!view && viewName === 'baseline' && !!data?.best
+  const bestPano = bestMode && bestScope === null
+  const bestNested = bestMode && bestScope !== null && !isBestLeaf(data!.best!, bestScope)
   const branchCompareFallback = !!view && viewName !== 'baseline' && !!data?.best
   const leafScope = single ? null : scope
+  const bestMigrationGroups = useMemo(
+    () => data?.best ? migrationGroups(data.best, data.baseline, data.report) : [],
+    [data?.best, data?.baseline, data?.report],
+  )
+  const bestMigrationItems = useMemo(
+    () => bestMigrationGroups.flatMap((group) => group.items),
+    [bestMigrationGroups],
+  )
+
+  // 边选择是 best 页面唯一的方向详情入口，记录当前投影上下文便于定位空详情。
+  useEffect(() => {
+    if (bestEdge) console.debug('[codegraph] best edge state', { scopeId: bestScope, key: bestEdge })
+  }, [bestEdge, bestScope])
 
   const effFoci = useMemo(() => {
     if (!view) return []
@@ -86,6 +110,52 @@ export function CodegraphPage() {
     setOpen(new Set())
     setSelected('')
   }
+
+  // best 下钻拥有独立状态，避免把现状叶子焦点/面包屑带入理想树。
+  const goBestScope = (next: string | null) => {
+    if (next && data?.best) {
+      const path = bestDomainPath(data.best, next)
+      if (!path.length) {
+        console.warn('[codegraph] best scope target missing', { scopeId: next })
+        setBestScope(null)
+        setBestHistory([])
+        setBestEdge('')
+        setBestContainer('')
+        return
+      }
+      setBestScope(next)
+      setBestHistory(path)
+    } else {
+      setBestScope(null)
+      setBestHistory([])
+    }
+    setBestEdge('')
+    setBestContainer('')
+    setSelDomain('')
+  }
+
+  const onBestMigration = (item: import('./besttree').MigrationItem) => {
+    console.info('[codegraph] best migration select', {
+      containerId: item.containerId,
+      expectedDomainId: item.expectedDomainId,
+      currentDomainId: item.currentDomainId,
+    })
+    setBestContainer(item.containerId)
+    if (item.expectedDomainId && item.expectedSubsystemId) {
+      goBestScope(item.expectedSubsystemId)
+      setBestHistory([item.expectedSubsystemId])
+      setBestContainer(item.containerId)
+      return
+    }
+    console.warn('[codegraph] best migration target missing', { containerId: item.containerId })
+    goBestScope(null)
+  }
+
+  const onViewChange = (nextView: string) => {
+    setViewName(nextView)
+    goScope(null)
+    goBestScope(null)
+  }
   // 横跳：落到目标节点所在的叶子领域并把它设为焦点
   const enterNode = (id: string) => {
     if (!view) return
@@ -105,7 +175,7 @@ export function CodegraphPage() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2 text-sm">
         <label className="text-muted-foreground">视图</label>
-        <select value={viewName} onChange={(e) => { setViewName(e.target.value); goScope(null) }}
+        <select value={viewName} onChange={(e) => onViewChange(e.target.value)}
           className="rounded border px-1.5 py-0.5">
           <option value="baseline">基准 · {data?.baseline.meta.branch ?? ''}</option>
           {Object.entries(data?.views ?? {}).map(([k, v]) => <option key={k} value={k}>{v.view}</option>)}
@@ -127,10 +197,24 @@ export function CodegraphPage() {
         <CodegraphPlaceholder loading={loading} error={error} project={project} onRetry={reload} />
       ) : (
         <div className="relative flex min-h-0 flex-1">
-          {bestPano ? (
-            <div className="absolute left-3.5 top-2.5 z-30 inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
-              <b>理想树全景</b>
-              <span className="text-[11px] text-muted-foreground">主线对照 · 点子系统卡查看详情 · 空白拖动平移 · ⌘/⌃+滚轮缩放</span>
+          {bestMode ? (
+            <div className="absolute left-3.5 top-2.5 z-40 inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
+              <button type="button" data-best-breadcrumb="root" className="font-semibold hover:underline" onClick={() => goBestScope(null)}>
+                理想树全景
+              </button>
+              {bestHistory.map((id, index) => (
+                <span key={id} className="inline-flex items-center gap-2">
+                  <span className="text-muted-foreground">▸</span>
+                  {index === bestHistory.length - 1 ? (
+                    <b>{data?.best ? data.best.domains[id]?.label ?? id : id}</b>
+                  ) : (
+                    <button type="button" data-best-breadcrumb={id} className="text-muted-foreground hover:underline" onClick={() => goBestScope(id)}>
+                      {data?.best ? data.best.domains[id]?.label ?? id : id}
+                    </button>
+                  )}
+                </span>
+              ))}
+              {bestScope === null ? <span className="text-[11px] text-muted-foreground">主线对照 · 点卡查看详情 · 点击进入下钻</span> : null}
             </div>
           ) : !single && (
             <div className="absolute left-3.5 top-2.5 z-30 inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-1 text-xs shadow-sm">
@@ -161,11 +245,36 @@ export function CodegraphPage() {
               )}
             </div>
           )}
-          {bestPano ? (
+          {bestMode ? (
             <>
-              <BestPanorama best={data.best!} target={data.target} report={data.report}
-                selectedSubsystem={selDomain} onSelectSubsystem={(id) => { setSelDomain(id); setSelEdge('') }} />
-              <BestDetail best={data.best!} baseline={data.baseline} report={data.report} subsystemId={selDomain} />
+              <MigrationSidebar groups={bestMigrationGroups} selectedContainer={bestContainer} onSelectContainer={onBestMigration} />
+              {bestPano ? (
+                <BestPanorama best={data.best!} target={data.target} report={data.report}
+                  selectedSubsystem={selDomain} selectedEdge={bestEdge}
+                  onSelectSubsystem={(id) => { setSelDomain(id); setBestEdge('') }}
+                  onSelectEdge={(key) => {
+                    console.debug('[codegraph] best edge select', { scopeId: bestScope, key })
+                    setBestEdge(key)
+                    setSelDomain('')
+                  }} />
+              ) : bestNested ? (
+                <BestScopePanorama best={data.best!} target={data.target} report={data.report} scopeId={bestScope!}
+                  selectedDomain={selDomain} selectedEdge={bestEdge} migrationItems={bestMigrationItems}
+                  onSelectDomain={(id) => setSelDomain(id)}
+                  onSelectEdge={(key) => { setBestEdge(key); setSelDomain('') }}
+                  onEnter={goBestScope} onSelectMigration={onBestMigration} />
+              ) : (
+                <BestLeafGraph best={data.best!} baseline={data.baseline} report={data.report} scopeId={bestScope!}
+                  selectedContainer={bestContainer} migrationItems={bestMigrationItems} onSelectContainer={setBestContainer} />
+              )}
+              {bestEdge ? (
+                <BestEdgeDetail
+                  edge={bestScopeGraph(data.best!, data.target, data.report, bestScope).edges.find((edge) => edge.key === bestEdge) ?? null}
+                  target={data.target} report={data.report} />
+              ) : bestPano ? (
+                <BestDetail best={data.best!} baseline={data.baseline} report={data.report} subsystemId={selDomain}
+                  selectedDomain={selDomain} onEnterDomain={goBestScope} selectedContainer={bestContainer} onSelectContainer={setBestContainer} />
+              ) : null}
             </>
           ) : pano ? (
             <>
