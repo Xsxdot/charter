@@ -1,0 +1,24 @@
+# C1.5 契约落地台账
+
+- 2026-08-24：`git status --short --branch` 实读为 `## cards/C1.5-charter`，工作树初始无改动。
+- 2026-08-24：`docs/specs/2026-08-23-codegraph-context-assembler-spec.md:3` 实读为「已批准」（2026-08-23）并含「2026-08-24 复核修订已批准」状态位。
+- 2026-08-24：`find . -maxdepth 3 -type f \( -name 'target.json' -o -name 'best.json' \)` 未找到项目根级目标图；仅 `graph/codegraph/testdata/repo/codegraph/target.json` 与 `best.json` 位于 fixture，按存量无图项目规则冻结物采用契约增量文档，不创建项目级目标图/视图 diff。
+- 2026-08-24：实读 spec `:69`、`:111`，发现 `--collapse-util` 的高扇入阈值 N、外部领域折叠行的代表节点数量、`context` 主调用链的前 N 级均未给出可冻结数值；按契约纪律未自行假定，暂停出稿等待裁决。
+- 2026-08-25：协调者裁决三个数均为 3：`--collapse-util` 按「被 >=3 个不同领域调用」判定；外部领域折叠保留按本次结果被调用次数降序的前 3 个代表且 `count` 保留全量；`context` 主链默认 3 级。三者均写死包内常量，不进配置或 flag；依据分别为 handoff 基线 K>=3 命中 28 节点、3 个代表足够辨认且避免清单复现、与 C1.10 级联深度对齐并让 30000 token 截断生效。
+- 2026-08-25：现状签名核对：`graph/codegraph/query.go#Neighborhood(v *View, foci []string, down, up int) (*Result, error)` 保持多源 BFS；`graph/codegraph/sym.go#ReAnchor(repoRoot string, n Node) (int, string)` 读文件并返回行号/状态；`graph/codegraph/stale.go#CheckStale(repoRoot string, g *Graph) []StaleNode` 按全图工作。
+- 2026-08-25：现状签名核对：`graph/codegraph/domains.go#DomainTree(v *View) []DomainStat` 与 `#DomainTreeWithBest(v *View, best *Best) []DomainStat` 负责领域树；`graph/codegraph/decls.go#LoadDomainDecls(repoRoot string) (map[string]DomainDecl, error)` 读取声明；`graph/codegraph/entity.go#EntityLookup(v *View, repoRoot, arg string) (*EntityResult, error)` 负责单实体投影链。
+- 2026-08-25：现状 wire 核对：`graph/codegraph/types.go#Graph` 有 `Packages map[string]Package`，但 `graph/codegraph/merge.go#View` 当前不携带 `Packages`；context 组合器必须从基线 `Graph` 取包摘要，不新增加载路径。
+- 2026-08-25：现状 CLI 核对：`graph/cli/cli.go#graphQueryRunE` 当前调用 `Neighborhood` 后直接输出 `graphQueryOutput`，`--stale` 调用 `CheckStale(graphRepo, g)`；`chain`/`who-calls` 使用 `cobra.MinimumNArgs(1)`。Cobra v1.10.2 源码 `args.go:73-100` 证实该校验分别为至少 1 个参数/精确 N 个参数。
+- 2026-08-25：现状依赖核对：`graph/go.mod` 与 `graph/cli/deps_test.go:12-49` 将 CLI 直接依赖冻结为 `github.com/spf13/cobra v1.10.2`，其余仅 pflag/mousetrap 传递依赖；契约不新增依赖。
+- 2026-08-25：契约翻译再审发现 spec 只冻结 `context` 主链深度 3，未冻结主链焦点集合；现状可复用的候选是 `DomainTree(v)` 产出的 `DomainStat.Interfaces` 与图节点 `kind=="entry"`，二者语义不同，未自行选择，等待裁决。
+- 2026-08-25：协调者裁决 context 焦点取未删除 `kind=="entry"` 节点与 `DomainStat.Interfaces` 的并集并去重；父领域按整棵子树边界重算入缝；接口清单全量输出，主链焦点配额为 5，按跨域入边数降序、entry 优先、id 字典序排序，超额输出 `fociTruncated:{total,shown,reason:"focus-quota"}`；两类焦点均过滤 `status=="deleted"`，主链深度仍固定 3。
+- 2026-08-25：执行 `mkdir -p docs/superpowers/specs` 成功，为法定契约路径创建缺失目录；未改动其他路径。
+- 2026-08-25：契约文档当前为 301 行；`git diff --check` 退出码 0，`gofmt -d cli/cli.go codegraph/query.go codegraph/sym.go codegraph/stale.go codegraph/domains.go codegraph/decls.go codegraph/entity.go` 无输出且退出码 0。
+- 2026-08-25：在 `graph/` 执行 `go build ./...`；原始 stdout/stderr 为空，退出码 `0`。
+- 2026-08-25：在 `graph/` 执行 `go test ./...`；原始输出为 `ok github.com/Xsxdot/charter/graph/cli 0.368s`、`? github.com/Xsxdot/charter/graph/cmd/codegraph [no test files]`、`ok github.com/Xsxdot/charter/graph/codegraph 0.027s`、`ok github.com/Xsxdot/charter/graph/webui 0.002s`，退出码 `0`。
+- 2026-08-25：`find . -maxdepth 2 -type f -path './codegraph/*' -print` 原始输出为空；当前项目无根级 baseline，故未运行 `codegraph resolve --doc`，符号锚按无图项目的文件/符号锚人工核对。
+- 2026-08-25：契约补入 `ContextDomain`、context `--stale` 语义及四个行为常量的包内逐行注释要求；`wc -l` 实读契约 316 行；再次 `git diff --check` 原始输出为空，退出码 `0`。
+- 2026-08-25：执行 `git add -N docs/superpowers/specs/c1.5-contract.md docs/ledgers/2026-08-24-codegraph-context-assembler-ledger.md` 失败；原始报错：`fatal: Unable to create '/root/.handoff/repos/charter/.git/worktrees/2f32445f/index.lock': Read-only file system`，退出码 `128`；未据此推断代码状态。
+- 2026-08-25：在获准写 Git 元数据后执行 `git add docs/superpowers/specs/c1.5-contract.md docs/ledgers/2026-08-24-codegraph-context-assembler-ledger.md` 成功，退出码 `0`。
+- 2026-08-25：首次 `git diff --cached --check` 发现契约头部第 3~5 行尾随空格；已用 `apply_patch` 删除并重新暂存。复跑 `git diff --cached --check` 原始输出为空、退出码 `0`；暂存统计为 2 个新增文件、338 行。
+- 2026-08-25：收尾前复跑 `git diff --cached --check` 原始输出为空、退出码 `0`；`git diff --cached --stat` 显示 2 个新增文件、339 行；`git status --short --branch` 显示两文件均已暂存于 `cards/C1.5-charter`。
