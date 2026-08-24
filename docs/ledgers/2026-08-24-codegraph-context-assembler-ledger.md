@@ -24,3 +24,4 @@
 - 2026-08-25：收尾前复跑 `git diff --cached --check` 原始输出为空、退出码 `0`；`git diff --cached --stat` 显示 2 个新增文件、339 行；`git status --short --branch` 显示两文件均已暂存于 `cards/C1.5-charter`。
 - 2026-08-25：执行 `git commit -m 'docs(contract): freeze C1.5 context assembler'` 成功；原始输出为 `[cards/C1.5-charter 5dafd0b] docs(contract): freeze C1.5 context assembler`、`2 files changed, 340 insertions(+)`，当前提交已冻结契约文档与台账。
 - 2026-08-25：提交后的 `git diff --check` 原始输出为空，退出码 `0`；仅台账追加本提交记录，契约文档未再修改。
+- 2026-08-25：最终审计：`git status --short --branch` 原始输出为 `## cards/C1.5-charter`；`git log -2 --oneline --decorate` 原始输出为 `99b0661 (HEAD -> cards/C1.5-charter) docs(ledger): record C1.5 freeze` 与 `5dafd0b docs(contract): freeze C1.5 context assembler`；`git diff --check HEAD~2..HEAD` 与 `git show --check --oneline --summary HEAD` 均无检查输出且退出码 `0`。
