@@ -162,3 +162,4 @@
 ## 8. 修订记录
 
 - 2026-08-26：初版冻结。纠正三处上游陈述：①草案 §8.2「容器挂叶子没人写过没查过」相对 HEAD 过时（best.go :127-135 已执法）；②responsibility 消费点补齐 besttree 六处；③spec 引用的 domainpage 行号漂移（:283/:16 → 实际 :281/:17）。
+- 2026-08-26（breakdown 节点核对，冻结条目文字不改）：第 8 条同刀清单补遗——删 `BestDomain.Responsibility` 编译强制另触及 `context.go#contextVocabulary`（:370 Summary 取该字段）与 `migrate.go`（迁移写入占位符 + migrationNotes 提示行）及 `check_test.go`/`gap_test.go`/`context_test.go` 带字段字面量，随同一提交处置；channel 分组对存量全缺数据的「通道未标注」降级桶是第 7 条降级语义的应用实例；scopepage/flowpage 导出面属 webui 应用包内部 API，不属宿主契约面。详见 c12-breakdown.md §二【释 1-3】。
