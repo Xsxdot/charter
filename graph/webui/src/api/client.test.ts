@@ -78,19 +78,35 @@ describe('codegraph JSON transport', () => {
       decls: {
         d_target: {
           domain: 'd_target', responsibility: '职责',
-          invariants: [{ text: '规矩' }],
+          invariants: [{ text: '规矩' }, { text: '带引用', testRef: 'TestRule' }],
           lifecycle: { from: 'x.go#X', to: 'x.go#X' },
-          stateMachine: [{ from: 'ready', to: 'done', anchor: 'x.go#X' }],
+          stateMachine: [
+            { from: 'ready', to: 'done', anchor: 'x.go#X' },
+            { from: 'queued', to: 'done' },
+          ],
           futureProviderField: 'ignored by old consumers',
         },
       },
     }))
     const present = await fetchCodegraph('demo')
     expect(present.decls?.d_target).toMatchObject({
-      domain: 'd_target', responsibility: '职责', invariants: [{ text: '规矩' }],
+      domain: 'd_target', responsibility: '职责',
+      invariants: [{ text: '规矩' }, { text: '带引用', testRef: 'TestRule' }],
       lifecycle: { from: 'x.go#X', to: 'x.go#X' },
-      stateMachine: [{ from: 'ready', to: 'done', anchor: 'x.go#X' }],
+      stateMachine: [
+        { from: 'ready', to: 'done', anchor: 'x.go#X' },
+        { from: 'queued', to: 'done' },
+      ],
     })
+    expect(present.decls?.d_target?.invariants).toEqual([
+      { text: '规矩' },
+      { text: '带引用', testRef: 'TestRule' },
+    ])
+    expect(present.decls?.d_target?.stateMachine).toEqual([
+      { from: 'ready', to: 'done', anchor: 'x.go#X' },
+      { from: 'queued', to: 'done' },
+    ])
+    expect(present.decls?.d_target?.stateMachine?.[1]?.anchor).toBeUndefined()
     expect((present.decls?.d_target as unknown as { futureProviderField?: string }).futureProviderField).toBe('ignored by old consumers')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ ...base, decls: {} }))
