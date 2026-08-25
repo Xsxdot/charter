@@ -64,6 +64,49 @@ function renderPage(overrides: Partial<Parameters<typeof BestDomainPage>[0]> = {
 }
 
 describe('BestDomainPage', () => {
+  it('renders the semantic card subtitles and named port sections', () => {
+    const { baseline } = pageFixture()
+    baseline.edges = [['source', 'focus']]
+    renderPage({ baseline })
+
+    expect(screen.getByText('状态机')).toBeTruthy()
+    expect(screen.getByText('合法迁移表')).toBeTruthy()
+    expect(screen.getByText('生命周期')).toBeTruthy()
+    expect(screen.getByText('创建 → 终结')).toBeTruthy()
+    expect(screen.getByText('包职责')).toBeTruthy()
+    expect(screen.getByText('机械层 · packages 段')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: '结构' }))
+    expect(screen.getByText('调进来（入边来源）')).toBeTruthy()
+    expect(screen.getByText('调出去（出边去向）')).toBeTruthy()
+    expect(screen.getByText('无跨域出边')).toBeTruthy()
+  })
+
+  it('shows focus quota and cascade level truncation in the page', () => {
+    const { baseline } = pageFixture()
+    for (let index = 1; index <= 6; index += 1) {
+      const callerId = `extra-caller-${index}`
+      baseline.nodes[callerId] = {
+        kind: 'func', container: 'c_source', name: callerId, file: `src/${callerId}.go`, line: index,
+      }
+      baseline.edges.push([callerId, 'focus'])
+    }
+    for (let index = 1; index <= 9; index += 1) {
+      const nodeId = `extra-callee-${index}`
+      baseline.nodes[nodeId] = {
+        kind: 'func', container: 'c_target', name: nodeId, file: `src/${nodeId}.go`, line: index,
+      }
+      baseline.edges.push(['focus', nodeId])
+    }
+
+    renderPage({ baseline })
+    fireEvent.click(screen.getByRole('tab', { name: '结构' }))
+    expect(screen.getByText('入缝 7 条，按配额显示前 5')).toBeTruthy()
+
+    fireEvent.click(screen.getAllByTestId('domain-lane')[0])
+    expect(screen.getByText(/本级已截断，丢弃 2 个节点/)).toBeTruthy()
+  })
+
   it('renders semantic intent before mechanics, then switches to structure without a fetch', () => {
     renderPage()
     expect(screen.getByRole('tab', { name: '语义' })).toHaveAttribute('aria-selected', 'true')
