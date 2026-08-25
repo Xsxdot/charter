@@ -8,8 +8,17 @@ export interface CgNode {
   kind: 'entry' | 'func' | 'model'; container: string; order?: number; name: string; file: string; line: number
   signature?: string; signatureOld?: string; params?: string[][]; returns?: string; summary?: string
   tests?: CgTestRef[]; fields?: string[][]; unscanned?: boolean; projScanned?: boolean
+  modelKind?: 'entity' | 'dto' | 'config'
 }
 export interface CgLifecycleRef { who: string; model: string; kind: 'creator' | 'writer'; field?: string }
+export interface CgDeclAnchor { from: string; to: string }
+export interface CgInvariant { text: string; testRef?: string }
+export interface CgTransition { from: string; to: string; anchor?: string }
+export interface CgDomainDecl {
+  domain: string; responsibility: string; invariants?: CgInvariant[]
+  lifecycle?: CgDeclAnchor; stateMachine?: CgTransition[]
+}
+export type CgDomainDecls = Record<string, CgDomainDecl>
 export interface CgGraph {
   meta: CgMeta; domains?: Record<string, CgDomain>; containers: Record<string, CgContainer>; nodes: Record<string, CgNode>
   edges: [string, string][]; implements?: [string, string][]; projections?: [string, string, string][]; lifecycle?: CgLifecycleRef[]
@@ -82,5 +91,6 @@ export interface CodegraphResp {
   best?: CgBest
   target?: CgTarget
   report?: CgCheckReport
+  decls?: CgDomainDecls
 }
 export interface CgSourceResp { file: string; from: number; lines: string[] }

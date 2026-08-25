@@ -1,5 +1,5 @@
 {
-  "domain": "d_cli",
+  "domain": "d_cmd",
   "responsibility": "命令入口与调度",
   "invariants": [
     {"text": "入口函数可执行", "testRef": "TestRunE"}

@@ -249,12 +249,12 @@ func TestGraphDomainsEdgesWithoutBestIsExplicit(t *testing.T) {
 func TestGraphValidateDomainDeclIssuePrefix(t *testing.T) {
 	repo := t.TempDir()
 	copyFixtureRepo(t, fixtureRepo, repo)
-	path := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
-	if err := os.WriteFile(path, []byte(`{"domain":"d_cli","responsibility":"x","lifecycle":{"from":"svc/server.go#Gone","to":"svc/server.go#Gone"}}`), 0o644); err != nil {
+	path := filepath.Join(repo, "codegraph", "domains", "d_cmd.json")
+	if err := os.WriteFile(path, []byte(`{"domain":"d_cmd","responsibility":"x","lifecycle":{"from":"svc/server.go#Gone","to":"svc/server.go#Gone"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := runGraph(t, "validate", "--repo", repo)
-	if err == nil || !strings.Contains(out, "[decl d_cli]") {
+	if err == nil || !strings.Contains(out, "[decl d_cmd]") {
 		t.Fatalf("坏声明应带领域前缀并非零: err=%v out=%s", err, out)
 	}
 }
@@ -879,7 +879,7 @@ func TestGraphEntity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw = bytes.Replace(raw, []byte(`"domain": "d_svc/store"`), []byte(`"domain": "d_cli"`), 1)
+	raw = bytes.Replace(raw, []byte(`"domain": "d_svc/store"`), []byte(`"domain": "d_cmd"`), 1)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1071,12 +1071,26 @@ func copyFixtureRepo(t *testing.T, src, dst string) {
 	}
 }
 
-// check 侧真加载领域声明（契约 25）。夹具里本来就藏着一个真案例：
-// domains/d_cli.json 声明域 d_cli、锚 cmd/run.go#runE，而节点 n_runE 挂在容器
-// k_svc 下、属 d_svc/api——声明说是我的，图说不是你的。这条判据接上之前，
-// 这个矛盾在 check 里是全绿的。
+// check 侧真加载领域声明（契约 25）。本测试把 fixture 的 best 词表声明临时改成
+// baseline 词表的 d_cli，专门保留 anchor-off-domain 的 check 回归；ValidateDecls
+// 的 best-only 词表行为由 TestValidateDecls 与 validate CLI 测试覆盖。
 func TestGraphCheckLoadsDomainDeclsAndReportsAnchorOwnership(t *testing.T) {
-	out, err := runGraph(t, "check", "--repo", fixtureRepo)
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	bestDecl := filepath.Join(repo, "codegraph", "domains", "d_cmd.json")
+	raw, err := os.ReadFile(bestDecl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.Replace(raw, []byte(`"d_cmd"`), []byte(`"d_cli"`), 1)
+	legacyDecl := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	if err := os.WriteFile(legacyDecl, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(bestDecl); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runGraphSeparate(t, "check", "--repo", repo)
 	if err != nil {
 		t.Fatalf("锚归属只进 warn，不该让 check 非零退出: %v\n%s", err, out)
 	}
@@ -1121,7 +1135,7 @@ func TestGraphCheckLoadsDomainDeclsAndReportsAnchorOwnership(t *testing.T) {
 func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
 	repo := t.TempDir()
 	copyFixtureRepo(t, fixtureRepo, repo)
-	bad := filepath.Join(repo, "codegraph", "domains", "d_cli.json")
+	bad := filepath.Join(repo, "codegraph", "domains", "d_cmd.json")
 	if err := os.WriteFile(bad, []byte("{ this is not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1129,7 +1143,7 @@ func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
 	if err == nil {
 		t.Fatalf("声明文件损坏时 check 必须失败，不得静默当作没有声明。输出: %s", out)
 	}
-	if !strings.Contains(err.Error(), "d_cli.json") {
+	if !strings.Contains(err.Error(), "d_cmd.json") {
 		t.Errorf("报错应指出是哪个文件坏了，实际: %v", err)
 	}
 }

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   error: '',
   loading: false,
   reloads: 0,
+  fetchMock: vi.fn(),
   projects: [] as string[],
 }))
 
@@ -65,14 +66,20 @@ const bestResp: CodegraphResp = {
 
 vi.mock('./useCodegraph', () => ({
   useCodegraph: (project: string) => {
+    const firstRequest = !state.projects.includes(project)
     state.projects.push(project)
+    if (firstRequest) state.fetchMock(project)
     return {
     data: state.data,
     error: state.error,
     loading: state.loading,
-    reload: () => { state.reloads += 1 },
+    reload: () => { state.reloads += 1; state.fetchMock(project) },
     }
   },
+}))
+
+vi.mock('../../api/client', () => ({
+  fetchCodegraphSource: vi.fn().mockResolvedValue({ file: 'src/focus.go', from: 7, lines: [] }),
 }))
 
 // 只在 data 上做用例区分不够：空态/错误态是 error+data=null 的组合，
@@ -83,6 +90,7 @@ beforeEach(() => {
   state.error = ''
   state.loading = false
   state.reloads = 0
+  state.fetchMock.mockReset()
   state.projects = []
 })
 
@@ -200,10 +208,115 @@ describe('CodegraphPage 三态下钻', () => {
     await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
     expect(container.querySelector('[data-best-subsystem]')).toBeNull()
     fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
-    await waitFor(() => expect(container.querySelector('[data-best-leaf]')).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
     expect(container.querySelector('[data-best-scope-card]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '理想树全景' }))
     await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+  })
+
+  it('best 叶子接入领域页，decls 缺席显示声明空态而不是传输失败', async () => {
+    state.data = { ...bestResp, decls: undefined }
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain="s_api_read"] button')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
+    expect(screen.getByText(/声明是人写的应然承诺，扫描器不生成/)).toBeTruthy()
+    expect(screen.queryByText('取代码图失败')).toBeNull()
+  })
+
+  it('成功响应 decls 为空对象时显示声明空态而不是通用无数据或传输失败', async () => {
+    state.data = { ...bestResp, decls: {} }
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain="s_api_read"] button')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
+    expect(screen.getByText(/声明是人写的应然承诺，扫描器不生成/)).toBeTruthy()
+    expect(screen.queryByText('暂无数据')).toBeNull()
+    expect(screen.queryByText('取代码图失败')).toBeNull()
+  })
+
+  it('成功响应含未知声明字段时仍渲染领域页', async () => {
+    state.data = {
+      ...bestResp,
+      decls: {
+        s_api_read_detail: {
+          domain: 's_api_read_detail',
+          responsibility: '详情查询',
+          futureProviderField: 'ignored by old consumers',
+        },
+      },
+    } as unknown as CodegraphResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain="s_api_read"] button')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
+    expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy()
+  })
+
+  it('领域页切 tab、组织、泳道和级联节点都不重复请求代码图', async () => {
+    const requestResp: CodegraphResp = {
+      ...bestResp,
+      baseline: {
+        ...bestResp.baseline,
+        containers: {
+          ...bestResp.baseline.containers,
+          c_source: { label: 'source', kind: 'logic', domain: 'd_svc' },
+          c_focus: { label: 'focus', kind: 'logic', domain: 'd_svc' },
+        },
+        nodes: {
+          ...bestResp.baseline.nodes,
+          source: { kind: 'func', container: 'c_source', name: 'Source', file: 'src/source.go', line: 3 },
+          focus: { kind: 'func', container: 'c_focus', name: 'Focus', file: 'src/focus.go', line: 7 },
+          next: { kind: 'func', container: 'c_focus', name: 'Next', file: 'src/next.go', line: 9 },
+        },
+        edges: [...bestResp.baseline.edges, ['source', 'focus'], ['focus', 'next']],
+      },
+      best: {
+        ...bestResp.best!,
+        containers: {
+          ...bestResp.best!.containers,
+          c_source: 's_store',
+          c_focus: 's_api_read_detail',
+        },
+      },
+    }
+    state.data = requestResp
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain="s_api_read"] button')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('tab', { name: '结构' }))
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('domain-lane')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '按现状领域' }))
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '按最优树' }))
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('domain-lane'))
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('cascade-node-focus'))
+    expect(state.fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('选中分支视图时回落现状域全景并显示主线对照说明', async () => {

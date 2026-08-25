@@ -103,7 +103,7 @@ func TestEntityGoPreferredOnTie(t *testing.T) {
 func TestEntityLifecycleAndDomainDecl(t *testing.T) {
 	v, repo := loadFixtureView(t)
 	c := v.Containers["k_ent"]
-	c.Domain = "d_cli"
+	c.Domain = "d_cmd"
 	v.Containers["k_ent"] = c
 	r, err := EntityLookup(v, repo, "Task")
 	if err != nil {
