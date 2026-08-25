@@ -30,7 +30,7 @@ const d: CgDiff = {
       kind: 'func', container: 'k_svc', name: 'Server.Do', file: 'svc/server.go', line: 4,
       signature: 'func Do(ctx context.Context) error', signatureOld: 'func Do() error',
       params: [['ctx', 'context.Context', '请求上下文']], returns: 'error',
-      summary: '干活', tests: [{ name: 'TestDo', file: 'svc/server_test.go:10', snippet: 'assert' }],
+      summary: '干活', tests: [{ name: 'TestDo', file: 'svc/server_test.go:10' }],
     },
   },
 }
@@ -45,6 +45,7 @@ describe('DetailPanel', () => {
     expect(screen.getByText('func Do() error')).toHaveClass('line-through')
     expect(screen.getByText('ctx')).toBeTruthy()
     expect(screen.getByText('TestDo')).toBeTruthy()
+    expect(screen.queryByText('assert')).toBeNull()
     expect(screen.getByText(/疑似失鲜/)).toBeTruthy()
 
     fireEvent.click(screen.getByText(/← runE/))

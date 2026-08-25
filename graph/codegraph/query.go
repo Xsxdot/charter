@@ -118,6 +118,9 @@ func Neighborhood(v *View, foci []string, down, up int) (*Result, error) {
 		return r.Nodes[i].ID < r.Nodes[j].ID
 	})
 	for _, e := range v.Edges {
+		if e.Status == "deleted" || v.Nodes[e.From].Status == "deleted" || v.Nodes[e.To].Status == "deleted" {
+			continue
+		}
 		if _, a := dist[e.From]; a {
 			if _, b := dist[e.To]; b {
 				r.Edges = append(r.Edges, e)

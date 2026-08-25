@@ -75,3 +75,20 @@ func TestNeighborhoodSkipsDeleted(t *testing.T) {
 		}
 	}
 }
+
+func TestNeighborhoodSkipsDeletedOutputEdges(t *testing.T) {
+	v := &View{
+		Nodes: map[string]ViewNode{
+			"a": {Node: Node{Name: "a"}},
+			"b": {Node: Node{Name: "b"}},
+		},
+		Edges: []ViewEdge{{From: "a", To: "b"}, {From: "a", To: "b", Status: "deleted"}},
+	}
+	r, err := Neighborhood(v, []string{"a"}, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Edges) != 1 || r.Edges[0].Status == "deleted" {
+		t.Fatalf("deleted output edge leaked: %+v", r.Edges)
+	}
+}

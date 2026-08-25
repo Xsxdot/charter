@@ -53,9 +53,8 @@ type Package struct {
 
 // TestRef 关联一个测试函数。File 形如 "pkg/x_test.go:41"。
 type TestRef struct {
-	Name    string `json:"name"`
-	File    string `json:"file"`
-	Snippet string `json:"snippet,omitempty"`
+	Name string `json:"name"`
+	File string `json:"file"`
 }
 
 // Node 是图节点，Kind 三选一：entry / func / model。

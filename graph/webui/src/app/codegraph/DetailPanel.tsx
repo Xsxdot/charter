@@ -1,5 +1,5 @@
 // DetailPanel —— 代码图右详情（常显，跟随焦点/选中节点）。
-// 区块：职责/签名(新旧对照)/参数/返回/字段/关联测试/被谁调用/调用了/源码。
+// 区块：职责/签名(新旧对照)/参数/返回/字段/关联测试(name/file)/被谁调用/调用了/源码。
 // 源码按 file:line 经宿主 API 实时读——不落地缓存，保鲜以真实文件为准。
 import { useEffect, useState } from 'react'
 import { fetchCodegraphSource } from '../../api/client'
@@ -75,7 +75,6 @@ export function DetailPanel(props: DetailPanelProps) {
         {n.tests?.length ? n.tests.map((t) => (
           <details key={t.name} className="mb-1">
             <summary className="cursor-pointer font-mono text-xs text-green-700">{t.name} <span className="text-muted-foreground">{t.file}</span></summary>
-            {t.snippet && <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-[11px]">{t.snippet}</pre>}
           </details>
         )) : <div className="text-xs text-muted-foreground">无——这也是暴露的信号：该方法没有测试覆盖</div>}
       </Sec>

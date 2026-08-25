@@ -88,8 +88,8 @@ func TestGraphChainDefaultDepth(t *testing.T) {
 	if json.Unmarshal([]byte(out), &r) != nil {
 		t.Fatalf("非法 JSON: %s", out)
 	}
-	// 默认深度 2：e_run + runE + do
-	if len(r.Nodes) != 3 || r.Warning == "" {
+	// 默认深度 2 且外部领域折叠：e_run + d_svc 外部领域项
+	if len(r.Nodes) != 2 || r.Warning == "" {
 		t.Fatalf("默认深度/警示: %d %q", len(r.Nodes), r.Warning)
 	}
 }
@@ -663,8 +663,8 @@ func TestGraphCommandCountIncludesMigrate(t *testing.T) {
 		}
 		count++
 	}
-	if count != 14 {
-		t.Fatalf("codegraph 业务子命令数=%d，want 14", count)
+	if count != 15 {
+		t.Fatalf("codegraph 业务子命令数=%d，want 15", count)
 	}
 	for _, command := range root.Commands() {
 		if command.Name() == "migrate" {
@@ -672,6 +672,119 @@ func TestGraphCommandCountIncludesMigrate(t *testing.T) {
 		}
 	}
 	t.Fatal("子命令列表缺 migrate")
+}
+
+func TestGraphCLIQueryFlagsAndJSONWire(t *testing.T) {
+	stdout, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo,
+		"--with-source", "--fold-external=false", "--collapse-util=false", "--max-tokens", "0")
+	if err != nil {
+		t.Fatalf("chain with source 应通过: %v", err)
+	}
+	var withSource map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &withSource); err != nil {
+		t.Fatalf("stdout JSON=%v\n%s", err, stdout)
+	}
+	if !bytes.Contains(withSource["nodes"], []byte(`"source"`)) {
+		t.Fatalf("stdout 缺 source: %s", stdout)
+	}
+	compact, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo,
+		"--fold-external=false", "--collapse-util=false", "--max-tokens", "0")
+	if err != nil || bytes.Contains([]byte(compact), []byte(`"source"`)) {
+		t.Fatalf("默认 chain source 形态: err=%v stdout=%s", err, compact)
+	}
+	limited, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo,
+		"--fold-external=false", "--collapse-util=false", "--max-tokens", "1")
+	if err != nil || !bytes.Contains([]byte(limited), []byte(`"reason": "max-tokens"`)) {
+		t.Fatalf("预算截断未穿过 JSON wire: err=%v stdout=%s", err, limited)
+	}
+	contextOut, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", fixtureRepo)
+	if err != nil || !bytes.Contains([]byte(contextOut), []byte(`"declaration"`)) {
+		t.Fatalf("context 声明路径: err=%v stdout=%s", err, contextOut)
+	}
+	_, badStderr, err := runGraphSeparate(t, "context", "d_cli", "--depth", "1", "--repo", fixtureRepo)
+	if err == nil {
+		t.Fatalf("context 必须拒绝 depth: err=%v stderr=%s", err, badStderr)
+	}
+	_, _, err = runGraphSeparate(t, "context", "d_cli", "extra", "--repo", fixtureRepo)
+	if err == nil {
+		t.Fatal("context 必须拒绝多余领域参数")
+	}
+	_, _, err = runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo, "--source-span", "0")
+	if err == nil {
+		t.Fatal("source-span=0 必须拒绝，不能静默改成默认值")
+	}
+}
+
+func TestGraphQueryFlagsResetBeforeWhoCallsAndContext(t *testing.T) {
+	if _, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo,
+		"--full", "--fold-external=false", "--collapse-util=false", "--with-source", "--source-span", "1", "--max-tokens", "0"); err != nil {
+		t.Fatal(err)
+	}
+	who, _, err := runGraphSeparate(t, "who-calls", "n_do", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains([]byte(who), []byte(`"source"`)) || bytes.Contains([]byte(who), []byte(`"returns"`)) {
+		t.Fatalf("who-calls 不能继承前一条命令的 full/source flags: %s", who)
+	}
+	contextOut, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contextWire struct {
+		Chain json.RawMessage `json:"chain"`
+	}
+	if err := json.Unmarshal([]byte(contextOut), &contextWire); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contextWire.Chain, []byte(`"source"`)) {
+		t.Fatalf("context 默认必须保留源码窗口: %s", contextOut)
+	}
+}
+
+func TestGraphJSONWireKeepsIndentedEncoder(t *testing.T) {
+	out, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", fixtureRepo, "--fold-external=false", "--max-tokens", "0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "\n \"nodes\"") {
+		t.Fatalf("graphPrintJSON 缩进契约丢失: %s", out)
+	}
+}
+
+func TestGraphStaleUsesQuerySubset(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	g, err := codegraph.LoadGraph(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := g.Nodes["m_notifier"]
+	n.File = "outside.go"
+	n.Line = 1
+	g.Nodes["m_notifier"] = n
+	raw, err := json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "codegraph", "baseline.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runGraphSeparate(t, "chain", "e_run", "--repo", repo, "--stale", "--fold-external=false", "--max-tokens", "0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Stale []codegraph.StaleNode `json:"stale"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range result.Stale {
+		if stale.ID == "m_notifier" {
+			t.Fatalf("stale 越过查询子集: %+v", result.Stale)
+		}
+	}
 }
 
 func TestGraphAbsorb(t *testing.T) {

@@ -1,7 +1,7 @@
 // types.ts —— Go codegraph JSON wire 的 viewer 镜像。
 // 边界：只描述 provider 返回的数据，不转换 optional 字段或引入宿主类型。
 export interface CgMeta { project: string; branch: string; commit: string; scannedAt: string; generator: string }
-export interface CgTestRef { name: string; file: string; snippet?: string }
+export interface CgTestRef { name: string; file: string }
 export interface CgDomain { label: string; kind: string; summary?: string; desc?: string; parent?: string }
 export interface CgContainer { label: string; kind: string; entry?: boolean; domain?: string }
 export interface CgNode {

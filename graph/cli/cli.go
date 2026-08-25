@@ -4,8 +4,8 @@
 // 职责：
 //   - 导出唯一构造函数 New：graph/cmd/codegraph（canonical 二进制）与
 //     handoff 的 graph 别名共同挂载同一棵树——「别名行为一致」由构造保证
-//   - validate/check/absorb/views/chain/who-calls/domains/sym/entity/
-//     resolve/contract set/summary/version/migrate 共 14 个子命令
+//   - validate/check/absorb/views/chain/who-calls/context/domains/sym/entity/
+//     resolve/contract set/summary/version/migrate 共 15 个子命令
 //
 // 边界：
 //   - 只读 --repo 指向的本地文件，不发任何网络请求、不依赖 agentd 存活
@@ -17,6 +17,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,13 @@ var (
 	graphRepo               = "."
 	graphBase               string
 	graphDepth              = 2
+	graphFull               bool
+	graphFoldExternal       = true
+	graphCollapseUtil       = true
+	graphWithSource         bool
+	graphContextWithSource  = true
+	graphSourceSpan         = codegraph.DefaultSourceSpan
+	graphMaxTokens          = codegraph.DefaultMaxTokens
 	graphView               string
 	graphStale              bool
 	graphEdges              bool
@@ -93,6 +101,13 @@ func graphResetState() {
 	graphRepo = "."
 	graphBase = ""
 	graphDepth = 2
+	graphFull = false
+	graphFoldExternal = true
+	graphCollapseUtil = true
+	graphWithSource = false
+	graphContextWithSource = true
+	graphSourceSpan = codegraph.DefaultSourceSpan
+	graphMaxTokens = codegraph.DefaultMaxTokens
 	graphView = ""
 	graphStale = false
 	graphEdges = false
@@ -443,9 +458,9 @@ var graphViewsCmd = &cobra.Command{
 	},
 }
 
-// graphQueryOutput 保持 Result 字段在 JSON 顶层，附加 CLI 层的深度与可选 stale 数据。
+// graphQueryOutput 保持装配结果字段在 JSON 顶层，附加 CLI 层的深度与可选 stale 数据。
 type graphQueryOutput struct {
-	*codegraph.Result
+	*codegraph.AssembledResult
 	Depth int                   `json:"depth"`
 	Stale []codegraph.StaleNode `json:"stale,omitempty"`
 }
@@ -454,14 +469,17 @@ type graphQueryOutput struct {
 func graphQueryRunE(down, up bool) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
-		v, g, err := graphLoadView()
+		slog.Default().Info("graph query started", "command", cmd.Name(), "args", args, "down", down, "up", up)
+		v, _, err := graphLoadView()
 		if err != nil {
+			slog.Default().Error("graph query load failed", "command", cmd.Name(), "stage", "load", "error", err)
 			return err
 		}
 		foci := make([]string, 0, len(args))
 		for _, a := range args {
 			id, err := codegraph.Resolve(v, a)
 			if err != nil {
+				slog.Default().Error("graph query resolve failed", "command", cmd.Name(), "arg", a, "stage", "resolve", "error", err)
 				return err
 			}
 			foci = append(foci, id)
@@ -479,14 +497,56 @@ func graphQueryRunE(down, up bool) func(*cobra.Command, []string) error {
 		}
 		r, err := codegraph.Neighborhood(v, foci, dn, upn)
 		if err != nil {
+			slog.Default().Error("graph query neighborhood failed", "command", cmd.Name(), "stage", "neighborhood", "error", err)
 			return err
 		}
-		out := graphQueryOutput{Result: r, Depth: graphDepth}
-		if graphStale {
-			out.Stale = codegraph.CheckStale(graphRepo, g)
+		opts := graphQueryOptions()
+		if err := validateGraphQueryOptions(opts); err != nil {
+			slog.Default().Error("graph query options rejected", "command", cmd.Name(), "stage", "options", "error", err)
+			return err
 		}
-		return graphPrintJSON(cmd, out)
+		assembled, err := codegraph.AssembleResult(v, r, graphRepo, opts)
+		if err != nil {
+			slog.Default().Error("graph query assembly failed", "command", cmd.Name(), "stage", "assemble", "error", err)
+			return err
+		}
+		out := graphQueryOutput{AssembledResult: assembled, Depth: graphDepth}
+		if graphStale {
+			subset := &codegraph.Graph{Nodes: map[string]codegraph.Node{}}
+			for _, n := range r.Nodes {
+				if vn, ok := v.Nodes[n.ID]; ok && vn.Status != "deleted" {
+					subset.Nodes[n.ID] = vn.Node
+				}
+			}
+			out.Stale = codegraph.CheckStale(graphRepo, subset)
+		}
+		slog.Default().Info("graph query completed", "command", cmd.Name(), "rawNodes", len(r.Nodes), "outputNodes", len(assembled.Nodes), "outputEdges", len(assembled.Edges), "truncated", assembled.Truncated != nil)
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph query json output failed", "command", cmd.Name(), "stage", "json", "error", err)
+			return err
+		}
+		return nil
 	}
+}
+
+func graphQueryOptions() codegraph.QueryOptions {
+	return codegraph.QueryOptions{Full: graphFull, FoldExternal: graphFoldExternal, CollapseUtil: graphCollapseUtil,
+		WithSource: graphWithSource, SourceSpan: graphSourceSpan, MaxTokens: graphMaxTokens}
+}
+
+func graphContextOptions() codegraph.QueryOptions {
+	return codegraph.QueryOptions{Full: graphFull, FoldExternal: graphFoldExternal, CollapseUtil: graphCollapseUtil,
+		WithSource: graphContextWithSource, SourceSpan: graphSourceSpan, MaxTokens: graphMaxTokens}
+}
+
+func validateGraphQueryOptions(opts codegraph.QueryOptions) error {
+	if opts.SourceSpan < 1 || opts.SourceSpan > codegraph.MaxSourceSpan {
+		return fmt.Errorf("source span %d out of range 1..%d", opts.SourceSpan, codegraph.MaxSourceSpan)
+	}
+	if opts.MaxTokens < 0 {
+		return fmt.Errorf("max tokens %d must be non-negative", opts.MaxTokens)
+	}
+	return nil
 }
 
 var graphChainCmd = &cobra.Command{
@@ -501,6 +561,52 @@ var graphWhoCallsCmd = &cobra.Command{
 	Short: "谁调用了焦点——上游影响面（多个焦点取并集）",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  graphQueryRunE(false, true),
+}
+
+func bindQueryFlags(cmd *cobra.Command, source *bool, withDepth bool) {
+	if withDepth {
+		cmd.Flags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
+	}
+	cmd.Flags().BoolVar(&graphFull, "full", false, "恢复旧的全量节点字段")
+	cmd.Flags().BoolVar(&graphFoldExternal, "fold-external", true, "按外部领域折叠节点")
+	cmd.Flags().BoolVar(&graphCollapseUtil, "collapse-util", true, "收桩跨领域高扇入节点")
+	cmd.Flags().BoolVar(source, "with-source", *source, "附带源码窗口")
+	cmd.Flags().IntVar(&graphSourceSpan, "source-span", codegraph.DefaultSourceSpan, "源码窗口行数（上限 200）")
+	cmd.Flags().IntVar(&graphMaxTokens, "max-tokens", codegraph.DefaultMaxTokens, "近似 token 预算（0 = 不限）")
+}
+
+var graphContextCmd = &cobra.Command{
+	Use:   "context <领域>",
+	Short: "装配一个现状领域的声明、接口、主链与实体上下文",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		defer graphResetState()
+		slog.Default().Info("graph context started", "domain", args[0])
+		v, g, err := graphLoadView()
+		if err != nil {
+			slog.Default().Error("graph context load failed", "domain", args[0], "stage", "load", "error", err)
+			return err
+		}
+		opts := graphContextOptions()
+		if err := validateGraphQueryOptions(opts); err != nil {
+			slog.Default().Error("graph context options rejected", "domain", args[0], "stage", "options", "error", err)
+			return err
+		}
+		out, err := codegraph.AssembleContext(v, g, graphRepo, args[0], opts)
+		if err != nil {
+			slog.Default().Error("graph context assembly failed", "domain", args[0], "stage", "assemble", "error", err)
+			return err
+		}
+		if !graphStale {
+			out.Stale = nil
+		}
+		slog.Default().Info("graph context completed", "domain", args[0], "interfaces", len(out.Interfaces), "entities", len(out.Entities), "chainNodes", len(out.Chain.Nodes), "stale", len(out.Stale))
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph context json output failed", "domain", args[0], "stage", "json", "error", err)
+			return err
+		}
+		return nil
+	},
 }
 
 // graphDomainsCmd 列领域树：agent 定位「该从哪个领域下手」的第一跳。
@@ -733,9 +839,11 @@ func resolveVersion() string {
 func init() {
 	graphCmd.PersistentFlags().StringVar(&graphRepo, "repo", ".", "目标仓库根目录")
 	graphCmd.PersistentFlags().StringVar(&graphBase, "base", "", "棘轮基准 revision（缺省取默认分支 merge-base）")
-	graphCmd.PersistentFlags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	graphCmd.PersistentFlags().StringVar(&graphView, "view", "", "叠加的视图名（codegraph/diffs/<名>.json）")
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")
+	bindQueryFlags(graphChainCmd, &graphWithSource, true)
+	bindQueryFlags(graphWhoCallsCmd, &graphWithSource, true)
+	bindQueryFlags(graphContextCmd, &graphContextWithSource, false)
 	graphDomainsCmd.Flags().BoolVar(&graphEdges, "edges", false, "输出跨领域边矩阵")
 	graphAbsorbCmd.Flags().StringVar(&absorbCommit, "commit", "", "写入基线 meta 的提交号（缺省从 git HEAD 读取）")
 	graphAbsorbCmd.Flags().StringVar(&absorbBranch, "branch", "", "写入基线 meta 的分支名（缺省从 git 读取）")
@@ -746,5 +854,5 @@ func init() {
 	graphContractSetCmd.Flags().StringSliceVar(&graphContractInterfaces, "interfaces", nil, "允许的跨域接口清单")
 	graphContractSetCmd.Flags().IntVar(&graphContractBudget, "budget", 0, "存量直调预算")
 	graphContractCmd.AddCommand(graphContractSetCmd)
-	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd)
+	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphContextCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd)
 }
