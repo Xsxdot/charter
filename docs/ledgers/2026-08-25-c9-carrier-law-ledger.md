@@ -75,3 +75,8 @@
 - 落地清单：A+G→README（第七条判例表 + 修法三件套）；I→using-charter 地图 L1 行 + spec 定级表 L1 行与两判据；D→spec 可见性分界 + 台账条款/裁决过程分界 + 收尾自检第 5 项；B→breakdown「拍板即提交（含回写）」；C→contract 原子化双向 + 冻结物边界/移交区；F→四处个案（C1.10 残句、best-graph 状态行收口、seam-budget 级别行注记、roadmap 第 36 条更正）。
 - E 验证（scratch，不动线上）：`python3 scripts/regen_discipline.py --out <scratch>/discipline` 退出码 0，七块生成（contract 8416 / breakdown 8823 / plan 8460 / implement 15737 / review 17824 / integrate 2184 / recon 2388 字节）。正断言：charter-contract.md 命中「冻结物边界」「移交 plan」，charter-breakdown.md 命中「视同未拍板」。负断言：七块对「信息归唯一载体」「修法三件套」「裁决/过程分界」全部零命中。
 - **欠账（显式）**：线上 `~/.handoff/discipline` 未重生成——分支未合并，从工作树装法等于部署未获批文本；合并后在 finish 节点跑 `scripts/regen_discipline.py`（G③ 在 finish 兑现）。本机插件目录（`~/.claude/skills/charter`）同理待 finish 后由 install 同步。
+
+## 2026-08-25 review 轮与处置
+
+- 独立审查（subagent，与出稿者不同上下文）裁决 **fail**：一条 Important——plan 指针页「A~H」与 spec 定稿「A~I」失真（指针页成稿于 I 授权前、同提交未刷新；与 seam-budget 状态行矛盾同族，被本卡新法当场命中）。A~I 九条全部判兑现；regen 正负断言审查者独立复跑通过（七块字节数与 implement 段读数逐字节一致）；scope drift 两处轻微加码判合法（可溯源至 spec 负优化信号原文）。
+- 处置：Important-1 修复（指针页 A~H→A~I）；Minor-1（roadmap 另 4 处「待批准」失真）不追溯修（OOS-4），并入 18c 检查项；Minor-2（L1 双 kind 被 B246 架空）已在 B246 卡补 note；Minor-3（法条引自仓先例 vs 法条零案例）协调者裁决：**自仓修法先例是法的判例，不构成违反**——同「判据数字即先例」的逻辑；是否补显式出口立 roadmap 18d。观察项（plan 节点无「吸收移交区」对应条款）不动：执行面靠契约文档区头说明 + 18c 监测「plan 从不吸收」信号，现阶段够用。
