@@ -12,7 +12,7 @@ import { CallTree } from './CallTree'
 import { BestDetail } from './BestDetail'
 import { BestPanorama } from './BestPanorama'
 import { BestEdgeDetail } from './BestOverlays'
-import { BestLeafGraph } from './BestLeafGraph'
+import { BestDomainPage } from './BestDomainPage'
 import { BestScopePanorama } from './BestScopePanorama'
 import { MigrationSidebar } from './BestOverlays'
 import { DetailPanel } from './DetailPanel'
@@ -264,8 +264,17 @@ export function CodegraphPage() {
                   onSelectEdge={(key) => { setBestEdge(key); setSelDomain('') }}
                   onEnter={goBestScope} onSelectMigration={onBestMigration} />
               ) : (
-                <BestLeafGraph best={data.best!} baseline={data.baseline} report={data.report} scopeId={bestScope!}
-                  selectedContainer={bestContainer} migrationItems={bestMigrationItems} onSelectContainer={setBestContainer} />
+                <BestDomainPage
+                  project={project}
+                  baseline={data.baseline}
+                  best={data.best}
+                  decls={data.decls}
+                  report={data.report}
+                  domainId={bestScope!}
+                  migrationItems={bestMigrationItems}
+                  selectedContainer={bestContainer}
+                  onSelectContainer={setBestContainer}
+                />
               )}
               {bestEdge ? (
                 <BestEdgeDetail

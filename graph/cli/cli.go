@@ -136,7 +136,7 @@ var graphValidateCmd = &cobra.Command{
 		}
 		sort.Strings(declIDs)
 		for _, id := range declIDs {
-			for _, issue := range codegraph.ValidateDecls(declView, graphRepo, map[string]codegraph.DomainDecl{id: decls[id]}) {
+			for _, issue := range codegraph.ValidateDecls(declView, best, graphRepo, map[string]codegraph.DomainDecl{id: decls[id]}) {
 				issues = append(issues, "[decl "+id+"] "+issue)
 			}
 		}

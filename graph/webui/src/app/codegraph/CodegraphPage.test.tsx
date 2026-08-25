@@ -200,10 +200,24 @@ describe('CodegraphPage 三态下钻', () => {
     await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
     expect(container.querySelector('[data-best-subsystem]')).toBeNull()
     fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
-    await waitFor(() => expect(container.querySelector('[data-best-leaf]')).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
     expect(container.querySelector('[data-best-scope-card]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '理想树全景' }))
     await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+  })
+
+  it('best 叶子接入领域页，decls 缺席显示声明空态而不是传输失败', async () => {
+    state.data = { ...bestResp, decls: undefined }
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-best-subsystem="s_api"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-subsystem="s_api"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain="s_api_read"] button')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-domain="s_api_read"] button')!)
+    await waitFor(() => expect(container.querySelector('[data-best-scope-card="s_api_read_detail"]')).toBeTruthy())
+    fireEvent.click(container.querySelector('[data-best-scope-card="s_api_read_detail"]')!)
+    await waitFor(() => expect(container.querySelector('[data-best-domain-page="s_api_read_detail"]')).toBeTruthy())
+    expect(screen.getByText(/声明是人写的应然承诺，扫描器不生成/)).toBeTruthy()
+    expect(screen.queryByText('取代码图失败')).toBeNull()
   })
 
   it('选中分支视图时回落现状域全景并显示主线对照说明', async () => {

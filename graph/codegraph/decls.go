@@ -59,7 +59,10 @@ type DomainDeclSummary struct {
 
 // ValidateDecls 执行领域声明的三项保鲜检查：领域存在、所有 file#Symbol 锚存活、
 // 填写的 invariant testRef 对应仓内真实的顶层测试函数。
-func ValidateDecls(v *View, repoRoot string, decls map[string]DomainDecl) []string {
+//
+// best 是领域存在性检查的唯一主词表；best == nil 不是成功降级，而是每条声明
+// 都产生可见 issue。锚点与 testRef 检查仍沿用当前图和仓内真实顶层测试函数。
+func ValidateDecls(v *View, best *Best, repoRoot string, decls map[string]DomainDecl) []string {
 	var issues []string
 	ids := make([]string, 0, len(decls))
 	for id := range decls {
@@ -88,8 +91,10 @@ func ValidateDecls(v *View, repoRoot string, decls map[string]DomainDecl) []stri
 
 	for _, id := range ids {
 		decl := decls[id]
-		if _, ok := v.Domains[id]; !ok {
-			issues = append(issues, fmt.Sprintf("领域 %s 不在图 domains 段中", id))
+		if best == nil {
+			issues = append(issues, fmt.Sprintf("领域 %s 无法在 best 词表校验：best 缺席", id))
+		} else if _, ok := best.Domains[id]; !ok {
+			issues = append(issues, fmt.Sprintf("领域 %s 不在 best domains 段中", id))
 		}
 		if decl.Lifecycle != nil {
 			issues = append(issues, validateDeclAnchor(v, repoRoot, id, "lifecycle.from", decl.Lifecycle.From)...)

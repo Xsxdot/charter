@@ -59,6 +59,45 @@ describe('codegraph JSON transport', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/projects/demo/codegraph/source?file=x.go&line=0&span=40', { credentials: 'same-origin' })
   })
 
+  it('additive-only 消费 decls：缺席、空对象和未知声明字段都不阻塞响应', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const base = {
+      baseline: {
+        meta: { project: 'demo', branch: 'main', commit: 'c', scannedAt: 'now', generator: 'test' },
+        containers: {}, nodes: {}, edges: [],
+      },
+      views: {}, stale: [],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(base))
+    const absent = await fetchCodegraph('demo')
+    expect(absent.decls).toBeUndefined()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...base,
+      decls: {
+        d_target: {
+          domain: 'd_target', responsibility: '职责',
+          invariants: [{ text: '规矩' }],
+          lifecycle: { from: 'x.go#X', to: 'x.go#X' },
+          stateMachine: [{ from: 'ready', to: 'done', anchor: 'x.go#X' }],
+          futureProviderField: 'ignored by old consumers',
+        },
+      },
+    }))
+    const present = await fetchCodegraph('demo')
+    expect(present.decls?.d_target).toMatchObject({
+      domain: 'd_target', responsibility: '职责', invariants: [{ text: '规矩' }],
+      lifecycle: { from: 'x.go#X', to: 'x.go#X' },
+      stateMachine: [{ from: 'ready', to: 'done', anchor: 'x.go#X' }],
+    })
+    expect((present.decls?.d_target as unknown as { futureProviderField?: string }).futureProviderField).toBe('ignored by old consumers')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...base, decls: {} }))
+    const empty = await fetchCodegraph('demo')
+    expect(empty.decls).toEqual({})
+  })
+
   // 401 文案会原样显示在错误态里（CodegraphPage 照抄 error 原文）。这个包挂在
   // 任意宿主下，文案里出现某个宿主专用的兑换命令，等于让其它宿主的用户照着
   // 敲一条本机没有的命令。保留「会话失效、重新登录」这层可观察性即可。
