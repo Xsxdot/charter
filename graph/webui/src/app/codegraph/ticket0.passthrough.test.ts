@@ -1,7 +1,8 @@
 // C12 重档法定直通竖切：一次真实调用穿过骨架空壳，返回写死但接线真实的结果。
 // 断言钉在 spec 测试决定声明的主缝上（缝 1 结构轴 / 缝 2 行为轴）：
 // docs/specs/2026-08-25-codegraph-viewer-two-axis-spec.md「测试决定（接缝清单）」。
-// 缝 1 已由 scopepage.test.ts 正式断言取代（C12.2）；剩余缝 2 用例待 K3 正式化后整文件退役（K6）。
+// 缝 1 已由 scopepage.test.ts 正式断言取代（C12.2）；缝 2 已由 flowpage.test.ts 正式断言取代（C12.3），
+// 其 degraded 双向值级断言在本文件保留至 K6 整文件退役（过渡期双保险，contract §4.2「取代」＝覆盖平移）。
 import { describe, expect, it } from 'vitest'
 import type { CgGraph } from '../../api/types'
 import { deriveFlowPage } from './flowpage'
@@ -18,7 +19,6 @@ describe('C12 Ticket 0 直通竖切', () => {
     const model = deriveFlowPage({ baseline, entryNodeId: 'n_entry' })
     expect(model.entryNodeId).toBe('n_entry')
     expect(model.degraded).toBe(true)
-    expect(model.passthrough).toBe(true)
   })
 
   it('缝 2：flows 命中该入口 → 不降级', () => {
