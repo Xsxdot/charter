@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { layoutDomains } from './domainlayout'
 import type { DomainAgg, DomainCard, DomainEdge } from './domains'
 import type { ViewEdge } from './graphmath'
-import type { CgBest, CgCheckReport, CgTarget } from '../../api/types'
+import type { CgBest, CgCheckReport, CgDomainDecls, CgTarget } from '../../api/types'
 import type { BestScopeGraph, MigrationItem } from './besttree'
 import { bestDomainLabel, bestScopeGraph } from './besttree'
 
@@ -18,6 +18,8 @@ export interface BestScopePanoramaProps {
   best: CgBest
   target?: CgTarget
   report?: CgCheckReport
+  /** 领域声明表：职责正文的唯一来源（C12 契约 §2.2-9），缺席即渲染「未声明」态。 */
+  decls?: CgDomainDecls
   scopeId: string
   selectedDomain: string
   selectedEdge: string
@@ -48,10 +50,10 @@ function layoutAggregate(graph: BestScopeGraph): DomainAgg {
 /** 渲染一个嵌套 best scope；实卡/圈外卡点击都会进入下一层或横跳目标。 */
 export function BestScopePanorama(props: BestScopePanoramaProps) {
   const {
-    best, target, report, scopeId, selectedDomain, selectedEdge, migrationItems,
+    best, target, report, decls, scopeId, selectedDomain, selectedEdge, migrationItems,
     onSelectDomain, onSelectEdge, onEnter, onSelectMigration,
   } = props
-  const graph = useMemo(() => bestScopeGraph(best, target, report, scopeId), [best, target, report, scopeId])
+  const graph = useMemo(() => bestScopeGraph(best, target, report, scopeId, decls), [best, target, report, scopeId, decls])
   const agg = useMemo(() => layoutAggregate(graph), [graph])
   const ids = useMemo(() => graph.cards.map((card) => card.id).sort(), [graph.cards])
   const [pos, setPos] = useState<Record<string, [number, number]>>({})
@@ -204,7 +206,9 @@ export function BestScopePanorama(props: BestScopePanoramaProps) {
                 {card.label}
                 {card.type ? <span className="text-[10.5px] font-normal text-muted-foreground">{card.type}</span> : null}
               </div>
-              <div className="px-3.5 pb-2 text-[11.5px] leading-relaxed text-muted-foreground">{card.responsibility}</div>
+              {card.responsibility
+                ? <div data-declaration-text className="px-3.5 pb-2 text-[11.5px] leading-relaxed text-muted-foreground">{card.responsibility}</div>
+                : <div data-declaration-missing className="px-3.5 pb-2 text-[11.5px] leading-relaxed text-muted-foreground">未声明 · 请写入 codegraph/domains/{card.external ? card.id.slice(4) : card.id}.json</div>}
               <div className="flex flex-wrap gap-2 border-t px-3.5 py-1.5 text-[11px] text-muted-foreground">
                 <span>归属容器 {card.containerCount}</span>
                 <span>放错位 {card.misplacedCount}</span>

@@ -7,10 +7,10 @@ import { BestScopePanorama } from './BestScopePanorama'
 const best: CgBest = {
   meta: { version: 1, project: 'demo' },
   domains: {
-    ss_api: { label: 'API 子系统', responsibility: '服务', type: 'boundary' },
-    api_read: { label: '读取领域', responsibility: '查询', parent: 'ss_api' },
-    api_read_detail: { label: '读取详情', responsibility: '详情', parent: 'api_read' },
-    ss_store: { label: '存储子系统', responsibility: '存储', type: 'logic' },
+    ss_api: { label: 'API 子系统', type: 'boundary' },
+    api_read: { label: '读取领域', parent: 'ss_api' },
+    api_read_detail: { label: '读取详情', parent: 'api_read' },
+    ss_store: { label: '存储子系统', type: 'logic' },
   },
   containers: { c_api: 'api_read' },
 }
@@ -67,5 +67,14 @@ describe('BestScopePanorama', () => {
     expect(container.querySelector('[data-unplaced-tray]')).toBeTruthy()
     expect(container.querySelector('[data-migration-item="c_api"]')).toBeTruthy()
     expect(container.querySelector('[data-migration-arrow][data-expected="api_read"]')).toBeTruthy()
+  })
+
+  it('decls 缺席时子领域卡与圈外卡都显式未声明，写入路径用剥壳后的领域 id', () => {
+    const { container } = render(<BestScopePanorama best={best} target={nestedTarget} report={report}
+      scopeId="ss_api" selectedDomain="" selectedEdge="" migrationItems={[]}
+      onSelectDomain={vi.fn()} onSelectEdge={vi.fn()} onEnter={vi.fn()} onSelectMigration={vi.fn()} />)
+    expect(container.querySelector('[data-declaration-text]')).toBeNull()
+    expect(container.textContent).toContain('codegraph/domains/api_read.json')
+    expect(container.textContent).toContain('codegraph/domains/ss_store.json')
   })
 })

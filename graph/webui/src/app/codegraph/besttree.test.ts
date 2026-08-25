@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CgBest, CgCheckReport, CgGraph, CgTarget } from '../../api/types'
+import type { CgBest, CgCheckReport, CgDomainDecls, CgGraph, CgTarget } from '../../api/types'
 import {
   aggregateBestCards,
   assembleDirections,
@@ -21,11 +21,11 @@ import {
 const best: CgBest = {
   meta: { version: 1, project: 'demo' },
   domains: {
-    ss_api: { label: 'API 子系统', responsibility: '对外服务', type: 'boundary' },
-    api_read: { label: '读取领域', responsibility: '查询', parent: 'ss_api' },
-    api_read_detail: { label: '读取详情', responsibility: '详情查询', parent: 'api_read' },
-    ss_store: { label: '存储子系统', responsibility: '持久化', type: 'logic' },
-    store_db: { label: '数据库领域', responsibility: '数据库', parent: 'ss_store' },
+    ss_api: { label: 'API 子系统', type: 'boundary' },
+    api_read: { label: '读取领域', parent: 'ss_api' },
+    api_read_detail: { label: '读取详情', parent: 'api_read' },
+    ss_store: { label: '存储子系统', type: 'logic' },
+    store_db: { label: '数据库领域', parent: 'ss_store' },
   },
   containers: {
     c_api: 'api_read',
@@ -68,8 +68,8 @@ describe('besttree', () => {
     expect(subsystemOf(best, 'unknown')).toBe('')
 
     const cycle: CgBest = { ...best, domains: {
-      a: { label: 'a', responsibility: 'a', parent: 'b' },
-      b: { label: 'b', responsibility: 'b', parent: 'a' },
+      a: { label: 'a', parent: 'b' },
+      b: { label: 'b', parent: 'a' },
     } }
     expect(subsystemOf(cycle, 'a')).toBe('')
   })
@@ -204,9 +204,9 @@ describe('groupContainersBySubdomain', () => {
     const barren: CgBest = {
       meta: { version: 1, project: 'demo' },
       domains: {
-        ss_x: { label: 'X', responsibility: '' },
-        x_empty: { label: '空领域', responsibility: '', parent: 'ss_x' },
-        x_used: { label: '有容器', responsibility: '', parent: 'ss_x' },
+        ss_x: { label: 'X' },
+        x_empty: { label: '空领域', parent: 'ss_x' },
+        x_used: { label: '有容器', parent: 'ss_x' },
       },
       containers: { c_one: 'x_used' },
     }
@@ -258,7 +258,7 @@ describe('groupContainersBySubdomain 的包分层', () => {
   it('按包目录折出二级分组，标签取目录最后一段', () => {
     const nested: CgBest = {
       meta: { version: 1, project: 'demo' },
-      domains: { ss_x: { label: 'X', responsibility: '' } },
+      domains: { ss_x: { label: 'X' } },
       containers: { c_api: 'ss_x', c_api_detail: 'ss_x', c_store: 'ss_x' },
     }
     const groups = groupContainersBySubdomain(nested, 'ss_x', containerFacts(graph))
@@ -273,5 +273,26 @@ describe('groupContainersBySubdomain 的包分层', () => {
     const groups = groupContainersBySubdomain(best, 'ss_api')
     const readDomain = groups.find((group) => group.domainId === 'api_read')!
     expect(readDomain.packages).toEqual([{ dir: '', label: '未归包', containerIds: ['c_api'] }])
+  })
+})
+
+const decls: CgDomainDecls = {
+  ss_api: { domain: 'ss_api', responsibility: '对外服务的声明正文' },
+}
+
+describe('C12.1 职责正文唯一所有权', () => {
+  it('decls 提供正文时三个派生模型的 responsibility 都是声明正文', () => {
+    expect(bestSubsystems(best, decls).find((s) => s.id === 'ss_api')?.responsibility)
+      .toBe('对外服务的声明正文')
+    expect(aggregateBestCards(best, report, decls).ss_api?.responsibility)
+      .toBe('对外服务的声明正文')
+    expect(bestScopeGraph(best, target, report, null, decls).cards.find((c) => c.id === 'ss_api')?.responsibility)
+      .toBe('对外服务的声明正文')
+  })
+
+  it('decls 缺席时 responsibility 为 undefined——不是空串也不是 best 来源文本', () => {
+    for (const subsystem of bestSubsystems(best)) expect(subsystem.responsibility).toBeUndefined()
+    for (const card of Object.values(aggregateBestCards(best, report))) expect(card.responsibility).toBeUndefined()
+    for (const card of bestScopeGraph(best, target, report, null).cards) expect(card.responsibility).toBeUndefined()
   })
 })

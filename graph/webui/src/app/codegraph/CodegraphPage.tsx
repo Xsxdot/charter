@@ -249,7 +249,7 @@ export function CodegraphPage() {
             <>
               <MigrationSidebar groups={bestMigrationGroups} selectedContainer={bestContainer} onSelectContainer={onBestMigration} />
               {bestPano ? (
-                <BestPanorama best={data.best!} target={data.target} report={data.report}
+                <BestPanorama best={data.best!} target={data.target} report={data.report} decls={data.decls}
                   selectedSubsystem={selDomain} selectedEdge={bestEdge}
                   onSelectSubsystem={(id) => { setSelDomain(id); setBestEdge('') }}
                   onSelectEdge={(key) => {
@@ -258,7 +258,7 @@ export function CodegraphPage() {
                     setSelDomain('')
                   }} />
               ) : bestNested ? (
-                <BestScopePanorama best={data.best!} target={data.target} report={data.report} scopeId={bestScope!}
+                <BestScopePanorama best={data.best!} target={data.target} report={data.report} decls={data.decls} scopeId={bestScope!}
                   selectedDomain={selDomain} selectedEdge={bestEdge} migrationItems={bestMigrationItems}
                   onSelectDomain={(id) => setSelDomain(id)}
                   onSelectEdge={(key) => { setBestEdge(key); setSelDomain('') }}
@@ -281,7 +281,7 @@ export function CodegraphPage() {
                   edge={bestScopeGraph(data.best!, data.target, data.report, bestScope).edges.find((edge) => edge.key === bestEdge) ?? null}
                   target={data.target} report={data.report} />
               ) : bestPano ? (
-                <BestDetail best={data.best!} baseline={data.baseline} report={data.report} subsystemId={selDomain}
+                <BestDetail best={data.best!} baseline={data.baseline} report={data.report} decls={data.decls} subsystemId={selDomain}
                   selectedDomain={selDomain} onEnterDomain={goBestScope} selectedContainer={bestContainer} onSelectContainer={setBestContainer} />
               ) : null}
             </>

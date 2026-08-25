@@ -31,8 +31,8 @@ function pageFixture(): { baseline: CgGraph; best: CgBest; decls: CgDomainDecls 
   const best: CgBest = {
     meta: { version: 1, project: 'demo' },
     domains: {
-      d_source: { label: '最优来源', responsibility: '来源', type: 'logic' },
-      d_target: { label: '最优目标', responsibility: '目标', type: 'logic' },
+      d_source: { label: '最优来源', type: 'logic' },
+      d_target: { label: '最优目标', type: 'logic' },
     },
     containers: { c_source: 'd_source', c_target: 'd_target' },
   }

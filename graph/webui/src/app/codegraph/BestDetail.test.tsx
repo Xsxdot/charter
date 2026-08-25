@@ -6,10 +6,10 @@ import { BestDetail } from './BestDetail'
 const best: CgBest = {
   meta: { version: 1, project: 'demo' },
   domains: {
-    s_api: { label: 'API', responsibility: '对外服务', type: 'boundary' },
-    s_api_read: { label: '读取', responsibility: '查询', parent: 's_api' },
-    s_api_read_detail: { label: '详情', responsibility: '查询详情', parent: 's_api_read' },
-    s_store: { label: '存储', responsibility: '持久化', type: 'logic' },
+    s_api: { label: 'API', type: 'boundary' },
+    s_api_read: { label: '读取', parent: 's_api' },
+    s_api_read_detail: { label: '详情', parent: 's_api_read' },
+    s_store: { label: '存储', type: 'logic' },
   },
   containers: { c_in: 's_api_read', c_out: 's_store' },
 }
@@ -59,7 +59,7 @@ describe('BestDetail', () => {
   it('一个领域跨多个包时折出包分组，默认收起且带目录', () => {
     const multi: CgBest = {
       meta: { version: 1, project: 'demo' },
-      domains: { s_api: { label: 'API', responsibility: '对外服务', type: 'boundary' } },
+      domains: { s_api: { label: 'API', type: 'boundary' } },
       containers: { c_in: 's_api', c_out: 's_api' },
     }
     const { container } = render(<BestDetail best={multi} baseline={baseline} subsystemId="s_api" />)
@@ -72,7 +72,7 @@ describe('BestDetail', () => {
   it('领域只有一个包时不加多余层级，容器直接列出', () => {
     const single: CgBest = {
       meta: { version: 1, project: 'demo' },
-      domains: { s_api: { label: 'API', responsibility: '对外服务' } },
+      domains: { s_api: { label: 'API' } },
       containers: { c_in: 's_api' },
     }
     const { container } = render(<BestDetail best={single} baseline={baseline} subsystemId="s_api" />)
@@ -107,5 +107,22 @@ describe('BestDetail 子系统级进入', () => {
     expect(btn).toBeTruthy()
     fireEvent.click(btn)
     expect(onEnterDomain).toHaveBeenCalledWith('s_api')
+  })
+})
+
+describe('C12.1 职责正文唯一所有权', () => {
+  it('职责位显示 decls 正文；缺席时显示未声明+写入路径', () => {
+    const decls: import('../../api/types').CgDomainDecls = {
+      s_api: { domain: 's_api', responsibility: '人写的对外服务声明' },
+    }
+    const withDecl = render(<BestDetail best={best} baseline={baseline} report={report} decls={decls} subsystemId="s_api" />)
+    expect(withDecl.container.querySelector('[data-declaration-text]')?.textContent).toContain('人写的对外服务声明')
+    withDecl.unmount()
+
+    const withoutDecl = render(<BestDetail best={best} baseline={baseline} report={report} subsystemId="s_api" />)
+    expect(withoutDecl.container.querySelector('[data-declaration-text]')).toBeNull()
+    const missing = withoutDecl.container.querySelector('[data-declaration-missing]')
+    expect(missing?.textContent).toContain('未声明')
+    expect(missing?.textContent).toContain('codegraph/domains/s_api.json')
   })
 })

@@ -84,10 +84,10 @@ function makeFixture() {
   const best: CgBest = {
     meta: { version: 1, project: 'fixture' },
     domains: {
-      d_from_a: { label: 'Best A', responsibility: 'A', type: 'logic' },
-      d_from_b: { label: 'Best B', responsibility: 'B', type: 'logic' },
-      d_from_c: { label: 'Best C', responsibility: 'C', type: 'logic' },
-      d_target: { label: 'Best target', responsibility: 'Target', type: 'logic' },
+      d_from_a: { label: 'Best A', type: 'logic' },
+      d_from_b: { label: 'Best B', type: 'logic' },
+      d_from_c: { label: 'Best C', type: 'logic' },
+      d_target: { label: 'Best target', type: 'logic' },
     },
     containers: { c_a: 'd_from_a', c_b: 'd_from_b', c_c: 'd_from_c', c_target: 'd_target' },
   }
@@ -107,7 +107,7 @@ function makeEmptyInput() {
   }
   const best: CgBest = {
     meta: { version: 1, project: 'empty' },
-    domains: { d_target: { label: 'Best target', responsibility: 'Target', type: 'logic' } },
+    domains: { d_target: { label: 'Best target', type: 'logic' } },
     containers: { c_target: 'd_target' },
   }
   return { baseline, best }
@@ -229,8 +229,8 @@ describe('deriveDomainPage', () => {
     const bestInput: CgBest = {
       ...best,
       domains: {
-        d_source: { label: 'Source', responsibility: 'Source', type: 'logic' },
-        d_target: { label: 'Target', responsibility: 'Target', type: 'logic' },
+        d_source: { label: 'Source', type: 'logic' },
+        d_target: { label: 'Target', type: 'logic' },
       },
       containers: { c_source: 'd_source', c_target: 'd_target' },
     }
@@ -265,9 +265,9 @@ describe('deriveDomainPage', () => {
     const bestInput: CgBest = {
       ...best,
       domains: {
-        d_target: { label: 'Target', responsibility: 'Target', type: 'logic' },
-        d_source_a: { label: 'Source A', responsibility: 'Source A', type: 'logic' },
-        d_source_b: { label: 'Source B', responsibility: 'Source B', type: 'logic' },
+        d_target: { label: 'Target', type: 'logic' },
+        d_source_a: { label: 'Source A', type: 'logic' },
+        d_source_b: { label: 'Source B', type: 'logic' },
       },
       containers: { c_target: 'd_target', c_source_a: 'd_source_a', c_source_b: 'd_source_b' },
     }

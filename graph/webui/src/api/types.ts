@@ -58,8 +58,9 @@ export interface CgStaleNode { id: string; file: string; line: number; reason: s
 // charter docs/contracts/2026-08-24-codegraph-viewer-compare-contract.md）。
 // 字段名与库 JSON tag 一致；三键可选，缺席即分级降级（契约 C2/C6）。
 
-/** CgBestDomain 理想树领域：parent 为空即顶层子系统。 */
-export interface CgBestDomain { label: string; responsibility: string; parent?: string; type?: string }
+/** CgBestDomain 理想树领域：parent 为空即顶层子系统。只留结构——
+ *  职责正文唯一所有者是 CgDomainDecl（codegraph/domains/<id>.json，C12 契约 §2.2-9）。 */
+export interface CgBestDomain { label: string; parent?: string; type?: string }
 
 /** CgBest 最优图：理想结构树 + 现状容器归属映射。 */
 export interface CgBest {

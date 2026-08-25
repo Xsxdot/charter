@@ -42,10 +42,10 @@ const bestResp: CodegraphResp = {
   best: {
     meta: { version: 1, project: 'demo' },
     domains: {
-      s_api: { label: 'API 子系统', responsibility: '对外服务', type: 'boundary' },
-      s_api_read: { label: '读取领域', responsibility: '查询', parent: 's_api' },
-      s_api_read_detail: { label: '读取详情', responsibility: '详情查询', parent: 's_api_read' },
-      s_store: { label: '存储子系统', responsibility: '持久化', type: 'logic' },
+      s_api: { label: 'API 子系统', type: 'boundary' },
+      s_api_read: { label: '读取领域', parent: 's_api' },
+      s_api_read_detail: { label: '读取详情', parent: 's_api_read' },
+      s_store: { label: '存储子系统', type: 'logic' },
     },
     containers: { c_cli: 's_api_read', k_svc: 's_store' },
   },
@@ -155,6 +155,19 @@ describe('CodegraphPage 三态下钻', () => {
     const { container } = render(<CodegraphPage />)
     await waitFor(() => expect(container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
     expect(container.querySelector('[data-debt="none"]')?.textContent).toBe('无数据')
+  })
+
+  it('best 页面职责位随 decls 有无切换：装配层不凭空造声明', async () => {
+    state.data = bestResp
+    const noDecl = render(<CodegraphPage />)
+    await waitFor(() => expect(noDecl.container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+    expect(noDecl.container.querySelector('[data-declaration-missing]')).toBeTruthy()
+    noDecl.unmount()
+
+    state.data = { ...bestResp, decls: { s_api: { domain: 's_api', responsibility: '页面级声明正文' } } }
+    const withDecl = render(<CodegraphPage />)
+    await waitFor(() => expect(withDecl.container.querySelectorAll('[data-best-subsystem]').length).toBe(2))
+    expect(withDecl.container.querySelector('[data-declaration-text]')?.textContent).toContain('页面级声明正文')
   })
 
   it('点击理想子系统卡后接出理想详情面板', async () => {

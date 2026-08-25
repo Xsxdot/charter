@@ -7,9 +7,9 @@ import { BestLeafGraph } from './BestLeafGraph'
 const best: CgBest = {
   meta: { version: 1, project: 'demo' },
   domains: {
-    ss_api: { label: 'API', responsibility: '服务' },
-    api_read: { label: '读取', responsibility: '查询', parent: 'ss_api' },
-    api_read_detail: { label: '详情', responsibility: '详情查询', parent: 'api_read' },
+    ss_api: { label: 'API' },
+    api_read: { label: '读取', parent: 'ss_api' },
+    api_read_detail: { label: '详情', parent: 'api_read' },
   },
   containers: { c_api: 'api_read', c_api_detail: 'api_read_detail' },
 }

@@ -3,7 +3,7 @@
 // 与 DomainDetail 平行但不混用语义：这里的领域和容器来自 best，应然归属；
 // misplaced 行再把 baseline 的现状领域接上，明确显示「现在在」与「应归」。
 import { useMemo } from 'react'
-import type { CgBest, CgCheckReport, CgGraph } from '../../api/types'
+import type { CgBest, CgCheckReport, CgDomainDecls, CgGraph } from '../../api/types'
 import type { ContainerFacts } from './besttree'
 import { bestSubsystems, containerFacts, groupContainersBySubdomain, subsystemOf } from './besttree'
 
@@ -11,6 +11,8 @@ export interface BestDetailProps {
   best: CgBest
   baseline: CgGraph
   report?: CgCheckReport
+  /** 领域声明表：职责正文的唯一来源（C12 契约 §2.2-9），缺席即渲染「未声明」态。 */
+  decls?: CgDomainDecls
   subsystemId: string
   selectedDomain?: string
   onEnterDomain?: (id: string) => void
@@ -82,11 +84,11 @@ function baselineLabel(baseline: CgGraph, domainId: string): string {
 }
 
 export function BestDetail({
-  best, baseline, report, subsystemId, selectedDomain = '', onEnterDomain,
+  best, baseline, report, decls, subsystemId, selectedDomain = '', onEnterDomain,
   selectedContainer = '', onSelectContainer,
 }: BestDetailProps) {
   const shell = 'w-[340px] shrink-0 overflow-y-auto border-l p-3.5 text-sm'
-  const subsystem = bestSubsystems(best).find((item) => item.id === subsystemId)
+  const subsystem = bestSubsystems(best, decls).find((item) => item.id === subsystemId)
   if (!subsystem) return <aside data-best-detail className={shell} />
 
   const facts = useMemo(() => containerFacts(baseline), [baseline])
@@ -122,7 +124,11 @@ export function BestDetail({
           </button>
         ) : null}
       </h3>
-      <div className="mb-2.5 font-mono text-[11px] text-muted-foreground">理想子系统 · {subsystem.responsibility}</div>
+      <div className="mb-2.5 font-mono text-[11px] text-muted-foreground">
+        理想子系统 · {subsystem.responsibility
+          ? <span data-declaration-text>{subsystem.responsibility}</span>
+          : <span data-declaration-missing>未声明 · 请写入 codegraph/domains/{subsystem.id}.json</span>}
+      </div>
 
       <Section label="子领域嵌套">
         {subsystem.descendantIds.length ? (

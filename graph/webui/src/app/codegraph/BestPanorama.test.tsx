@@ -6,9 +6,9 @@ import { BestPanorama } from './BestPanorama'
 const best: CgBest = {
   meta: { version: 1, project: 'demo' },
   domains: {
-    ss_api: { label: 'API 子系统', responsibility: '对外服务', type: 'boundary' },
-    api_read: { label: '读取领域', responsibility: '查询', parent: 'ss_api' },
-    ss_store: { label: '存储子系统', responsibility: '持久化', type: 'logic' },
+    ss_api: { label: 'API 子系统', type: 'boundary' },
+    api_read: { label: '读取领域', parent: 'ss_api' },
+    ss_store: { label: '存储子系统', type: 'logic' },
   },
   containers: { c_api: 'api_read', c_store: 'ss_store' },
 }
@@ -31,6 +31,7 @@ const report: CgCheckReport = {
 describe('BestPanorama', () => {
   it('渲染理想树卡片、职责/类型、gap 读数和执法横幅', () => {
     const { container } = render(<BestPanorama best={best} target={target} report={report}
+      decls={{ ss_api: { domain: 'ss_api', responsibility: '对外服务' } }}
       selectedSubsystem="" selectedEdge="" onSelectSubsystem={vi.fn()} onSelectEdge={vi.fn()} />)
     expect(container.querySelectorAll('[data-best-subsystem]')).toHaveLength(2)
     expect(screen.getByText('对外服务')).toBeTruthy()
@@ -83,5 +84,14 @@ describe('BestPanorama', () => {
     expect(edge.dataset.debtLevel).toMatch(/^(0|[1-9]|10)$/)
     fireEvent.click(edge)
     expect(onSelectEdge).toHaveBeenCalledWith('ss_api->ss_store')
+  })
+
+  it('decls 缺席时卡面职责位显式未声明，不出现任何正文占位', () => {
+    const { container } = render(<BestPanorama best={best} target={target} report={report}
+      selectedSubsystem="" selectedEdge="" onSelectSubsystem={vi.fn()} onSelectEdge={vi.fn()} />)
+    expect(container.querySelector('[data-declaration-text]')).toBeNull()
+    const missing = container.querySelectorAll('[data-declaration-missing]')
+    expect(missing.length).toBe(2)
+    expect(missing[0]?.textContent).toContain('codegraph/domains/')
   })
 })
