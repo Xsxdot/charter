@@ -300,3 +300,26 @@ func TestAssembleContextWarnsOnUnplacedContainers(t *testing.T) {
 		t.Fatalf("未归位容器不得混入本域: %+v", out.Actual)
 	}
 }
+
+// 自审补回：改词表时我把原 TestAssembleContextBestOnlyErrorAndParentBoundary 整支换掉了，
+// 连带丢了两条与词表无关的既有保护——跨域入边只落在子树边界上、未分种模型不得变成实体。
+// 覆盖不能因为一次重构静默变薄，这里按最优树词表把它们补回来。
+func TestAssembleContextBoundaryAndUntypedModels(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	best := loadFixtureBest(t)
+
+	out, err := AssembleContext(v, g, best, "testdata/repo", "d_svc", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Interfaces) != 1 || out.Interfaces[0].ID != "n_runE" {
+		t.Fatalf("跨域入边应只落在子树边界上: %+v", out.Interfaces)
+	}
+	if len(out.Entities) != 0 {
+		t.Fatalf("未分种模型不得变成实体: %+v", out.Entities)
+	}
+}
