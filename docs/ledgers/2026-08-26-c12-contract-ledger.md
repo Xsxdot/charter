@@ -35,6 +35,12 @@
 - 新建缝壳 `graph/webui/src/app/codegraph/scopepage.ts#deriveScopePage`（缝 1）与 `flowpage.ts#deriveFlowPage`（缝 2）；模块路径与入口函数名即冻结的缝地址，内部模型形状归 plan。
 - 编译证据：`cd graph && go build ./... && go vet ./codegraph/` → `GO_BUILD_OK` + `VET_OK`（退出码 0）。
 
+## 直通竖切与冻结（提交 2）
+
+- `graph/webui/src/app/codegraph/ticket0.passthrough.test.ts` 落码并跑绿：`npm test` → Test Files 21 passed (21)，Tests 136 passed (136)（基线 20/133 + 新增 1 文件 3 支）；`npm run typecheck` → 退出码 0。
+- 契约文档落盘 `docs/superpowers/specs/c12-contract.md`：40 条冻结断言 + 4 条拍板记录 + 4 条交棒欠账 + 移交 plan 附区 3 条；随本提交冻结（存量无图，契约文档即冻结物）。
+- 纠正上游三处：草案 §8.2 陈述过时（best.go:127-135 已执法）、responsibility 消费点补 besttree 六处、spec 的 domainpage 行号漂移。
+
 ## 放弃的尝试与判断
 
 - 不把 responsibility 删除放进 Ticket 0：删字段破坏三组件 + besttree 六处编译，必须与 viewer 改读 decls 同刀（implement 轮），冻结条目写同刀规则。
