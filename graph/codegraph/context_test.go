@@ -323,3 +323,80 @@ func TestAssembleContextBoundaryAndUntypedModels(t *testing.T) {
 		t.Fatalf("未分种模型不得变成实体: %+v", out.Entities)
 	}
 }
+
+// 独立审阅 M2：现状域为空的容器「没法比」，必须计入 MisplacedSkipped。
+// 不并进来它会被静默读成「已对齐」，而同一函数的 ByCurrentDomain 那半却
+// 专门给它留了 (现状未归属) 桶——两半不能对同一件事持相反信念。
+func TestAssembleContextActualCountsEmptyCurrentDomainAsSkipped(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	best := loadFixtureBest(t)
+	// c_cli 归 d_cmd（best），但把它的现状领域抹成空。
+	c := v.Containers["c_cli"]
+	c.Domain = ""
+	v.Containers["c_cli"] = c
+
+	out, err := AssembleContext(v, g, best, "testdata/repo", "d_cmd", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Actual.MisplacedSkipped != 1 {
+		t.Fatalf("现状域为空 = 没法比，应计入 skipped=1，实得 %+v", out.Actual)
+	}
+	if len(out.Actual.Misplaced) != 0 {
+		t.Fatalf("没法比时不得伪报放错位: %+v", out.Actual.Misplaced)
+	}
+	if len(out.Actual.ByCurrentDomain) != 1 || out.Actual.ByCurrentDomain[0].ID != "(现状未归属)" {
+		t.Fatalf("分布那半应如实进 (现状未归属) 桶: %+v", out.Actual.ByCurrentDomain)
+	}
+}
+
+// 独立审阅：best 缺席时 domainID 是现状 id，而声明可能已全迁最优树词表。
+// 只说「声明缺失、请补齐」是错的处置建议——真因是词表不匹配，必须点破。
+func TestAssembleContextDegradedWarnsOnMigratedDeclVocabulary(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	// fixture 的声明键是 d_cmd（最优树 id），现状视图里没有它——正是迁移后的形态。
+	out, err := AssembleContext(v, g, nil, "testdata/repo", "d_cli", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.Warning, "已迁到最优树词表") {
+		t.Fatalf("词表不匹配必须点破，不能只说补齐: %q", out.Warning)
+	}
+	if !strings.Contains(out.Warning, "d_cmd") {
+		t.Fatalf("要给出越界键示例作为判断依据: %q", out.Warning)
+	}
+}
+
+// 独立审阅 M1：未归位容器的告警不得声称「不会出现在任何 context 切片里」——
+// chain 是对全图的裸 BFS，不做领域过滤，它们仍可能出现在主链里。
+func TestAssembleContextUnplacedWarningDoesNotOverclaimAboutChain(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	best := loadFixtureBest(t)
+	n := Node{Kind: "func", Container: "c_orphan", Name: "Orphan", File: "orphan/a.go", Line: 1}
+	g.Nodes["n_orphan"] = n
+	v.Nodes["n_orphan"] = ViewNode{Node: n}
+	v.Containers["c_orphan"] = Container{Domain: "d_cli"}
+
+	out, err := AssembleContext(v, g, best, "testdata/repo", "d_cmd", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.Warning, "不会出现在任何 context 切片里") {
+		t.Fatalf("这句对 chain 不成立，不许说得比事实大: %q", out.Warning)
+	}
+	if !strings.Contains(out.Warning, "chain 是例外") {
+		t.Fatalf("必须把 chain 这个例外点明: %q", out.Warning)
+	}
+}

@@ -120,7 +120,7 @@ func AssembleContext(v *View, g *Graph, best *Best, repoRoot, domainID string, o
 		// best 没归位的容器不属于任何最优树领域，于是不会出现在任何一次 context 里。
 		// 不吭声地漏掉一批真实代码就是静默失败——这里如实报数，让人知道漏在哪一类。
 		if n := unplacedContainerCount(v, best); n > 0 {
-			out.Warning = appendWarning(out.Warning, fmt.Sprintf("best.json 未归位容器 %d 个，它们不属于任何最优树领域，因而不会出现在任何 context 切片里", n))
+			out.Warning = appendWarning(out.Warning, fmt.Sprintf("best.json 未归位容器 %d 个，它们不属于任何最优树领域，因而不会作为本域成员出现在 packages/interfaces/entities/actual 里；chain 是例外——主链是对全图的裸 BFS，不做领域过滤，它们仍可能出现在那里", n))
 		}
 	}
 
@@ -134,6 +134,11 @@ func AssembleContext(v *View, g *Graph, best *Best, repoRoot, domainID string, o
 		out.Declaration = &copyDecl
 	} else {
 		out.Warning = appendWarning(out.Warning, fmt.Sprintf("领域声明缺失：codegraph/domains/%s.json；请按 roadmap 1a 补齐", domainID))
+		if best == nil {
+			if migrated := declKeysOutsideView(v, decls); len(migrated) > 0 {
+				out.Warning = appendWarning(out.Warning, fmt.Sprintf("注意：仓内有 %d 份声明的键不在现状视图词表中（如 %s），声明很可能已迁到最优树词表；此时「补齐」是错的处置——真因是本次因 best.json 不可用而按现状词表运行", len(migrated), strings.Join(migrated, "、")))
+			}
+		}
 	}
 
 	out.Packages = contextPackages(v, g, member)
@@ -455,6 +460,13 @@ func contextActual(v *View, best *Best, member func(Node) bool) *ContextActual {
 			cur = "(现状未归属)"
 		}
 		counts[cur]++
+		if v.Containers[id].Domain == "" {
+			// 现状域为空 = 没法比，与「视图领域不在 best 词表中」同类，一并计入 skipped。
+			// 不并进来就会被读成「已对齐」，而 ByCurrentDomain 那半却专门给它留了
+			// (现状未归属) 桶——同一个函数的两半不能对同一件事持相反信念。
+			out.MisplacedSkipped++
+			continue
+		}
 		switch kind, detail := containerAlignment(v, best, id); kind {
 		case alignSkipped:
 			out.MisplacedSkipped++
@@ -493,4 +505,23 @@ func unplacedContainerCount(v *View, best *Best) int {
 		}
 	}
 	return count
+}
+
+// declKeysOutsideView 列出「键不在现状视图词表中」的声明，最多取前 3 个做示例。
+//
+// 参数：v 当前视图、decls 已加载的声明表。返回：越界键的示例列表（已排序）。
+// 用途：best 缺席时 context 按现状词表运行，若声明其实已迁到最优树词表，
+// 「声明缺失、请补齐」就是错的处置建议——这里提供判断依据，把误导报错掐掉。
+func declKeysOutsideView(v *View, decls map[string]DomainDecl) []string {
+	outside := make([]string, 0, len(decls))
+	for id := range decls {
+		if _, ok := v.Domains[id]; !ok {
+			outside = append(outside, id)
+		}
+	}
+	sort.Strings(outside)
+	if len(outside) > 3 {
+		return outside[:3]
+	}
+	return outside
 }
