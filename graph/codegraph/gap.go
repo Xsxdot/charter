@@ -15,6 +15,38 @@ type BestCoverage struct {
 	MisplacedSkipped   int `json:"misplacedSkipped"`
 }
 
+// 容器归位判据的三种取值。仓内**只此一份**放错位定义：check 的 finding 与
+// context 的实然披露都走 containerAlignment，避免同一个概念长出两套真相。
+const (
+	alignAligned   = ""          // 视图领域与 best 归属一致
+	alignMisplaced = "misplaced" // 两边都在 best 词表内、但归属不同
+	alignSkipped   = "skipped"   // 视图领域不在 best 词表中，两边不可比
+)
+
+// containerAlignment 判定一个容器的视图领域与 best 归属是否对齐。
+//
+// 参数：v 当前视图、b 最优图、containerID 容器 id；返回判据取值与可直接展示的差异说明。
+// 注意：视图领域不在 best 词表中时返回 alignSkipped 而**不是** alignMisplaced——
+// 词表不可比时伪报放错位是错的（gap_test.go 有专门用例钉住这条）。调用方必须把
+// skipped 的数量如实报出来，否则「放错位 0」会被读成「没搬错」。
+func containerAlignment(v *View, b *Best, containerID string) (kind, detail string) {
+	if v == nil || b == nil {
+		return alignAligned, ""
+	}
+	container, ok := v.Containers[containerID]
+	if !ok || container.Domain == "" {
+		return alignAligned, ""
+	}
+	if _, comparable := b.Domains[container.Domain]; !comparable {
+		return alignSkipped, ""
+	}
+	bestDomain := b.DomainOfContainer(containerID)
+	if bestDomain == "" || bestDomain == container.Domain {
+		return alignAligned, ""
+	}
+	return alignMisplaced, "视图容器领域 " + container.Domain + " 与 best.json 归属 " + bestDomain + " 不同"
+}
+
 // bestGapFindings 逐容器/逐叶子领域产生四类 warn。容器归属是 best.json 的
 // Containers 表，而不是文件路径规则；因此一个容器只产生一条容器级 finding。
 func bestGapFindings(v *View, b *Best) (warns []Finding, misplacedSkipped int) {
@@ -46,13 +78,13 @@ func bestGapFindings(v *View, b *Best) (warns []Finding, misplacedSkipped int) {
 		if container.Domain == "" {
 			continue
 		}
-		if _, comparable := b.Domains[container.Domain]; !comparable {
+		kind, detail := containerAlignment(v, b, containerID)
+		switch kind {
+		case alignSkipped:
 			misplacedSkipped++
 			continue
-		}
-		if bestDomain := b.DomainOfContainer(containerID); bestDomain != "" && bestDomain != container.Domain {
-			warns = append(warns, Finding{Kind: KindContainerMisplaced, From: containerID,
-				Detail: "视图容器领域 " + container.Domain + " 与 best.json 归属 " + bestDomain + " 不同"})
+		case alignMisplaced:
+			warns = append(warns, Finding{Kind: KindContainerMisplaced, From: containerID, Detail: detail})
 		}
 	}
 

@@ -577,7 +577,7 @@ func bindQueryFlags(cmd *cobra.Command, source *bool, withDepth bool) {
 
 var graphContextCmd = &cobra.Command{
 	Use:   "context <领域>",
-	Short: "装配一个现状领域的声明、接口、主链与实体上下文",
+	Short: "装配一个最优树领域的声明、接口、主链与实体上下文（无 best.json 时降级为现状领域）",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		defer graphResetState()
@@ -592,7 +592,13 @@ var graphContextCmd = &cobra.Command{
 			slog.Default().Error("graph context options rejected", "domain", args[0], "stage", "options", "error", err)
 			return err
 		}
-		out, err := codegraph.AssembleContext(v, g, graphRepo, args[0], opts)
+		// best 缺席不是错误：AssembleContext 会降级到现状词表并在 warning 里说明。
+		best, bestErr := codegraph.LoadBest(graphRepo)
+		if bestErr != nil {
+			slog.Default().Error("graph context best load failed", "domain", args[0], "stage", "load-best", "error", bestErr)
+			return bestErr
+		}
+		out, err := codegraph.AssembleContext(v, g, best, graphRepo, args[0], opts)
 		if err != nil {
 			slog.Default().Error("graph context assembly failed", "domain", args[0], "stage", "assemble", "error", err)
 			return err

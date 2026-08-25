@@ -697,15 +697,15 @@ func TestGraphCLIQueryFlagsAndJSONWire(t *testing.T) {
 	if err != nil || !bytes.Contains([]byte(limited), []byte(`"reason": "max-tokens"`)) {
 		t.Fatalf("预算截断未穿过 JSON wire: err=%v stdout=%s", err, limited)
 	}
-	contextOut, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", fixtureRepo)
+	contextOut, _, err := runGraphSeparate(t, "context", "d_cmd", "--repo", fixtureRepo)
 	if err != nil || !bytes.Contains([]byte(contextOut), []byte(`"declaration"`)) {
 		t.Fatalf("context 声明路径: err=%v stdout=%s", err, contextOut)
 	}
-	_, badStderr, err := runGraphSeparate(t, "context", "d_cli", "--depth", "1", "--repo", fixtureRepo)
+	_, badStderr, err := runGraphSeparate(t, "context", "d_cmd", "--depth", "1", "--repo", fixtureRepo)
 	if err == nil {
 		t.Fatalf("context 必须拒绝 depth: err=%v stderr=%s", err, badStderr)
 	}
-	_, _, err = runGraphSeparate(t, "context", "d_cli", "extra", "--repo", fixtureRepo)
+	_, _, err = runGraphSeparate(t, "context", "d_cmd", "extra", "--repo", fixtureRepo)
 	if err == nil {
 		t.Fatal("context 必须拒绝多余领域参数")
 	}
@@ -727,7 +727,7 @@ func TestGraphQueryFlagsResetBeforeWhoCallsAndContext(t *testing.T) {
 	if bytes.Contains([]byte(who), []byte(`"source"`)) || bytes.Contains([]byte(who), []byte(`"returns"`)) {
 		t.Fatalf("who-calls 不能继承前一条命令的 full/source flags: %s", who)
 	}
-	contextOut, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", fixtureRepo)
+	contextOut, _, err := runGraphSeparate(t, "context", "d_cmd", "--repo", fixtureRepo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1145,5 +1145,61 @@ func TestGraphCheckFailsOnUnreadableDomainDecls(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "d_cmd.json") {
 		t.Errorf("报错应指出是哪个文件坏了，实际: %v", err)
+	}
+}
+
+// context 的实然披露必须真的穿过 JSON wire——消费方多数是 agent，序列化形态即契约。
+// best 缺席时该键必须**省略**而不是发 null：null 会被读成「披露过了，是空的」。
+func TestGraphContextActualCrossesJSONWire(t *testing.T) {
+	withBest, _, err := runGraphSeparate(t, "context", "d_cmd", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Actual *struct {
+			Containers      int `json:"containers"`
+			ByCurrentDomain []struct {
+				ID         string `json:"id"`
+				Containers int    `json:"containers"`
+			} `json:"byCurrentDomain"`
+			MisplacedSkipped int `json:"misplacedSkipped"`
+		} `json:"actual"`
+	}
+	if err := json.Unmarshal([]byte(withBest), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire.Actual == nil {
+		t.Fatalf("best 在场时 actual 必须过线: %s", withBest)
+	}
+	if wire.Actual.Containers != 1 || len(wire.Actual.ByCurrentDomain) != 1 || wire.Actual.ByCurrentDomain[0].ID != "d_cli" {
+		t.Fatalf("实然披露内容未逐字过线: %+v", wire.Actual)
+	}
+	if wire.Actual.MisplacedSkipped != 1 {
+		t.Fatalf("misplacedSkipped 必须过线且如实: %+v", wire.Actual)
+	}
+
+	// 造一份没有 best.json 的仓：context 降级到现状词表，actual 整键省略。
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "codegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"baseline.json"} {
+		raw, err := os.ReadFile(filepath.Join(fixtureRepo, "codegraph", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, "codegraph", name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	noBest, _, err := runGraphSeparate(t, "context", "d_cli", "--repo", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains([]byte(noBest), []byte(`"actual"`)) {
+		t.Fatalf("best 缺席时 actual 必须省略而不是发 null: %s", noBest)
+	}
+	if !bytes.Contains([]byte(noBest), []byte("降级")) {
+		t.Fatalf("best 缺席必须有可见降级告警: %s", noBest)
 	}
 }
