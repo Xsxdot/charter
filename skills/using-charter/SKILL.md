@@ -18,6 +18,7 @@ description: 会话开始时建立流程纪律——任何开发任务动手前�
 ```
 bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / plan → implement → review → acceptance → finish
 需求/想法 → spec（收尾定级与选档）
+   ├─ L1 微改（plan 增量为零 + 验收一眼可核）→ implement → review → finish（快道；spec 即 plan）
    ├─ L2 单子系统 → plan → implement → review → acceptance → finish
    └─ L3 跨子系统 → contract → breakdown
         ├─ 轻档：单轮 implement → review → acceptance → finish

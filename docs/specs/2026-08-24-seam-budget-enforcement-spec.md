@@ -1,7 +1,7 @@
 # Spec：接缝预算执法 + 运行时直通竖切
 
 **状态**：已批准（2026-08-24，用户裁决：跳过 plan 节点直接实现——纪律文本改动，实现决定即任务清单）（v2.1，吸收外部审查三轮：B219 实例 + 旧卷复跑 + 对偶覆盖审查）
-**级别**：L2（charter 仓 skills 文本，单子系统，不动契约层）→ plan → implement → review → acceptance → finish
+**级别**：L2（charter 仓 skills 文本，单子系统，不动契约层）；法定路由 plan → implement → review → acceptance → finish，实际路由经用户裁决跳过 plan（见状态行；矛盾注记补于 2026-08-25，C9 个案销账）
 
 ## 问题陈述
 

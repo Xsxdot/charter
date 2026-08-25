@@ -123,7 +123,7 @@ viewer 是纯前端，声明必须上 wire。宿主已经在加载 decls（为�
 - **additive-only**：缺席合法；旧 viewer 必须能忽略它（Go/TS 双侧都是忽略未知键的既成行为）。
 - **加载失败不拖垮整页**：与既有 `best`/`target` 的处置一致——告警并跳过该段，其余照常返回。
 - **不上 wire 的**：声明的校验结论（`ValidateDecls` 的 issues）——那是 `check` 的产物，已在 `report` 里，不重复上。
-- **推荐 A 若获批**，另动一处契约：`DomainDecl.Domain` 的取值域从视图领域 id 改为最优图领域 id，`ValidateDecls` 的「领域存在」校验改校 best；这是 charter graph 库的行为变更，需 handoff 同刀重写两份声明文件（**同刀，不分开做**——分开做中间态 validate 必红，与 C1.6「换词表必须同刀重写 contracts」是同一条教训）。
+- **已裁决 A（2026-08-24），另动一处契约**：`DomainDecl.Domain` 的取值域从视图领域 id 改为最优图领域 id，`ValidateDecls` 的「领域存在」校验改校 best；这是 charter graph 库的行为变更，需 handoff 同刀重写两份声明文件（**同刀，不分开做**——分开做中间态 validate 必红，与 C1.6「换词表必须同刀重写 contracts」是同一条教训）。
 
 **接缝清单（四条，全部符号 + 调用方）：**
 
