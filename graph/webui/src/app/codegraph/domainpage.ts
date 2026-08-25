@@ -143,6 +143,21 @@ function edgeContexts(input: DomainPageInput): EdgeContext[] {
   })
 }
 
+function callerDomainsByNode(input: DomainPageInput): Map<string, Set<string>> {
+  const callers = new Map<string, Set<string>>()
+  for (const [from, to] of input.baseline.edges) {
+    const fromNode = input.baseline.nodes[from]
+    const toNode = input.baseline.nodes[to]
+    if (!fromNode || !toNode) continue
+    const fromDomain = containerDomain(input, fromNode.container)
+    if (!fromDomain) continue
+    const domains = callers.get(to) ?? new Set<string>()
+    domains.add(fromDomain)
+    callers.set(to, domains)
+  }
+  return callers
+}
+
 function distinct<T>(values: T[]): T[] {
   return [...new Set(values)]
 }
@@ -203,7 +218,12 @@ function semanticModel(input: DomainPageInput, table: Record<string, DomainLike>
   }
 }
 
-function cascadeColumns(input: DomainPageInput, domainId: string, focusId: string, edges: EdgeContext[]): CascadeColumn[] {
+function cascadeColumns(
+  input: DomainPageInput,
+  domainId: string,
+  focusId: string,
+  callerDomains: Map<string, Set<string>>,
+): CascadeColumn[] {
   const columns: CascadeColumn[] = []
   const sameDomainEdges = input.baseline.edges.flatMap(([from, to]) => {
     const fromNode = input.baseline.nodes[from]
@@ -217,8 +237,7 @@ function cascadeColumns(input: DomainPageInput, domainId: string, focusId: strin
     const uniqueIds = distinct(candidateIds).filter((id) => input.baseline.nodes[id] !== undefined)
     const candidates = uniqueIds.map((id): CascadeNode => {
       const node = input.baseline.nodes[id]
-      const callerDomains = distinct(edges.filter((edge) => edge.to === id).map((edge) => edge.fromDomain))
-      const collapsed = callerDomains.length >= DOMAIN_SHARED_CALLER_DOMAINS
+      const collapsed = (callerDomains.get(id)?.size ?? 0) >= DOMAIN_SHARED_CALLER_DOMAINS
       return {
         id,
         depth,
@@ -255,6 +274,7 @@ export function deriveDomainPage(input: DomainPageInput): DomainPageModel {
     Object.keys(input.baseline.containers).filter((id) => containerDomain(input, id) === input.domainId),
   )
   const activeEdges = edgeContexts(input)
+  const allCallerDomains = callerDomainsByNode(input)
   const inboundEdges = activeEdges.filter((edge) => edge.toDomain === input.domainId)
   const outboundEdges = activeEdges.filter((edge) => edge.fromDomain === input.domainId)
   const semantic = semanticModel(input, table, selectedContainers)
@@ -263,7 +283,7 @@ export function deriveDomainPage(input: DomainPageInput): DomainPageModel {
     key: `${edge.fromDomain}->${input.domainId}:${edge.from}->${edge.to}:${edge.index}`,
     fromDomainId: edge.fromDomain,
     focusNodeId: edge.to,
-    columns: cascadeColumns(input, input.domainId, edge.to, activeEdges),
+    columns: cascadeColumns(input, input.domainId, edge.to, allCallerDomains),
   }))
   const structure: StructureViewModel = {
     domainId: input.domainId,

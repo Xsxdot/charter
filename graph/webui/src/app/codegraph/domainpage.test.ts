@@ -239,6 +239,45 @@ describe('deriveDomainPage', () => {
     expect(model.structure.lanes[0].columns[0].nodes[0].collapsed).toBe(false)
   })
 
+  it('includes the focus domain when counting shared caller domains', () => {
+    const { baseline, best } = makeEmptyInput()
+    const nodes: Record<string, CgNode> = {
+      localCaller: makeNode('localCaller', 'c_target'),
+      crossCallerA: makeNode('crossCallerA', 'c_source_a'),
+      crossCallerB: makeNode('crossCallerB', 'c_source_b'),
+      focus: makeNode('focus', 'c_target'),
+    }
+    const input: CgGraph = {
+      ...baseline,
+      containers: {
+        c_target: { label: 'Target', kind: 'logic', domain: 'd_target' },
+        c_source_a: { label: 'Source A', kind: 'logic', domain: 'd_source_a' },
+        c_source_b: { label: 'Source B', kind: 'logic', domain: 'd_source_b' },
+      },
+      domains: {
+        d_target: { label: 'Target', kind: 'logic' },
+        d_source_a: { label: 'Source A', kind: 'logic' },
+        d_source_b: { label: 'Source B', kind: 'logic' },
+      },
+      nodes,
+      edges: [['localCaller', 'focus'], ['crossCallerA', 'focus'], ['crossCallerB', 'focus']],
+    }
+    const bestInput: CgBest = {
+      ...best,
+      domains: {
+        d_target: { label: 'Target', responsibility: 'Target', type: 'logic' },
+        d_source_a: { label: 'Source A', responsibility: 'Source A', type: 'logic' },
+        d_source_b: { label: 'Source B', responsibility: 'Source B', type: 'logic' },
+      },
+      containers: { c_target: 'd_target', c_source_a: 'd_source_a', c_source_b: 'd_source_b' },
+    }
+    const model = deriveDomainPage({ baseline: input, best: bestInput, organization: 'best', domainId: 'd_target' })
+    expect(model.structure.lanes[0].columns[0].nodes[0]).toMatchObject({
+      collapsed: true,
+      collapseReason: 'shared-by-domains',
+    })
+  })
+
   it('does not present best as available when the best graph is absent', () => {
     const { baseline } = makeEmptyInput()
     const model = deriveDomainPage({ baseline, organization: 'best', domainId: 'd_target' })
