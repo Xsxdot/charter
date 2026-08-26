@@ -7,9 +7,11 @@
 // 现在能做什么），绝不把 callChain 机械可达序列画成流程图（§2.4-31 最大危害，
 // 反面断言锁死）。
 // 边界：唯一数据源是 FlowPageModel；本页不发起任何网络请求（取数由 K6 装配层经
-// props 注入）。模型未携带入口显示名（缺口登记见 c12.5-plan §1.4）：泳道标题
-// 以族标签 + 入口 id 如实呈现，不就地读 baseline.nodes 补名。视觉质量（蛇形
-// 走线、中文折行、拖宽重排）归真机清单（breakdown §四.2）。
+// props 注入）。入口显示名读模型输出侧字段 entryName（C12.6 协调者裁决的纯输出侧
+// 扩展，c12.5-plan §1.4 登记缺口的正道落地）；幽灵入口空串时以 id 兜底呈现，
+// 不就地读 baseline.nodes 补名。下钻层级（祖先链）显示沿途入口真名——名字来自
+// 各自当层模型的 entryName 与点击时的步骤 targetName，同样不从 baseline 直读。
+// 视觉质量（蛇形走线、中文折行、拖宽重排）归真机清单（breakdown §四.2）。
 import { useEffect, useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import type { CgGraph } from '../../api/types'
@@ -26,12 +28,17 @@ export function FlowPageView({ baseline, entryNodeId }: FlowPageViewProps): JSX.
   const [stack, setStack] = useState<string[]>([entryNodeId])
   const [selectedStepId, setSelectedStepId] = useState('')
   const [tab, setTab] = useState<'info' | 'chain'>('info')
+  // 下钻层级真名表：id → 入口显示名。名字两个来源，都不读 baseline——
+  // ① 点击下层入口那一刻，从当前模型里查该 id 的步骤 targetName；
+  // ② 到达后由当层模型的 entryName 回填（①未命中或空串时兜底）。
+  const [trailNames, setTrailNames] = useState<Record<string, string>>({})
   const current = stack[stack.length - 1] ?? entryNodeId
 
-  // 外部换入口（K6 装配接线）＝整张页面重置：旧图的层级栈不跨图泄漏
+  // 外部换入口（K6 装配接线）＝整张页面重置：旧图的层级栈与真名表不跨图泄漏
   useEffect(() => {
     setStack([entryNodeId])
     setSelectedStepId('')
+    setTrailNames({})
   }, [entryNodeId])
 
   const model = useMemo(
@@ -39,8 +46,17 @@ export function FlowPageView({ baseline, entryNodeId }: FlowPageViewProps): JSX.
     [baseline, current],
   )
 
+  // 当层入口名回填真名表：泳道标题与祖先链都从这里取词
+  useEffect(() => {
+    if (model.entryName === '') return
+    setTrailNames((m) => (m[current] === model.entryName ? m : { ...m, [current]: model.entryName }))
+  }, [current, model.entryName])
+
   const openEntry = (nextEntryId: string) => {
     console.info('[codegraph] flow page drill', { from: current, to: nextEntryId })
+    // 点击瞬间的真名＝当前模型里指向该入口的步骤目标名（紫框 ▸ 的可见文本同源）
+    const stepName = model.steps.find((s) => s.to === nextEntryId)?.targetName ?? ''
+    setTrailNames((m) => ({ ...m, [nextEntryId]: m[nextEntryId] ?? stepName }))
     setStack((s) => [...s, nextEntryId])
     setSelectedStepId('')
   }
@@ -78,7 +94,11 @@ export function FlowPageView({ baseline, entryNodeId }: FlowPageViewProps): JSX.
           </button>
         )}
         <h1 data-lane-title className="font-semibold">
-          泳道<span className="mx-1 font-mono text-xs font-normal text-muted-foreground">{current}</span>
+          泳道{model.entryName !== '' ? (
+            <span className="mx-1">{model.entryName}</span>
+          ) : (
+            <span className="mx-1 font-mono text-xs font-normal text-muted-foreground">{current}</span>
+          )}
           {model.family && (
             <span className="ml-1 text-xs font-normal text-muted-foreground">
               {model.family.label} · {model.family.members} 入口 · 触达 {model.family.reachDomains} 域
@@ -89,6 +109,17 @@ export function FlowPageView({ baseline, entryNodeId }: FlowPageViewProps): JSX.
           <span className="ml-auto rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">幽灵入口</span>
         )}
       </div>
+
+      {stack.length > 1 && (
+        <nav data-flow-trail className="flex flex-wrap items-center gap-1 border-b px-3 py-1 text-xs text-muted-foreground">
+          {stack.slice(0, -1).map((id, index) => (
+            <span key={id} className="inline-flex items-center gap-1">
+              {index > 0 && <span className="text-muted-foreground">▸</span>}
+              <span data-flow-trail-entry={id}>{trailNames[id] || id}</span>
+            </span>
+          ))}
+        </nav>
+      )}
 
       <div className="relative flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">

@@ -256,3 +256,32 @@ describe('C12.5 页面壳：零请求与悬空引用', () => {
     expect(q('[data-dangling-ref="s_ghost"]')).toBeTruthy()
   })
 })
+
+describe('C12.6 页面壳：入口真名接线（FlowPageModel.entryName 纯输出侧扩展）', () => {
+  it('泳道标题接真名：显示 entryName（flow cmd），不再以 mono id 占标题位', () => {
+    renderPage()
+    expect(q('[data-lane-title]').textContent).toContain('泳道')
+    expect(q('[data-lane-title]').textContent).toContain('flow cmd')
+    expect(q('[data-lane-title]').textContent).not.toContain('e')
+  })
+
+  it('幽灵入口（entryName 空串）时标题回退为 id 兜底呈现，不猜名字', () => {
+    renderPage(flowWorld(), 'ghost_x')
+    expect(q('[data-lane-title]').textContent).toContain('ghost_x')
+  })
+
+  it('下钻层级接真名：点下层入口后祖先链显示沿途入口名；到达层由当层 entryName 回填', () => {
+    renderPage()
+    fireEvent.click(q('[data-step="s_call"]'))
+    expect(q('[data-flow-page]').getAttribute('data-current-entry')).toBe('sub_e')
+    // 祖先链：出发层 e 的真名在点击瞬间已随 targetName 入表
+    expect(q('[data-flow-trail-entry="e"]').textContent).toBe('flow cmd')
+    // 当层 sub_e 的真名由它自己的模型 entryName 回填（标题同步显示）
+    expect(q('[data-lane-title]').textContent).toContain('sub cmd')
+    // 当前层不入祖先链：sub_e 只出现在标题，不出现在 trail
+    expect(document.querySelector('[data-flow-trail-entry="sub_e"]')).toBeNull()
+
+    fireEvent.click(q('[data-flow-back]'))
+    expect(document.querySelector('[data-flow-trail]')).toBeNull()
+  })
+})
