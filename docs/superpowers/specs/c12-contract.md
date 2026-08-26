@@ -174,4 +174,14 @@
   而「直调债四档色」的数据源在 `report`。处置是**守住冻结的输入字段**：缝 1 不引入 `report`，
   四档色的 join 移交 K4 装配层（复用既有 `assembleDirections`）。此条不改任何冻结文字，
   只记录一次「宁可移交也不改冻结输入」的处置先例。
+- 2026-08-26（**协调者修订 R3**，C12.4 plan §1.5 的模型缺口登记触发）：**`ScopePageModel`
+  增加 `invariants` 输出字段，把 `decls[domainId].invariants` 投影出来；`stateMachine`
+  维持未接线指针不变。**
+  理由：handoff 仓 codegraph/domains/ 下 2 个 decl 文件共 7 条真不变式，
+  BestDomainPage.tsx:49-51 今天正在渲染它们，而该文件在 K6 退役集里——不接线就是功能回归；
+  stateMachine 全项目 0 条，指针文案行为等价，无回归。
+  边界：纯输出侧扩展，§2.3-19 冻结的输入字段与缝地址 `deriveScopePage` 一个不动
+  （`decls` 本来就是缝 1 的输入）。
+  形态约束：三态 present/unwritten/no-decl 互斥；text 与 testRef 都透传，
+  testRef 按键缺席语义；容器卡恒 null。
 

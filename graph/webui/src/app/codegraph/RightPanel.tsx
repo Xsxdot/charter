@@ -20,7 +20,11 @@ const TAB_LABELS: Record<ScopeTabId, string> = {
   'state-machine': '状态机',
 }
 
-/** channel 四值词表（api/types CgEntryChannel 同源序）+ 缺席降级桶恒排最后。 */
+/**
+ * channel 四值词表（api/types CgEntryChannel 同源序）+ 缺席降级桶恒排最后。
+ * 词表外取值（wire JSON 不受静态四值约束，真实可达）与缺席同归「通道未标注」
+ * 中性桶——任何 entry 都不许从界面消失（breakdown K4 枚举族：未知值走中性缺省）。
+ */
 const CHANNEL_BUCKETS = ['cli', 'http', 'ws', 'web'] as const
 const UNLABELED_BUCKET = 'unlabeled'
 const CHANNEL_LABELS: Record<string, string> = {
@@ -29,6 +33,15 @@ const CHANNEL_LABELS: Record<string, string> = {
   'ws': 'WS',
   'web': 'Web',
   [UNLABELED_BUCKET]: '通道未标注',
+}
+
+// 桶成员判据写成穷尽式映射：每个 channel 值恰好映射到一个桶 id，缺席与词表外
+// 统一落 UNLABELED_BUCKET——五个桶因此无交并全覆盖，成员数之和恒等于 entries 总数。
+function channelBucketOf(channel: ScopeEntryRef['channel']): typeof UNLABELED_BUCKET | (typeof CHANNEL_BUCKETS)[number] {
+  if (channel !== undefined && (CHANNEL_BUCKETS as readonly string[]).includes(channel)) {
+    return channel
+  }
+  return UNLABELED_BUCKET
 }
 
 // 右栏宽度：默认值与夹取区间是渲染选择；持久化键名归 plan §7 定名。
@@ -43,8 +56,9 @@ function readStoredWidth(): number {
     const parsed = raw === null ? NaN : Number(raw)
     if (!Number.isFinite(parsed)) return DEFAULT_WIDTH
     return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed))
-  } catch {
-    // 隐私模式读取失败按默认宽度开，不打断渲染
+  } catch (cause) {
+    // 隐私模式读取失败按默认宽度开，不打断渲染；与写方向同款 warn 留痕（带键名）
+    console.warn('[codegraph] right width restore failed', { key: WIDTH_KEY, cause: String(cause) })
     return DEFAULT_WIDTH
   }
 }
@@ -265,9 +279,7 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
                 ) : (
                   <div className="space-y-1.5">
                     {[...CHANNEL_BUCKETS, UNLABELED_BUCKET].map((bucket) => {
-                      const members = selected.entries.filter(
-                        (entry) => (bucket === UNLABELED_BUCKET ? entry.channel === undefined : entry.channel === bucket),
-                      )
+                      const members = selected.entries.filter((entry) => channelBucketOf(entry.channel) === bucket)
                       if (!members.length) return null
                       return (
                         <div key={bucket} data-channel-group={bucket}>

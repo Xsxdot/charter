@@ -13,6 +13,12 @@ function q<T extends Element = HTMLElement>(selector: string, root: ParentNode =
   return el as T
 }
 
+// 词表外 channel 只能经未类型化的 wire JSON 到达（CgEntryChannel 静态钉死四值，
+// 但运行时数据来自扫描输出不受该约束），夹具用双重断言模拟这条真实来路。
+function oovChannelEntry(id: string, name: string, channel: string): ScopePageModel['nodes'][number]['entries'][number] {
+  return { id, name, channel } as unknown as ScopePageModel['nodes'][number]['entries'][number]
+}
+
 function seam(overrides: Partial<ScopePageModel['inboundSeams'][number]> & { nodeId: string }): ScopePageModel['inboundSeams'][number] {
   return {
     name: overrides.nodeId,
@@ -226,6 +232,46 @@ describe('C12.4 基本信息 tab（§2.2-11/§2.3-24/-25）', () => {
     expect(q('[data-channel-group="unlabeled"]').textContent).toContain('another bare')
   })
 
+  it('channel 词表外值（grpc）不许静默消失：落入「通道未标注」桶，桶标签与成员数锁死', () => {
+    const model = modelFixture({
+      nodes: modelFixture().nodes.map((n) => (
+        n.id === 'c_store' ? { ...n, entries: [...n.entries, oovChannelEntry('e_grpc', 'grpc dial', 'grpc')] } : n
+      )),
+    })
+    renderPanel(model, 'c_store')
+    // 桶标签 + 计数（既有 bare cmd + 新 grpc = 2）一起锁死，不是只断言「没崩」
+    expect(q('[data-channel-group="unlabeled"]').textContent).toContain('通道未标注 · 2')
+    expect(q('[data-entry="e_grpc"]').textContent).toBe('grpc dial')
+    // 不冒出第六个幽灵桶：全界面只有词表四桶 + 未标注桶
+    expect(document.querySelectorAll('[data-channel-group]').length).toBe(5)
+  })
+
+  it('穷尽性锁：全部桶成员数之和 === entries 总数，每个入口恰好落一个桶', () => {
+    const entries = [
+      { id: 'b1', name: 'one', channel: 'cli' as const },
+      { id: 'b2', name: 'two', channel: 'http' as const },
+      { id: 'b3', name: 'three', channel: 'ws' as const },
+      { id: 'b4', name: 'four', channel: 'web' as const },
+      { id: 'b5', name: 'five' },
+      oovChannelEntry('b6', 'six', 'grpc'),
+      oovChannelEntry('b7', 'seven', 'smtp'),
+    ]
+    const model = modelFixture({
+      nodes: modelFixture().nodes.map((n) => (n.id === 'c_store' ? { ...n, entries } : n)),
+    })
+    renderPanel(model, 'c_store')
+    let total = 0
+    const seen = new Set<string>()
+    document.querySelectorAll('[data-channel-group]').forEach((group) => {
+      group.querySelectorAll('[data-entry]').forEach((btn) => {
+        seen.add(btn.getAttribute('data-entry')!)
+        total += 1
+      })
+    })
+    expect(total).toBe(entries.length)
+    expect(seen.size).toBe(entries.length)
+  })
+
   it('点程序入口：回调携带入口 id 且按钮有可见反馈（无死控件）；容器卡无入口显空态', () => {
     const first = renderPanel(modelFixture(), 'c_store')
     fireEvent.click(screen.getByRole('button', { name: 'k4 run' }))
@@ -378,6 +424,21 @@ describe('C12.4 拖宽分隔条（验收 10 + 真机清单 3 机内侧）', () =
     // 420 + (400 - 300) = 520：写入抛错只留 warn，宽度状态照常更新
     expect(second.container.querySelector('[data-right-panel]')!.getAttribute('data-width')).toBe('520')
     spy.mockRestore()
+  })
+
+  it('读方向抛错（隐私模式 getItem 本身抛）：按默认宽度挂载且 console.warn 带键名——与写方向分开锁', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('security error')
+    })
+    const view = render(<RightPanel model={modelFixture()} selectedNodeId="" />)
+    // 挂载不崩、宽度落回默认值 360
+    expect(view.container.querySelector('[data-right-panel]')!.getAttribute('data-width')).toBe('360')
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('[codegraph]')
+    expect(warnSpy.mock.calls[0]?.[1]).toMatchObject({ key: 'codegraph.scope.rightWidth' })
+    getItemSpy.mockRestore()
+    warnSpy.mockRestore()
   })
 
   it('越界拖动被夹取到 [280, 720]', () => {
