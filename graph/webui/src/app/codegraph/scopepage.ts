@@ -58,6 +58,22 @@ export type ResponsibilityState =
   | { state: 'undeclared' }
   | { state: 'no-subject' }
 
+/** 单条领域不变式（decl 原样透传）；testRef=锁住这条不变式的测试名，缺席即声明未带测试锚。 */
+export interface ScopeInvariantRef {
+  text: string
+  testRef?: string
+}
+
+/**
+ * 不变式格位三分（C12.4 协调者修订 R3）：「该域无声明文件」「有声明文件但未写不变式」
+ * 「有不变式」三态互斥可辨——禁止同一个空态把「没写」与「没有声明文件」糊成一片。
+ * 仅领域卡携带；容器卡没有声明格位，恒 null（沿 debt:null 同一约定）。
+ */
+export type ScopeInvariants =
+  | { state: 'present'; items: ScopeInvariantRef[] }
+  | { state: 'unwritten' }
+  | { state: 'no-decl' }
+
 /** 程序入口引用；channel 原样透传，undefined 即通道未标注（降级桶由视图渲染）。 */
 export interface ScopeEntryRef {
   id: string
@@ -104,6 +120,8 @@ export interface ScopeNode {
   ports: ScopePort[]
   entries: ScopeEntryRef[]
   responsibility: ResponsibilityState
+  /** 领域声明的不变式投影（C12.4 R3）：仅领域卡携带；容器卡恒 null。 */
+  invariants: ScopeInvariants | null
   debt: ScopeDebtReadout | null
 }
 
@@ -465,6 +483,23 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
     return text ? { state: 'declared', text } : { state: 'undeclared' }
   }
 
+  // 不变式投影（R3）：「无 decl 文件」「有文件但零条」「有条目」是三个独立事实，
+  // 三态互斥；testRef 缺席的条目不带该键（沿 entries.channel 的键缺席语义）。
+  const domainInvariants = (domainId: string): ScopeInvariants => {
+    const decl = input.decls?.[domainId]
+    if (!decl) return { state: 'no-decl' }
+    const items = decl.invariants ?? []
+    return items.length
+      ? {
+          state: 'present',
+          items: items.map((inv) => ({
+            text: inv.text,
+            ...(inv.testRef === undefined ? {} : { testRef: inv.testRef }),
+          })),
+        }
+      : { state: 'unwritten' }
+  }
+
   // 容器职责唯一合法推导（§2.3-26）：只有「类型方法」容器可推导——同名**类型**节点
   // （kind='model'）的 doc 摘要，且候选节点的文件目录必须落在容器自身成员的目录集合内；
   // 全局取首个同名会张冠李戴（spec 走查实录：opencode.Adapter 拿到过 claudecode 的注释）。
@@ -504,6 +539,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
       ports: [],
       entries: entriesOver(cids),
       responsibility,
+      invariants: seed.kind === 'domain' ? domainInvariants(seed.domainId) : null,
       debt: seed.kind === 'domain' ? debtOver(cids) : null,
     }
   })

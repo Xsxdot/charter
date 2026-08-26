@@ -389,7 +389,7 @@ describe('C12.2 缝 1：大容器如实报与容器职责推导', () => {
     const keys = Object.keys(bigCard ?? {}).sort()
     expect(keys).toEqual([
       'childCount', 'containerCount', 'debt', 'dir', 'entries', 'external', 'fileCount', 'id',
-      'isolated', 'kind', 'label', 'oversized', 'ports', 'responsibility',
+      'invariants', 'isolated', 'kind', 'label', 'oversized', 'ports', 'responsibility',
       'symbolCount', 'type',
     ])
     expect(keys.every((k) => !/fold|collapse/i.test(k))).toBe(true)
@@ -444,5 +444,99 @@ describe('C12.2 缝 1：空态独立与根层格位语义', () => {
     const w = emptyWorld()
     const m = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: null })
     expect(m.empty.noDeclaration).toBe(false)
+  })
+})
+
+// —— C12.4 协调者修订 R3：decls[domainId].invariants 投影进缝 1 输出。——
+// 铁律：三态互斥可辨（无 decl 文件 / 有 decl 未写不变式 / 有不变式），禁止同一空态糊过；
+// text 与 testRef 都要透传（testRef 是「承重安全属性有测试锁」的现场证据）。
+describe('C12.4 R3：invariants 投影（三态互斥 + testRef 逐字透传）', () => {
+  it('同一次派生里三态并存可辨：有不变式=present、有 decl 无条目=unwritten、无 decl=no-decl', () => {
+    const w = isoWorld()
+    const m = deriveScopePage({
+      baseline: w.baseline,
+      best: w.best,
+      decls: {
+        ss_b: {
+          domain: 'ss_b',
+          responsibility: '乙的声明正文',
+          invariants: [{ text: '并发状态更新使用旧状态做 CAS，过期快照不能覆盖先发生的迁移。', testRef: 'TestUpdateTaskStateCAS' }],
+        },
+        ss_c: { domain: 'ss_c', responsibility: '丙的声明正文' },
+      },
+      organization: 'best',
+      scopeId: null,
+    })
+    const byId = new Map(m.nodes.map((n) => [n.id, n]))
+    expect(byId.get('ss_b')?.invariants).toEqual({
+      state: 'present',
+      items: [{ text: '并发状态更新使用旧状态做 CAS，过期快照不能覆盖先发生的迁移。', testRef: 'TestUpdateTaskStateCAS' }],
+    })
+    expect(byId.get('ss_c')?.invariants).toEqual({ state: 'unwritten' })
+    expect(byId.get('ss_a')?.invariants).toEqual({ state: 'no-decl' })
+  })
+
+  it('invariants 为空数组与字段缺席同归 unwritten：不把「写了零条」谎报成「有内容」也不混入 no-decl', () => {
+    const w = isoWorld()
+    const emptyArr = deriveScopePage({
+      baseline: w.baseline, best: w.best,
+      decls: { ss_c: { domain: 'ss_c', responsibility: '丙', invariants: [] } },
+      organization: 'best', scopeId: null,
+    })
+    expect(emptyArr.nodes.find((n) => n.id === 'ss_c')?.invariants).toEqual({ state: 'unwritten' })
+    expect(emptyArr.nodes.find((n) => n.id === 'ss_b')?.invariants).toEqual({ state: 'no-decl' })
+  })
+
+  it('多条目逐条透传 text+testRef；未带 testRef 的条目不存在该键（沿 channel 键缺席语义）', () => {
+    const w = isoWorld()
+    const m = deriveScopePage({
+      baseline: w.baseline, best: w.best,
+      decls: {
+        ss_b: {
+          domain: 'ss_b',
+          responsibility: '乙',
+          invariants: [
+            { text: '工作区请求的 branch/new-branch 选项互斥。', testRef: 'TestPrepareWorkspaceMutualExclusionAndInjection' },
+            { text: '没有测试锚的不变式如实保留。' },
+          ],
+        },
+      },
+      organization: 'best', scopeId: null,
+    })
+    const inv = m.nodes.find((n) => n.id === 'ss_b')?.invariants
+    expect(inv).toEqual({
+      state: 'present',
+      items: [
+        { text: '工作区请求的 branch/new-branch 选项互斥。', testRef: 'TestPrepareWorkspaceMutualExclusionAndInjection' },
+        { text: '没有测试锚的不变式如实保留。' },
+      ],
+    })
+    if (!inv || inv.state !== 'present' || !inv.items[1]) throw new Error('expected present invariants with ≥2 items')
+    expect(Object.prototype.hasOwnProperty.call(inv.items[1], 'testRef')).toBe(false)
+  })
+
+  it('圈外引用卡（ext:<顶层id>）同样投影其域的 invariants：横跳卡不丢声明正文', () => {
+    const w = isoWorld()
+    const m = deriveScopePage({
+      baseline: w.baseline, best: w.best,
+      decls: { ss_b: { domain: 'ss_b', responsibility: '乙', invariants: [{ text: '乙域承重不变式', testRef: 'TestLeafB' }] } },
+      organization: 'best', scopeId: 'ss_a',
+    })
+    expect(m.nodes.find((n) => n.id === 'ext:ss_b')?.invariants).toEqual({
+      state: 'present',
+      items: [{ text: '乙域承重不变式', testRef: 'TestLeafB' }],
+    })
+    expect(m.nodes.find((n) => n.id === 'a_mid')?.invariants).toEqual({ state: 'no-decl' })
+  })
+
+  it('容器卡没有声明格位：invariants 恒 null（沿 debt:null 同一约定）', () => {
+    const w = isoWorld()
+    const m = deriveScopePage({
+      baseline: w.baseline, best: w.best,
+      decls: { ss_b: { domain: 'ss_b', responsibility: '乙', invariants: [{ text: '乙域承重不变式' }] } },
+      organization: 'best', scopeId: 'ss_b',
+    })
+    expect(m.nodes.find((n) => n.id === 'c_store')?.kind).toBe('container')
+    expect(m.nodes.find((n) => n.id === 'c_store')?.invariants).toBeNull()
   })
 })
