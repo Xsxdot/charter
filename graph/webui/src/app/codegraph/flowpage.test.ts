@@ -204,9 +204,11 @@ function degradeBase(flows?: CgGraph['flows']): CgGraph {
 }
 
 describe('C12.3 缝 2：入口归属三态（§2.4-32）', () => {
-  it('多值：同一最近前沿的两个异域目标全部升序呈现，兜底桶噪声不入候选', () => {
+  it('多值：同一最近前沿的两个异域目标全部升序呈现，兜底桶噪声不入候选；multi 归属不发散发度读数', () => {
     const m = deriveFlowPage({ baseline: multiWorld(), entryNodeId: 'e' })
     expect(m.ownership).toEqual({ state: 'multi', candidates: ['biz', 'other'] })
+    // 归属非单值时没有唯一归属就不发散发度（flowpage.ts 判定口径），与 none/幽灵两支同锁一个 null。
+    expect(m.registrationDispersion).toBeNull()
   })
 
   it('单值：最近合格跨域层判单值；更近的兜底桶与同域中转都不改判；悬空边忽略', () => {
@@ -283,7 +285,7 @@ describe('C12.3 缝 2：族分组与触达域散度（§2.4-34 + R1）', () => {
     })
   })
 
-  it('HTTP 形态按路径前两段成族（方法词剥离）', () => {
+  it('HTTP 形态按路径前两段成族（方法词剥离）；全字段值级锁定含 reachDomains', () => {
     const w: CgGraph = {
       ...familyWorld(),
       nodes: {
@@ -293,16 +295,45 @@ describe('C12.3 缝 2：族分组与触达域散度（§2.4-34 + R1）', () => {
       },
       edges: [],
     }
-    expect(deriveFlowPage({ baseline: w, entryNodeId: 'h1' }).family).toMatchObject({
+    expect(deriveFlowPage({ baseline: w, entryNodeId: 'h1' }).family).toEqual({
       familyId: '/api/tasks',
       kind: 'http',
       label: 'HTTP /api/tasks',
       members: 2,
+      reachDomains: 2,
     })
-    expect(deriveFlowPage({ baseline: w, entryNodeId: 'lone' }).family).toMatchObject({
+    expect(deriveFlowPage({ baseline: w, entryNodeId: 'lone' }).family).toEqual({
       familyId: '/machines',
       kind: 'http',
+      label: 'HTTP /machines',
       members: 1,
+      reachDomains: 1,
+    })
+  })
+
+  it('裸路径（无方法词）同样按路径前两段成族；reachDomains 值级锁定', () => {
+    const w: CgGraph = {
+      ...familyWorld(),
+      nodes: {
+        b1: { kind: 'entry', container: 'c_a', name: '/api/tasks', file: 'p/b.go', line: 1 },
+        b2: { kind: 'entry', container: 'c_b', name: '/api/tasks/export', file: 'q/b.go', line: 2 },
+        b3: { kind: 'entry', container: 'c_a', name: '/health', file: 'p/h.go', line: 3 },
+      },
+      edges: [],
+    }
+    expect(deriveFlowPage({ baseline: w, entryNodeId: 'b1' }).family).toEqual({
+      familyId: '/api/tasks',
+      kind: 'http',
+      label: 'HTTP /api/tasks',
+      members: 2,
+      reachDomains: 2,
+    })
+    expect(deriveFlowPage({ baseline: w, entryNodeId: 'b3' }).family).toEqual({
+      familyId: '/health',
+      kind: 'http',
+      label: 'HTTP /health',
+      members: 1,
+      reachDomains: 1,
     })
   })
 })
@@ -347,6 +378,29 @@ describe('C12.3 缝 2：流程主干模型（§2.4-31/-35 数据面）', () => {
     const plain = m.steps.find((s) => s.id === 's_branch')
     expect(Object.prototype.hasOwnProperty.call(plain, 'iface')).toBe(false)
     expect(plain?.implementations).toEqual([])
+  })
+
+  it('同 order 平局按 id 升序稳定排序：steps 数组原序扰动不改输出序（沿 singleWorld edgeOrder 双向手法）', () => {
+    // 同 order(7) 的两步按 id 逆序放入数组——若 tie-break 失效，稳定排序会保留 z 在 a 前。
+    const mkSteps = (): CgFlowStep[] => [
+      { id: 'z_tie', order: 7, kind: 'call', line: 2, to: 'f1' },
+      { id: 'a_tie', order: 7, kind: 'call', line: 1, to: 'f1' },
+      { id: 'm_mid', order: 6, kind: 'return', line: 3 },
+    ]
+    const ma = deriveFlowPage({ baseline: degradeBase({ n_entry: { steps: mkSteps() } }), entryNodeId: 'n_entry' })
+    const mb = deriveFlowPage({ baseline: degradeBase({ n_entry: { steps: [...mkSteps()].reverse() } }), entryNodeId: 'n_entry' })
+    expect(ma.steps.map((s) => s.id)).toEqual(['m_mid', 'a_tie', 'z_tie'])
+    expect(mb.steps.map((s) => s.id)).toEqual(ma.steps.map((s) => s.id))
+  })
+
+  it('iface=true 但 implements join 零命中：implementations 是显式空态 [] 而非 undefined/被吞', () => {
+    const w = degradeBase({
+      n_entry: { steps: [{ id: 's_iface_empty', order: 1, kind: 'call', line: 7, to: 'f1', iface: true }] },
+    })
+    const m = deriveFlowPage({ baseline: w, entryNodeId: 'n_entry' })
+    const step = m.steps.find((s) => s.id === 's_iface_empty')
+    expect(Object.prototype.hasOwnProperty.call(step, 'implementations')).toBe(true)
+    expect(step?.implementations).toEqual([])
   })
 
   it('机械序列恒住 callChain 不进主干；模型顶层九键冻结；散度与族在命中态照常输出', () => {
