@@ -129,9 +129,15 @@ export interface EntryFamily {
   reachDomains: number
 }
 
-/** 缝 2 输出：顶层九键恒定；degraded 双向语义见 §2.4-31。 */
+/** 缝 2 输出：顶层十键恒定；degraded 双向语义见 §2.4-31。 */
 export interface FlowPageModel {
   entryNodeId: string
+  /**
+   * 入口显示名（＝baseline.nodes[entryNodeId].name，C12.6 协调者裁决的纯输出侧
+   * 扩展：§2.4-30 冻结的两输入字段与缝地址一个不动）。幽灵入口为空串——视图层
+   * 以 id 兜底呈现，模型不猜名字。
+   */
+  entryName: string
   /** 入口 id 在 baseline.nodes 中不存在时为 false（幽灵入口显式降级，不静默空页）。 */
   entryFound: boolean
   /** true＝baseline.flows 缺席或该入口无流程数据；界面按降级空态渲染。 */
@@ -360,6 +366,7 @@ export function deriveFlowPage(input: FlowPageInput): FlowPageModel {
 
   return {
     entryNodeId: input.entryNodeId,
+    entryName: entryFound ? node.name : '',
     entryFound,
     degraded: flow === undefined,
     ownership,

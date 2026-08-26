@@ -403,7 +403,7 @@ describe('C12.3 缝 2：流程主干模型（§2.4-31/-35 数据面）', () => {
     expect(step?.implementations).toEqual([])
   })
 
-  it('机械序列恒住 callChain 不进主干；模型顶层九键冻结；散度与族在命中态照常输出', () => {
+  it('机械序列恒住 callChain 不进主干；模型顶层十键冻结（C12.6 扩 entryName）；散度与族在命中态照常输出', () => {
     const m = deriveFlowPage({ baseline: flowWorld(), entryNodeId: 'e' })
     expect(m.callChain).toEqual({ nodeIds: ['e', 't'], sequenced: false, conditional: false })
     expect(Object.keys(m).sort()).toEqual([
@@ -411,6 +411,7 @@ describe('C12.3 缝 2：流程主干模型（§2.4-31/-35 数据面）', () => {
       'danglingChildRefs',
       'degraded',
       'entryFound',
+      'entryName',
       'entryNodeId',
       'family',
       'ownership',
@@ -460,6 +461,7 @@ describe('C12.3 缝 2：降级双向与幽灵入口（§2.4-31、ticket0 值级�
 
   it('幽灵入口显式降级：entryFound=false、全家字段如实、不崩溃', () => {
     const m = deriveFlowPage({ baseline: blankGraph(), entryNodeId: 'ghost' })
+    expect(m.entryName).toBe('')
     expect(m.entryFound).toBe(false)
     expect(m.degraded).toBe(true)
     expect(m.ownership).toEqual({ state: 'none' })
@@ -468,5 +470,18 @@ describe('C12.3 缝 2：降级双向与幽灵入口（§2.4-31、ticket0 值级�
     expect(m.steps).toEqual([])
     expect(m.callChain).toEqual({ nodeIds: [], sequenced: false, conditional: false })
     expect(m.danglingChildRefs).toEqual([])
+  })
+})
+
+describe('C12.6 缝 2：entryName 输出侧扩展（协调者裁决 2026-08-26，§2.4-30 输入两字段与缝地址不动）', () => {
+  it('entryName＝入口节点名：命中态照常携带（degraded 与否不影响）', () => {
+    expect(deriveFlowPage({ baseline: flowWorld(), entryNodeId: 'e' }).entryName).toBe('flow cmd')
+    expect(deriveFlowPage({ baseline: degradeBase(), entryNodeId: 'n_entry' }).entryName).toBe('n cmd')
+  })
+
+  it('幽灵入口 entryName 为空串：模型不猜名字，视图以 id 兜底呈现', () => {
+    const m = deriveFlowPage({ baseline: degradeBase(), entryNodeId: 'no_such' })
+    expect(m.entryFound).toBe(false)
+    expect(m.entryName).toBe('')
   })
 })
