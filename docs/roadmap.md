@@ -103,3 +103,18 @@
     这条会复发——凡执行者想在 notes 里贴 JSON 原文就会踩。可选处置：解析端对
     ```handoff-verdict``` 块做容错（提取到最外层花括号配对），或纪律块显式禁止在 notes
     里放未转义引号。归 handoff 仓，与 charter 无关，此处只记账。
+
+36. **`handoff machines` 的「可达」读数会骗人：探活通过不代表数据面通**（2026-08-26 实测，
+    C12.4 plan 轮收尾）。relay 到 linux-01 的数据面配额用尽后，`handoff pull` / `handoff diff`
+    双双失败并报 `relay connect rejected node=linux-01 code=QUOTA_EXCEEDED`，而同一时刻
+    `handoff machines` 仍把 linux-01 列为「**可达**，延迟 82ms」。协调者若按可达读数判断，
+    会误以为是任务侧问题而去查 task、改派、甚至重跑一轮。
+    根因是两条路径的判据不同：machines 的探活走的是轻量心跳，pull/diff 走的是 relay
+    数据面并受配额约束；**前者通不蕴含后者通**。
+    可选处置：machines 的状态列区分「心跳可达 / 数据面可用」两档，或在配额受限时把该机
+    标成降级态而不是「可达」。另外错误文案里的 `Get "http://localhost/api/tasks/..."`
+    也有误导性——`localhost` 是 relay 隧道内的地址，读起来像本机故障。
+    归 handoff 仓，与 charter 无关，此处只记账。
+    附带一条运维事实：linux-01 在 `~/.handoff/config.yaml` 里是 **relay-only**（无直连
+    `addr`，只有 `wss://handoff.chanliu.net/relay`），所以配额一断就没有任何绕过路径；
+    mac-02 与本机有直连 addr。派发选型时值得把这一点算进可用性。
