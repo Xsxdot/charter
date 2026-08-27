@@ -1,6 +1,6 @@
 # C17 拆解提案：行为轴泳道主语改为对外契约方法
 
-> 状态：**待拍板（2026-08-28，executor 出稿）**
+> 状态：**已拍板（2026-08-28，协调者）**
 > 上游 spec：`docs/specs/2026-08-27-flow-subject-is-contract-spec.md`（**已批准，2026-08-28**）
 > 上游 contract：`docs/superpowers/specs/c17-contract.md`（**已冻结，2026-08-28，commit cb830c12**）
 > 台账：`docs/ledgers/2026-08-27-c17-spec-ledger.md`
@@ -10,6 +10,8 @@
 ## 待拍板清单
 
 **无待拍板。** spec 第四稿已批准，contract 已冻结，且用户已指定 L3 轻档不扇出；本稿只把冻结语义映射到有界实现轮范围。`graph/webui` 纳入 charter 侧是对 contract §1.2 旧读数的边界澄清，不是新的语义选择，已回写 contract §6 修订记录。
+
+**拍板（2026-08-28，协调者）**：采纳本稿。不扇出子卡；单轮实现按第五节 S1+S2 有界文件集走 plan→implement；S3 扫描配方保持交棒欠账，不在 charter 实现轮改 handoff 配方。真机清单归 acceptance。无岔口需改契约。
 
 ## 一、触及子系统清单与资格核对
 
