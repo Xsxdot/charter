@@ -1,7 +1,7 @@
 // ScopeCanvas —— 结构图画布：卡片、连线、选中态、平移缩放。
 //
 // 职责：把 ScopePageModel 的拓扑事实画出来——布局来源为 scopelayout 移植分层+装箱；
-// 单击选中（相连高亮 + 不相连压暗同时生效）、双击领域下钻 / 双击容器显原子说明、
+// 单击选中（有选中才压暗无关项；再点已选中卡取消）、双击领域下钻 / 双击容器显原子说明、
 // 空白拖动平移、⌘/Ctrl+滚轮缩放、双击空白回到 fit 态。
 // 边界：只消费模型与装配层注入的直调债四档色映射（edgeStatus，R2 备案的装配
 // join）；选中高亮/压暗是运行期选择状态对 model.edges 的直接投影，不是模型读数
@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { DirectionStatus } from './besttree'
 import type { ScopeNode, ScopePageModel } from './scopepage'
-import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgePath } from './scopelayout'
+import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgeAnchors, scopeEdgePath } from './scopelayout'
 
 /** 直调债四档色板词表（besttree.DirectionStatus 同源，禁止第二份字面量）。 */
 const DIRECTION_STATUSES: readonly DirectionStatus[] = ['declared', 'over-budget', 'dead-contract', 'new-direction']
@@ -70,8 +70,8 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
     fitToBounds()
   }, [fitToBounds, model.scopeId])
 
-  // 选中态投影（验收 9）：邻居=与选中卡共享任一条模型边的卡；高亮与压暗同一次渲染算定，
-  // 「只压暗不高亮」在结构上不可能出现。
+  // 选中态投影（验收 9）：空选中全不透明。有选中时邻居=与选中卡共享任一条模型边的卡；
+  // 高亮与压暗同一次渲染算定，「只压暗不高亮」在结构上不可能出现。
   const { highlightIds, projectionNeighborIds } = useMemo(() => {
     const highlights = new Set<string>()
     const projections = new Set<string>()
@@ -138,10 +138,10 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
     onOpenScope(targetId, node.label)
   }
 
-  const centerOf = (node: ScopeNode): [number, number] => {
+  const rectOf = (node: ScopeNode) => {
     const p = layout.positions[node.id] ?? [0, 0]
     const size = cardSize(node)
-    return [p[0] + size[0] / 2, p[1] + size[1] / 2]
+    return { x: p[0], y: p[1], w: size[0], h: size[1] }
   }
 
   let width = 1200
@@ -161,6 +161,7 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
     const isSelected = node.id === selectedNodeId
     const isNeighbor = highlightIds.has(node.id) || projectionNeighborIds.has(node.id)
     const related = isSelected || isNeighbor
+    const dimmed = Boolean(selectedNodeId) && !related
     const duty = node.responsibility.state === 'declared'
       ? node.responsibility.text
       : node.responsibility.state === 'no-subject'
@@ -176,16 +177,19 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
         {...(node.oversized ? { 'data-oversized': 'true' } : {})}
         {...(isSelected ? { 'data-selected': 'true' } : {})}
         {...(isNeighbor && !isSelected ? { 'data-highlight': 'true' } : {})}
-        {...(!related ? { 'data-dimmed': 'true' } : {})}
+        {...(dimmed ? { 'data-dimmed': 'true' } : {})}
         onClick={() => {
           setAtomicNote('')
-          onSelect(node.id)
+          onSelect(isSelected ? '' : node.id)
         }}
         onDoubleClick={(ev) => onCardDoubleClick(node, ev)}
         style={{ left: x, top: y, width: size[0], height: size[1] }}
         className={'pointer-events-auto absolute cursor-pointer rounded-xl border-2 bg-background p-2 shadow-sm '
           + (node.kind === 'domain' && node.childCount > 0 ? 'border-dashed ' : '')
-          + (isSelected ? 'border-primary outline outline-2 outline-primary/60 z-10 ' : isNeighbor ? 'border-primary/70 z-[9] ' : 'opacity-50 border-neutral-300 ')}
+          + (isSelected ? 'border-primary outline outline-2 outline-primary/60 z-10 '
+            : isNeighbor ? 'border-primary/70 z-[9] '
+              : dimmed ? 'opacity-50 border-neutral-300 '
+                : 'border-neutral-300 ')}
       >
         <div className="truncate text-sm font-semibold">{node.label}</div>
         <div className="truncate font-mono text-[11px] text-muted-foreground">
@@ -279,9 +283,15 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
             const from = model.nodes.find((n) => n.id === edge.from)
             const to = model.nodes.find((n) => n.id === edge.to)
             if (!from || !to) return null
-            const [x1, y1] = centerOf(from)
-            const [x2, y2] = centerOf(to)
+            const kind = layout.backEdgeKeys.includes(edge.key)
+              ? 'back'
+              : layout.layers[edge.from] !== undefined && layout.layers[edge.from] === layout.layers[edge.to]
+                ? 'sibling'
+                : 'forward'
+            const { x1, y1, x2, y2 } = scopeEdgeAnchors(rectOf(from), rectOf(to), kind)
             const status = edgeStatus?.[`${edge.from}->${edge.to}`]
+            const edgeRelated = !selectedNodeId || edge.from === selectedNodeId || edge.to === selectedNodeId
+            const edgeDimmed = Boolean(selectedNodeId) && !edgeRelated
             // 原型 graph.js:54-64 按行方向区分正向/回边；同层环内边在此优先走回边折返，而非原型下沿浅弧，保持环红标可辨。
             return (
               <path
@@ -290,20 +300,12 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
                 data-edge-kind={edge.kind}
                 {...(edge.projectionType !== undefined ? { 'data-projection-type': edge.projectionType } : {})}
                 {...(status !== undefined ? { 'data-direction-status': status } : {})}
-                d={scopeEdgePath(
-                  x1,
-                  y1,
-                  x2,
-                  y2,
-                  layout.backEdgeKeys.includes(edge.key)
-                    ? 'back'
-                    : layout.layers[edge.from] !== undefined && layout.layers[edge.from] === layout.layers[edge.to]
-                      ? 'sibling'
-                      : 'forward',
-                )}
+                {...(edgeDimmed ? { 'data-dimmed': 'true' } : {})}
+                d={scopeEdgePath(x1, y1, x2, y2, kind)}
                 markerEnd="url(#cg-arrow)"
                 strokeWidth={edge.weight >= 8 ? 3 : edge.weight >= 3 ? 2 : 1}
-                className={edge.kind === 'projection' ? 'stroke-purple-400' : layout.backEdgeKeys.includes(edge.key) ? 'stroke-red-600' : status === 'dead-contract' || status === 'over-budget' ? 'stroke-amber-500' : 'stroke-neutral-400'}
+                className={(edge.kind === 'projection' ? 'stroke-purple-400' : layout.backEdgeKeys.includes(edge.key) ? 'stroke-red-600' : status === 'dead-contract' || status === 'over-budget' ? 'stroke-amber-500' : 'stroke-neutral-400')
+                  + (edgeDimmed ? ' opacity-20' : '')}
                 strokeDasharray={edge.kind === 'projection' ? '6 4' : layout.backEdgeKeys.includes(edge.key) ? '6 3' : undefined}
                 {...(layout.backEdgeKeys.includes(edge.key) ? { 'data-back-edge': 'true' } : {})}
                 fill="none"

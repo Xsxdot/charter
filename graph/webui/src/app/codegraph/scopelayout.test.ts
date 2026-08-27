@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ScopeEdge, ScopeNode } from './scopepage'
 import type { ScopePackageFrame } from './scopelayout'
-import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgePath } from './scopelayout'
+import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgeAnchors, scopeEdgePath } from './scopelayout'
 
 // 夹具纪律（沿 K2/K3 同款）：断言只走 layoutScopeCards 一个入口；期望值硬编码。
 function domainNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
@@ -209,6 +209,20 @@ describe('C14 容器层：包群组装箱与边路径', () => {
     expect(scopeEdgePath(10, 20, 30, 160, 'forward')).toBe('M10,20 C10,52 30,128 30,160')
     expect(scopeEdgePath(30, 160, 10, 20, 'back')).toBe('M30,160 C58,160 58,20 10,20')
     expect(scopeEdgePath(10, 20, 30, 20, 'sibling')).toBe('M10,20 C10,43 30,43 30,20')
+  })
+
+  it('边框锚点三种形态落在矩形边框，不落中心', () => {
+    const from = { x: 0, y: 0, w: CARD_W, h: CARD_H }
+    const to = { x: 40, y: 200, w: CARD_W, h: CARD_H }
+    expect(scopeEdgeAnchors(from, to, 'forward')).toEqual({
+      x1: CARD_W / 2, y1: CARD_H, x2: 40 + CARD_W / 2, y2: 200,
+    })
+    expect(scopeEdgeAnchors(from, to, 'back')).toEqual({
+      x1: CARD_W, y1: CARD_H / 2, x2: 40 + CARD_W, y2: 200 + CARD_H / 2,
+    })
+    expect(scopeEdgeAnchors(from, to, 'sibling')).toEqual({
+      x1: CARD_W / 2, y1: CARD_H, x2: 40 + CARD_W / 2, y2: 200 + CARD_H,
+    })
   })
 })
 

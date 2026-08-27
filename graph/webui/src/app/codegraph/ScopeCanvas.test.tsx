@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ScopePageModel } from './scopepage'
 import { ScopeCanvas } from './ScopeCanvas'
+import { CARD_H, CARD_W, scopeEdgeAnchors, scopeEdgePath } from './scopelayout'
 
 // 夹具纪律：直接构造 ScopePageModel 字面量（DOM 契约缝单元面）；期望硬编码。
 function q<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
@@ -117,6 +118,21 @@ describe('C12.4 画布：卡片投影（§2.3-24/-27、§2.5-39）', () => {
     expect(projEdge.getAttribute('stroke-dasharray')).toBe('6 4')
   })
 
+  it('正向边端点贴在源卡下沿与目标卡上沿，不落卡心', () => {
+    renderCanvas()
+    const from = q('[data-node="topA"]') as HTMLElement
+    const to = q('[data-node="leafB"]') as HTMLElement
+    const fromRect = { x: parseFloat(from.style.left), y: parseFloat(from.style.top), w: CARD_W, h: CARD_H }
+    const toRect = { x: parseFloat(to.style.left), y: parseFloat(to.style.top), w: CARD_W, h: CARD_H }
+    const anchors = scopeEdgeAnchors(fromRect, toRect, 'forward')
+    expect(anchors.y1).toBe(fromRect.y + CARD_H)
+    expect(anchors.y2).toBe(toRect.y)
+    expect(anchors.y1).not.toBe(fromRect.y + CARD_H / 2)
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('d')).toBe(
+      scopeEdgePath(anchors.x1, anchors.y1, anchors.x2, anchors.y2, 'forward'),
+    )
+  })
+
   it('四档债务色板图例区块存在，词表四值各一枚；「不是调用边」与嵌套图例文案在场（§2.5-39②③）', () => {
     renderCanvas()
     for (const status of ['declared', 'over-budget', 'dead-contract', 'new-direction']) {
@@ -224,9 +240,13 @@ describe('C14 画布：职责、入口徽标与拓扑形态', () => {
 })
 
 describe('C12.4 画布：单击选中态（验收 9——高亮与压暗必须同时断言）', () => {
-  it('单击后：选中标记、相连高亮标记、不相连压暗标记三者同屏；再选清卡即全部消失', () => {
+  it('空选中默认全不透明；单击后选中/相连高亮/无关压暗三者同屏；再点已选中卡清空', () => {
     const view = renderCanvas(modelFixture(), '')
-    expect(q('[data-node="topA"]').getAttribute('data-dimmed')).toBe('true')
+    expect(q('[data-node="topA"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="leafB"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="topA"]').className).not.toContain('opacity-50')
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBeNull()
 
     fireEvent.click(q('[data-node="topA"]'))
     expect(view.onSelect).toHaveBeenCalledTimes(1)
@@ -247,6 +267,12 @@ describe('C12.4 画布：单击选中态（验收 9——高亮与压暗必须�
     expect(q('[data-node="leafB"]').getAttribute('data-dimmed')).toBeNull()
     expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBe('true')
     expect(q('[data-node="c_big"]').getAttribute('data-highlight')).toBeNull()
+    expect(q('[data-node="c_big"]').className).toContain('opacity-50')
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-edge-key="isoC<->topA:twin"]').getAttribute('data-dimmed')).toBeNull()
+
+    fireEvent.click(q('[data-node="topA"]'))
+    expect(view.onSelect).toHaveBeenLastCalledWith('')
 
     view.rerender(
       <ScopeCanvas
@@ -259,6 +285,8 @@ describe('C12.4 画布：单击选中态（验收 9——高亮与压暗必须�
     )
     expect(q('[data-node="topA"]').getAttribute('data-selected')).toBeNull()
     expect(q('[data-node="leafB"]').getAttribute('data-highlight')).toBeNull()
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="topA"]').className).not.toContain('opacity-50')
   })
 
   it('projection 邻居也算相连（高亮侧）；无任何边的孤卡被压暗', () => {
@@ -275,6 +303,8 @@ describe('C12.4 画布：单击选中态（验收 9——高亮与压暗必须�
     expect(q('[data-node="isoC"]').getAttribute('data-selected')).toBe('true')
     expect(q('[data-node="topA"]').getAttribute('data-highlight')).toBe('true')
     expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBe('true')
+    expect(q('[data-edge-key="isoC<->topA:twin"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBe('true')
   })
 })
 

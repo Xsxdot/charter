@@ -464,6 +464,32 @@ export function layoutScopeCards(
   }
 }
 
+/** 卡片矩形：布局左上角加宽高，给边框锚点用。 */
+export interface ScopeCardRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * 边端点贴在卡片边框，不落几何中心——HTML 卡叠在 SVG 上，中心端点会被卡面盖住。
+ * 形态对齐原型 graph.js:54-64：正向下沿→上沿、回边右沿→右沿、同层下沿→下沿。
+ */
+export function scopeEdgeAnchors(
+  from: ScopeCardRect,
+  to: ScopeCardRect,
+  kind: 'forward' | 'back' | 'sibling',
+): { x1: number; y1: number; x2: number; y2: number } {
+  if (kind === 'forward') {
+    return { x1: from.x + from.w / 2, y1: from.y + from.h, x2: to.x + to.w / 2, y2: to.y }
+  }
+  if (kind === 'back') {
+    return { x1: from.x + from.w, y1: from.y + from.h / 2, x2: to.x + to.w, y2: to.y + to.h / 2 }
+  }
+  return { x1: from.x + from.w / 2, y1: from.y + from.h, x2: to.x + to.w / 2, y2: to.y + to.h }
+}
+
 /** 移植原型 graph.js:54-64：正向边向下、回边右侧折返、同层边沿下沿浅弧。 */
 export function scopeEdgePath(
   x1: number,
