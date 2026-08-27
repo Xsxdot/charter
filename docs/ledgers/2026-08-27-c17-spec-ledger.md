@@ -100,3 +100,21 @@ file:// 直开路径：`prototypes/codegraph-two-axis/pages/behav-flow.html`（�
 - 「实现的入口」= 实现方法本身，不是实现容器里的 `kind=entry`。这是第一稿没写清、会让下游再走一遍 C12 误解的承重点。
 - 被谁调用 depth 1 即可；更深是已有 CLI，不必在 UI 再造一棵上游树。
 - 「调用链（给 agent）」tab 本期不删，避免和 C12 冻结项缠成第二张卡。
+
+## 本轮 contract 落地（2026-08-28）
+
+- 执行 `git fetch origin cards/C17-charter`：成功；远端分支落到 `FETCH_HEAD`。
+- 执行 `git merge --ff-only origin/cards/C17-charter`：成功；`5c023f6..04ed7a6` 快进，第四稿 spec、C17 台账及 `graph/codegraph/{flow,tree}.go` 现状读数可见。
+- `test -f docs/specs/2026-08-27-flow-subject-is-contract-spec.md && ls -l ...`：成功；文件存在，spec 头部状态为「已批准（2026-08-28，用户：审查修订后自主推进到 finish）」。
+- 当前分支 `cards/C17-charter`，起始合并后 HEAD `04ed7a6a2ae95a7f3e8e3f3aa6590d43420362d3`；工作树在本轮契约编辑前无未提交改动。
+- 现状签名查证：`graph/codegraph/flow.go#FlowRef`、`#FlowLookupResult`、`#LookupFlow`；`graph/codegraph/tree.go#TreeOptions`、`#TreeNode`、`#TreeResult`、`#BuildCallTree`；CLI `graph/cli/cli.go#graphFlowCmd`、`#graphTreeCmd`、`#graphUniqueID`、`#init`。这些是现状读数，不自动成为冻结字段或语义。
+- 第四稿硬约束已列入契约起草范围：紫框唯一机械判据、`kind=entry` 只作到达通道且不压栈、结构轴程序入口只读、`--through` 单独使用保留 U 之上祖先、tree 子节点按名字再按 id 排序且不读 flows；C17 为 L3 轻档，不建 target/best/diff，不改实现。
+- 契约文档写入 `docs/superpowers/specs/c17-contract.md`；`git diff --check` 成功，文档存在且冻结清单、依赖查证、拍板、欠账区均可读。
+- 执行 `go build ./...`（工作目录 `graph`）：退出码 `0`，stdout 为空。
+- 执行 `go test ./...`（工作目录 `graph`）：退出码 `0`；原始 stdout：`ok github.com/Xsxdot/charter/graph/cli 0.171s`、`? github.com/Xsxdot/charter/graph/cmd/codegraph [no test files]`、`ok github.com/Xsxdot/charter/graph/codegraph 0.027s`、`ok github.com/Xsxdot/charter/graph/webui 0.002s`。
+- 执行 `go vet ./codegraph/`（工作目录 `graph`）：退出码 `0`，stdout 为空。
+- 执行 `test ! -e codegraph/best.json && test ! -e codegraph/target.json && find codegraph -maxdepth 2 -type f -print ...`：退出码 `0`，无输出；当前工作树无项目级 best/target/图文件，跳过 target/best/diff 合法。
+- 追加核对 `ls -ld codegraph && find ...`：失败；原始错误为 `ls: cannot access 'codegraph': No such file or directory`（退出码 `2`）。该命令不作为结论依据。
+- 修正核对 `if test -e codegraph; then find ...; else printf ...; fi`：退出码 `0`；原始 stdout：`NO_PROJECT_CODEGRAPH_DIR`。据此确认当前仓根没有项目级 `codegraph` 目录，目标图/视图跳过。
+- 执行 `git add docs/superpowers/specs/c17-contract.md docs/ledgers/2026-08-27-c17-spec-ledger.md && git diff --cached --check && git diff --cached --stat`：退出码 `0`；暂存 2 个文件，共 303 行新增。
+- 执行 `git commit -m "docs(C17): freeze contract method flow and tree semantics"`：退出码 `0`；原始 stdout：`[cards/C17-charter 27df497] docs(C17): freeze contract method flow and tree semantics`，2 个文件、303 行新增。
