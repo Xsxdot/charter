@@ -13,6 +13,8 @@ description: 写实现计划——面向零上下文的执行者，任务粒度�
 
 **有图先查图**：项目有 `codegraph/`（入库代码图）时，先用 `codegraph context <领域>` 获取现状领域的声明/包摘要/对外接口/主链/实体；需要单条调用链和源码窗口时用 `codegraph chain <入口> --with-source`。普通 chain 默认字段瘦身、外部领域折叠和共享内核收桩；需要旧字段形态时显式传 `--full`，`--full` 不关闭源码窗口或预算。context 取**最优树（best.json）词表**：`<领域>` 必须是 best 领域 id，传现状视图 id 会被拒，并报出它的容器在最优树里的分布（分布非单值，不代为改写）；无 best.json 的项目降级为现状词表并在错误里注明。响应的 `actual` 段披露这批容器**今天**实际落在哪些现状领域、哪几个属放错位（`misplaced`/`misplacedSkipped`）——应然切片与实然位置一次给全。领域声明缺失不是错误，context 仍返回机械字段并以 warning 指向声明路径。预算截断读取 `truncated`，焦点配额截断读取 `fociTruncated`；未命中符号再 grep，并记录图覆盖债。
 
+**调用链 ≠ 流程图。** `chain` / `context` 的主链是无序可达邻域（无次序、无分支），用来看「谁能调到谁、改一处影响谁」。`baseline.flows` 才是有序控制流（`call`/`branch`/`loop`/`return`），用来看「这个入口实际怎么走」。有 flows 时行为事实以它为准；没有时继续用 chain，并在产出物里标明「无次序无分支」——禁止把 BFS 邻居列表写成流程图。今天没有 `codegraph flow` 子命令：读 `codegraph/baseline.json` 的 `flows[<节点id>]`，或打开查看器行为轴。
+
 - 每个 task：精确文件路径、完整代码块、Interfaces（Consumes/Produces 带精确签名——执行者只看得见自己的 task，这是他知道邻居用什么名字的唯一途径）。
 - 步骤粒度 2~5 分钟一动作。红绿模板（写失败测试 → 跑红 → 最小实现 → 跑绿 → 提交）**只套在锁缝断言的步骤上**——内部实现、日志、注释、纯映射步骤不配独立红绿周期（范围见 implement 铁律）。
 - **无占位符**：TBD /「加适当的错误处理」/「同 Task N」/ 描述做什么却不给代码——都是 plan failure，同重于交白卷。正当出口一条：测试必须复用既有夹具/harness 而其形态因包而异时，允许以「断言逐条列全（每条可判 pass/fail）+ 指认要照抄的既有 harness（文件名）」代替完整测试代码；此例外必须在占位符扫描节自我声明，无声明的骨架测试仍是 plan failure。
