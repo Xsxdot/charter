@@ -103,3 +103,15 @@
     这条会复发——凡执行者想在 notes 里贴 JSON 原文就会踩。可选处置：解析端对
     ```handoff-verdict``` 块做容错（提取到最外层花括号配对），或纪律块显式禁止在 notes
     里放未转义引号。归 handoff 仓，与 charter 无关，此处只记账。
+
+36. **C12 acceptance：结构轴真机路径未执行**（2026-08-27 integrate 交棒）：需在真实浏览器走通「根→领域→容器」，逐屏对照 `prototypes/base/README.md` 的两轴确认形态，并实测容器原子、箭头方向、空白与连线交叉；本仓无项目级图，机内测试不能替代此项。来源：C12 集成报告 §6-1。
+37. **C12 acceptance：行为轴真机路径未执行**（2026-08-27 integrate 交棒）：需走通「入口→流程图→接口→实现」，核对蛇形折列、紫框递归下钻、双线框接口与右栏全部实现；FlowChart/jsdom 绿只证明 DOM 形状，不证明真实布局。来源：C12 集成报告 §6-2。
+38. **C12 acceptance：浏览器交互与降级未执行**（2026-08-27 integrate 交棒）：需在真实宽度/DPR 下拖右栏分隔条，清 storage/隐私模式核对宽度降级，以及键盘/读屏 tab 与组织切换；来源：C12 集成报告 §6-3。
+39. **C12 acceptance：大图性能未执行**（2026-08-27 integrate 交棒）：需用 4000+ 边真实图测页面耗时、布局和交互流畅度，不以测试夹具或 bundle 体积推断；来源：C12 集成报告 §6-4。
+40. **C12 acceptance：handoff 宿主联调未执行**（2026-08-27 integrate 交棒）：需核对 iframe 的 `?project=` 传参、宿主 CodegraphFrame 单向传参和 best/decl 双写差异；宿主不在 charter，本轮只能登记交棒。来源：C12 集成报告 §6-5。
+41. **C12 acceptance：真 flows/162 入口与状态机互证未执行**（2026-08-27 integrate 交棒）：需在真 flows 到达后复现 162 个入口的归属三态、注册散度、入口族、接口实现 join 与 stateMachine.anchor 互证；缺席时只验显式降级。扫描器与数据面仍对应既有条目 27、32、33。来源：C12 集成报告 §6-6。
+42. **C12 handoff：best responsibility 正文搬运未执行**（2026-08-27 integrate 交棒）：best 已在 charter 删除职责字段，但旧正文逐条搬入 handoff `codegraph/domains/<id>.json`、并核对双写差异仍属 handoff 仓动作，不能由 viewer 侧 `decls` 类型通过替代。来源：C12 contract §6.2-1①、集成报告 §3 条 12/§6-5。
+43. **C12 handoff：扫描配方自洽修复未执行**（2026-08-27 integrate 交棒）：入口按 CLI/HTTP/WS 分容器与按服务领域挂载两规则仍需在 handoff 配方裁决并全量重扫；查看器按入口名分族不依赖该缺口。来源：C12 contract §6.2-1②、既有 roadmap 28。
+44. **C12 scanner：未知 kind/channel 与承重 flows 校验未执行**（2026-08-27 integrate 交棒）：viewer 已有八值 kind/四值 channel 的消费与显式未知态，扫描侧拒绝器、承重范围和真 flows 产出需在后续扫描卡开启；不得把 viewer 类型联合当作扫描校验完成。来源：C12 contract §2.1-5/§2.1-15、既有 roadmap 27/32。
+45. **C12 scanner：stateMachine.anchor 互证闸未执行**（2026-08-27 integrate 交棒）：需在真实 flows、lifecycle writer 与声明迁移边齐备后执行 `file#Symbol` 三方互证；当前仅有字段和 UI 显式未接入格位。来源：C12 contract §2.1-16、既有 roadmap 33。
+46. **C12 集成基线引用记录不一致**（2026-08-27 实测）：补充文本指定 `894d02281`，但远端基线分支可达链显示 `a41b3226`、`e3a91b7e`、`a3ca5409`，`git cat-file -t 894d02281` 原始报错为 `fatal: Not a valid object name 894d02281`。后续需由协调者补齐正确 commit 映射或修正卡面，不得静默换 hash。来源：C12 集成报告 §1。
