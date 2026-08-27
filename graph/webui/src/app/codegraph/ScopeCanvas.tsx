@@ -1,6 +1,6 @@
 // ScopeCanvas —— 结构图画布：卡片、连线、选中态、平移缩放。
 //
-// 职责：把 ScopePageModel 的拓扑事实画出来——布局坐标来自 scopelayout 纯函数；
+// 职责：把 ScopePageModel 的拓扑事实画出来——布局来源为 scopelayout 移植分层+装箱；
 // 单击选中（相连高亮 + 不相连压暗同时生效）、双击领域下钻 / 双击容器显原子说明、
 // 空白拖动平移、⌘/Ctrl+滚轮缩放、双击空白回到 fit 态。
 // 边界：只消费模型与装配层注入的直调债四档色映射（edgeStatus，R2 备案的装配
@@ -193,12 +193,14 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
           {node.symbolCount > 0 ? ` · ${node.symbolCount} 符号` : ''}
         </div>
         {node.kind === 'container' && (
+          /* 原型 graph.js:248-260 把职责放进容器卡；这里保留其卡面职责位置，另如实区分三态。 */
           <div data-duty className={'mt-1 text-[10.5px] leading-tight '
             + (node.responsibility.state === 'declared' ? 'line-clamp-2 text-neutral-600' : 'italic text-muted-foreground')}>
             {duty}
           </div>
         )}
         {node.kind === 'domain' && model.scopeId === null && node.entryDispersion && node.entryDispersion.entries > 0 && (
+          /* 原型 index.html:103-106、114-118 只在根层给领域卡放入口徽标；散度已由模型层算定，视图只投影。 */
           <div
             data-entry-badge
             {...(node.entryDispersion.concentrated ? { 'data-entry-badge-concentrated': 'true' } : {})}
@@ -280,6 +282,7 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
             const [x1, y1] = centerOf(from)
             const [x2, y2] = centerOf(to)
             const status = edgeStatus?.[`${edge.from}->${edge.to}`]
+            // 原型 graph.js:54-64 按行方向区分正向/回边；同层环内边在此优先走回边折返，而非原型下沿浅弧，保持环红标可辨。
             return (
               <path
                 key={edge.key}
@@ -311,6 +314,7 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
 
         {linkedNodes.map(renderCard)}
         {isolatedNodes.length > 0 && (
+          /* 原型 graph.js:70-80、index.html:123-126 将 call 度为 0 节点移出分层；单列孤立区避免把它们误报为 L0 调用方。 */
           <div data-isolated-row className="pointer-events-none absolute inset-0">
             <div className="absolute left-2 top-0 text-[11px] text-muted-foreground">孤立节点（本层内既不调用别人也不被调用）</div>
             {isolatedNodes.map(renderCard)}
@@ -351,14 +355,15 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
 }
 
 /**
- * 孤立原因文案（§2.3-27）：只认模型已算定的拓扑事实——有 projection 关联边的孤立卡
- * 说明它不是漏建调用边而是跨语言投影关联；其余孤立卡如实说没有跨域调用入边。
+ * 孤立原因文案（§2.3-27）：只认模型已算定的拓扑事实——call 入边与出边都为空（deg 0）。
+ * 有 projection 关联边的孤立卡说明它不是漏建调用边而是跨语言投影关联；其余如实说明
+ * call 度为 0。
  */
 function canvasIsolationReason(node: ScopeNode, model: ScopePageModel): string {
   const hasProjection = model.edges.some(
     (edge) => edge.kind === 'projection' && (edge.from === node.id || edge.to === node.id),
   )
   return hasProjection
-    ? '无跨域调用入边：仅有跨语言投影关联（twin/typed），不是调用边'
-    : '无跨域调用入边（call 口径）'
+    ? 'call 度为 0（无跨域调用入边/出边）：仅有跨语言投影关联（twin/typed），不是调用边'
+    : 'call 度为 0（无跨域调用入边/出边）'
 }

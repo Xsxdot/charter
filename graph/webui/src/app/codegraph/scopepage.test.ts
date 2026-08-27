@@ -292,6 +292,30 @@ describe('C12.2 缝 1：递归同构与组织切换', () => {
     expect(root.externalOut).toEqual([])
   })
 
+  it('externalOut 多邻居按 neighborId 升序输出，不沿 baseline 边的插入序泄漏', () => {
+    const w = isoWorld()
+    const best = bestOf(
+      { ...w.best.domains, ss_d: { label: '丁子系统', type: 'logic' }, ss_e: { label: '戊子系统', type: 'logic' } },
+      { ...w.best.containers, c_d: 'ss_d', c_e: 'ss_e' },
+    )
+    const baseline: CgGraph = {
+      ...w.baseline,
+      containers: { ...w.baseline.containers, c_d: { label: '丁容器', kind: '函数组' }, c_e: { label: '戊容器', kind: '函数组' } },
+      nodes: {
+        ...w.baseline.nodes,
+        n_d: { kind: 'func', container: 'c_d', name: 'd', file: 'd/d.go', line: 1 },
+        n_e: { kind: 'func', container: 'c_e', name: 'e', file: 'e/e.go', line: 1 },
+      },
+      edges: [...w.baseline.edges, ['n_e1', 'n_e'], ['n_e1', 'n_d']],
+    }
+    const m = deriveScopePage({ baseline, best, organization: 'best', scopeId: 'ss_a' })
+    expect(m.externalOut).toEqual([
+      { neighborId: 'ss_b', label: '乙子系统', weight: 1 },
+      { neighborId: 'ss_d', label: '丁子系统', weight: 1 },
+      { neighborId: 'ss_e', label: '戊子系统', weight: 1 },
+    ])
+  })
+
   it('叶子领域的容器层是原子节点：childCount 恒 0、入口引用带 channel 透传', () => {
     const w = isoWorld()
     const leafA = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: 'a_mid' })

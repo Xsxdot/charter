@@ -20,6 +20,7 @@ const LAYER_LABEL_W = 40
 const PACKAGE_GAP = 30
 const PACKAGE_PADDING = 14
 const PACKAGE_HEADER = 24
+// 原型 graph.js:58-60 的回边偏移是 34；C14 保持当前 28 的窄回边值，差异只为形态记录，值不动。
 const BACK_OFFSET = 28
 
 function cardSize(node: ScopeNode): [number, number] {
@@ -200,6 +201,11 @@ interface GroupLayout {
   y: number
 }
 
+/**
+ * 包群组内的分层摆放，行为基准为原型 graph.js:153-161。
+ * 这是 plan 钦定的最大偏离点：原型按符号数做网格，本实现改按群组内 call 拓扑分层，
+ * 让节点级边、回边与环徽章保持可读的方向关系；包群组的框与装箱仍沿用原型职责。
+ */
 function layoutPackageGroup(dir: string, nodes: ScopeNode[], edges: ScopeEdge[]): GroupLayout {
   const calls = callEdgesBetween(edges, new Set(nodes.map((node) => node.id)))
   const topo = buildLayers(nodes, calls)
@@ -251,7 +257,11 @@ function groupWeight(groups: GroupLayout[], edges: ScopeEdge[]): Map<string, num
   return weights
 }
 
-/** 移植自原型 :167-204：按连接权重贪心排序、货架装箱，再做四轮相邻交换降距离。 */
+/**
+ * 移植自原型 graph.js:167-204：按连接权重贪心排序、货架装箱，再做四轮相邻交换降距离。
+ * 差异点：tiebreak 全部按 id 确定化；cost 取群组中心而非原型包框左上角；cost 仍逐条计算
+ * 节点级 call 边，只有排序使用群组聚合权重，避免把节点级连线细节丢给布局决策。
+ */
 function arrangePackageGroups(groups: GroupLayout[], edges: ScopeEdge[], width: number): void {
   const weights = groupWeight(groups, edges)
   const between = (a: string, b: string): number => weights.get([a, b].sort((x, y) => x.localeCompare(y)).join('|')) ?? 0
@@ -454,7 +464,7 @@ export function layoutScopeCards(
   }
 }
 
-/** 移植原型 :54-64：正向边向下、回边右侧折返、同层边沿下沿浅弧。 */
+/** 移植原型 graph.js:54-64：正向边向下、回边右侧折返、同层边沿下沿浅弧。 */
 export function scopeEdgePath(
   x1: number,
   y1: number,
@@ -462,11 +472,14 @@ export function scopeEdgePath(
   y2: number,
   kind: 'forward' | 'back' | 'sibling',
 ): string {
+  // forward：原型 :57 的向下贝塞尔，让调用方向由上至下并留出箭头空间。
   if (kind === 'forward') return `M${x1},${y1} C${x1},${y1 + 32} ${x2},${y2 - 32} ${x2},${y2}`
+  // back：原型 :58-60 的右侧折返，和正向边形成明确视觉区分；偏移差异见 BACK_OFFSET 注释。
   if (kind === 'back') {
     const right = Math.max(x1, x2) + BACK_OFFSET
     return `M${x1},${y1} C${right},${y1} ${right},${y2} ${x2},${y2}`
   }
+  // sibling：原型 :62-64 的下沿浅弧仅用于非回边的同层连接，避免同层节点的线完全重合。
   const dip = 22 + Math.abs(x1 - x2) * 0.05
   return `M${x1},${y1} C${x1},${y1 + dip} ${x2},${y2 + dip} ${x2},${y2}`
 }

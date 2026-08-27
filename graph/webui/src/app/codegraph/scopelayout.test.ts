@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScopeEdge, ScopeNode } from './scopepage'
+import type { ScopePackageFrame } from './scopelayout'
 import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgePath } from './scopelayout'
 
 // 夹具纪律（沿 K2/K3 同款）：断言只走 layoutScopeCards 一个入口；期望值硬编码。
@@ -28,6 +29,21 @@ function domainNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
 
 function containerNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
   return domainNode(id, { kind: 'container', type: '函数组', dir: 'p/one', invariants: null, ...overrides })
+}
+
+function packageDistanceCost(frames: ScopePackageFrame[], edges: ScopeEdge[]): number {
+  const groupOf = new Map<string, string>()
+  for (const frame of frames) for (const nodeId of frame.nodeIds) groupOf.set(nodeId, frame.dir)
+  const centers = new Map(frames.map((frame) => [frame.dir, [frame.x + frame.w / 2, frame.y + frame.h / 2] as const]))
+  return edges.reduce((sum, edge) => {
+    if (edge.kind !== 'call') return sum
+    const from = groupOf.get(edge.from)
+    const to = groupOf.get(edge.to)
+    if (from === undefined || to === undefined || from === to) return sum
+    const a = centers.get(from)!
+    const b = centers.get(to)!
+    return sum + edge.weight * Math.hypot(a[0] - b[0], a[1] - b[1])
+  }, 0)
 }
 
 describe('C12.4 scopelayout：确定性与覆盖', () => {
@@ -160,6 +176,33 @@ describe('C14 容器层：包群组装箱与边路径', () => {
     expect(Object.values(layout.positions).every(([x, y]) => x >= 0 && y >= 0)).toBe(true)
     expect(layout.layers).toEqual({})
     expect(layout.layerCount).toBe(0)
+  })
+
+  it('相邻交换后的群组 cost 不高于初始序：按节点边权×群组中心欧氏距离复算', () => {
+    const nodes = [
+      containerNode('a', { dir: 'p/a' }), containerNode('b', { dir: 'p/b' }),
+      containerNode('c', { dir: 'p/c' }), containerNode('d', { dir: 'p/d' }),
+    ]
+    const edges: ScopeEdge[] = [
+      { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
+      { key: 'a->c', from: 'a', to: 'c', weight: 1, kind: 'call' },
+    ]
+    const layout = layoutScopeCards(nodes, edges, { width: 1200 })
+    const initialFrames = layout.packageFrames
+      .slice()
+      .sort((a, b) => a.dir.localeCompare(b.dir))
+      .map((frame, index) => ({
+        ...frame,
+        x: 14 + (index % 2) * (frame.w + 30),
+        y: 14 + Math.floor(index / 2) * (frame.h + 30),
+      }))
+    const initialCost = packageDistanceCost(initialFrames, edges)
+    const arrangedCost = packageDistanceCost(layout.packageFrames, edges)
+    expect({ arrangedCost, initialCost }).toEqual({
+      arrangedCost: expect.any(Number),
+      initialCost: expect.any(Number),
+    })
+    expect(arrangedCost).toBeLessThanOrEqual(initialCost)
   })
 
   it('edge path 三种形态均输出可绘制的 SVG path', () => {

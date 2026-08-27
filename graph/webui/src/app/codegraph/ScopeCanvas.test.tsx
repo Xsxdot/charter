@@ -311,6 +311,33 @@ describe('C12.4 画布：双击语义（§2.3-20 容器原子 + 下钻）', () =
     expect(canvas.getAttribute('data-zoom')).toBe(fitZoom)
     expect(canvas.getAttribute('data-transform')).toBe(fitTransform)
   })
+
+  it('首次 fit 使用已知 bounds；scope 切换后重新 fit 到新 bounds', () => {
+    const view = renderCanvas()
+    const canvas = q('[data-scope-canvas]', view.container)
+    expect(canvas.getAttribute('data-zoom')).toBe('0.7126436781609196')
+    expect(canvas.getAttribute('data-transform')).toBe('translate(334.183908045977,0)')
+
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -240 })
+    expect(canvas.getAttribute('data-zoom')).not.toBe('0.7126436781609196')
+
+    const scoped = modelFixture({
+      scopeId: 'topA',
+      nodes: [node('childOnly', { label: '子域' })],
+      edges: [],
+    })
+    view.rerender(
+      <ScopeCanvas
+        model={scoped}
+        edgeStatus={{}}
+        selectedNodeId=""
+        onSelect={view.onSelect}
+        onOpenScope={view.onOpenScope}
+      />,
+    )
+    expect(canvas.getAttribute('data-zoom')).toBe('1')
+    expect(canvas.getAttribute('data-transform')).toBe('translate(227,239)')
+  })
 })
 
 describe('C12.4 画布：平移缩放与组织降级（真机清单 1 的机内侧）', () => {

@@ -544,7 +544,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   // 容器职责唯一合法推导（§2.3-26）：只有「类型方法」容器可推导——同名**类型**节点
   // （kind='model'）的 doc 摘要，且候选节点的文件目录必须落在容器自身成员的目录集合内；
   // 全局取首个同名会张冠李戴（spec 走查实录：opencode.Adapter 拿到过 claudecode 的注释）。
-  // 同名 = label 最后一个 `.` 之后的类型段；真数据 label 带包前缀时，裸名匹配恒不匹配。
+  // 同名 = label 最后一个 `.` 之后的类型段；2026-08-27 实测教训是真数据 label 带包前缀时，裸名匹配恒不匹配。
   // 其余 kind 没有职责主体 → no-subject，不硬凑；类型方法匹配失败 → undeclared。
   const containerResponsibility = (containerId: string): ResponsibilityState => {
     const def = containersDef[containerId]

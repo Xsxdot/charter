@@ -75,3 +75,31 @@
 - 命令：`git commit -m "feat(C14): 查看器形态对齐 fork 原型"`；原始输出：`[cards/C14-charter 4925686] feat(C14): 查看器形态对齐 fork 原型`、`14 files changed, 1048 insertions(+), 378 deletions(-)`；退出码：0。
 - 命令：提交后 `git status --short --branch`、`git diff HEAD^ -- prototypes/codegraph-two-axis/`；原始输出：`## cards/C14-charter`，原型 diff 无输出；退出码均为 0。
 - 命令：`git rev-parse --abbrev-ref HEAD && git rev-parse HEAD`；原始输出：`cards/C14-charter`、`49256862860ed3ef63d6f555e0f1855220d494e0`；退出码：0。
+- 事实：本次 review 打回轮工作树实际分支为 `cards/C14-charter-2`，当前 HEAD 为 `223a0de`（完整 hash `223a0de05b04b558f9822bcbfe0988c03254e574`）；上一轮台账末尾的分支与提交记录属于旧执行上下文。
+- 命令：`git rev-parse --abbrev-ref HEAD && git rev-parse HEAD`；原始输出：`cards/C14-charter-2`、`223a0de05b04b558f9822bcbfe0988c03254e574`；退出码：0。
+- 判断：本轮不改生产逻辑行为，只补 review 指定的布局 cost、scope 切换 fit、externalOut 升序断言与原型差异注释。
+- 授权清单外测试改写记录：`scopepage.test.ts:295` 叶子层键集断言、`scopepage.test.ts:584` invariants 投影断言均属上一轮已授权的改写，本轮仅补录，不扩大范围。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`/bin/bash: line 1: node_modules/.bin/vitest: No such file or directory`；退出码：127。
+- 命令：`npm_config_cache=/root/.handoff/tmp/b012e701/npm-cache npm ci`；原始输出：`added 168 packages, and audited 169 packages in 5s`、`found 0 vulnerabilities`；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`Test Files 3 passed (3)`、`Tests 59 passed (59)`；退出码：0。
+- 变更：`scopelayout.test.ts` 新增四包交叉夹具，测试内按 `Σ weight×Math.hypot(群组中心差)` 复算 arranged cost 与初始字典序 cost，并断言 arranged ≤ initial。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`；原始输出：`Test Files 1 passed (1)`、`Tests 13 passed (13)`；退出码：0。
+- 变更：`ScopeCanvas.test.tsx` 新增已知夹具 bounds 的硬编码 fit 值，并在 scope 切换后断言重新 fit 到 `zoom=1`、`translate(227,239)`。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx -t "首次 fit 使用已知 bounds"`；原始输出：`Test Files 1 passed (1)`、`Tests 1 passed | 18 skipped (19)`；退出码：0。
+- 变更：`scopepage.test.ts` 新增多邻居 externalOut 夹具；首次期望漏列 isoWorld 既有 `ss_b`，原始失败显示收到 `ss_b`，遂修正为完整 `ss_b < ss_d < ss_e` 升序期望。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts -t "externalOut 多邻居"`（夹具首红）；原始输出：`AssertionError: expected [ { neighborId: 'ss_b', …(2) }, …(2) ] to deeply equal [ { neighborId: 'ss_d', …(2) }, …(1) ]`；退出码：1。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts -t "externalOut 多邻居"`（修正完整期望后）；原始输出：`Test Files 1 passed (1)`、`Tests 1 passed | 29 skipped (30)`；退出码：0。
+- 变异前唯一命中检查：`rg -n -F "if (candidate < bestCost) bestCost = candidate" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`338: if (candidate < bestCost) bestCost = candidate`、`1`；判断：选择比较符取反作为可编译语义变异，命中唯一。
+- 变异尝试：将唯一命中的 `if (candidate < bestCost)` 改为 `>`；`npm run typecheck` 原始输出为 `> codegraph-webui@0.0.0 typecheck`、`> tsc -b`，退出码 0；行为断言原始输出为 `Test Files 1 passed (1)`、`Tests 1 passed | 12 skipped (13)`，说明该变异未改变此夹具行为，不计入存活结论，已恢复原代码。
+- 变异前唯一命中检查（重选群组排序语义）：`rg -n -F "return (weightB - weightA) || a.localeCompare(b)" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`278: return (weightB - weightA) || a.localeCompare(b)`、`1`；判断：改为反向比较以打中初始序 cost 守卫。
+- 变异重试：将四包 cost 夹具改为 `a->b`、`a->c`，恢复正确 comparator 后行为断言原始输出为 `Test Files 1 passed (1)`、`Tests 1 passed | 12 skipped (13)`；该夹具能区分初始序与错误排序。
+- 变异重试唯一命中检查：`rg -n -F "if (candidate < bestCost) bestCost = candidate" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`338: if (candidate < bestCost) bestCost = candidate`、`1`；判断：比较符取反仍为可编译语义变异且命中唯一。
+- 命令：变异后 `npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：变异后 `node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts -t "相邻交换后的群组 cost"`；原始输出：`AssertionError: expected 702.0459156782531 to be less than or equal to 550`、`Test Files 1 failed (1)`；退出码：1。
+- 判断：本次变异编译通过、行为断言先变红且明确命中 cost 守卫；恢复 `candidate < bestCost`，该变异不存活。
+- 命令：恢复实现后 `node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`Test Files 3 passed (3)`、`Tests 62 passed (62)`；退出码：0。
+- 命令：`npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：`npm test`；原始输出：`Test Files 16 passed (16)`、`Tests 219 passed (219)`；退出码：0。
+- 命令：`npm run build`；原始输出：`vite v6.4.3 building for production...`、`✓ 42 modules transformed.`、`dist/index.html 0.45 kB`、`dist/assets/index-CxuVGYd8.css 21.40 kB`、`dist/assets/index-A5rNppjj.js 267.99 kB`、`✓ built in 665ms`；退出码：0。
+- 命令：构建后 `git status --short --branch`、`git diff --check`、`find graph/webui/dist/assets -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort`；原始输出：当前变更含本台账、3 个源码/测试补丁及 `dist/index.html`、旧 `index-B71o7a8z.js` 删除、新 `index-A5rNppjj.js`；`git diff --check` 无输出；产物为 `index-A5rNppjj.js 267985 bytes`、`index-CxuVGYd8.css 21397 bytes`；退出码均为 0。
+- 判断：构建仅因本轮源码注释改变 JS hash，未改生产逻辑；按计划将 dist 新旧 hash 与源码同批提交。
