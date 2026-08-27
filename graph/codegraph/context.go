@@ -103,7 +103,12 @@ func AssembleContext(v *View, g *Graph, best *Best, repoRoot, domainID string, o
 	if v == nil || g == nil {
 		return nil, fmt.Errorf("context %q requires non-nil view and graph", domainID)
 	}
-	ctxDomain, member, err := contextVocabulary(v, best, domainID)
+	decls, err := LoadDomainDecls(repoRoot)
+	if err != nil {
+		slog.Default().Error("context declarations failed", "domain", domainID, "stage", "load-declarations", "error", err)
+		return nil, fmt.Errorf("context %s 加载声明失败: %w", domainID, err)
+	}
+	ctxDomain, member, err := contextVocabulary(v, best, domainID, decls)
 	if err != nil {
 		return nil, err
 	}
@@ -124,11 +129,6 @@ func AssembleContext(v *View, g *Graph, best *Best, repoRoot, domainID string, o
 		}
 	}
 
-	decls, err := LoadDomainDecls(repoRoot)
-	if err != nil {
-		slog.Default().Error("context declarations failed", "domain", domainID, "stage", "load-declarations", "error", err)
-		return nil, fmt.Errorf("context %s 加载声明失败: %w", domainID, err)
-	}
 	if decl, ok := decls[domainID]; ok {
 		copyDecl := decl
 		out.Declaration = &copyDecl
@@ -333,7 +333,7 @@ func appendWarning(current, next string) string {
 //
 // 两套词表只是两种 member 构造，遍历逻辑仍是同一份——这是本次改动刻意收敛的点：
 // 若让两套词表各写一遍包/接口/焦点的遍历，日后必然只改一边。
-func contextVocabulary(v *View, best *Best, domainID string) (ContextDomain, func(Node) bool, error) {
+func contextVocabulary(v *View, best *Best, domainID string, decls map[string]DomainDecl) (ContextDomain, func(Node) bool, error) {
 	if best == nil {
 		domain, ok := v.Domains[domainID]
 		if !ok {
@@ -349,7 +349,11 @@ func contextVocabulary(v *View, best *Best, domainID string) (ContextDomain, fun
 			}
 		}
 		sort.Strings(children)
-		out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Kind, Summary: domain.Summary,
+		summary := ""
+		if decl, ok := decls[domainID]; ok {
+			summary = decl.Responsibility
+		}
+		out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Kind, Summary: summary,
 			Desc: domain.Desc, Parent: domain.Parent, Children: children}
 		return out, func(n Node) bool { return sub[nodeDomain(v, n)] }, nil
 	}
@@ -366,8 +370,12 @@ func contextVocabulary(v *View, best *Best, domainID string) (ContextDomain, fun
 		}
 	}
 	sort.Strings(children)
+	summary := ""
+	if decl, ok := decls[domainID]; ok {
+		summary = decl.Responsibility
+	}
 	out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Type,
-		Summary: domain.Responsibility, Parent: domain.Parent, Children: children}
+		Summary: summary, Parent: domain.Parent, Children: children}
 	return out, func(n Node) bool { return sub[best.DomainOfContainer(n.Container)] }, nil
 }
 

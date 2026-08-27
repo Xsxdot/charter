@@ -1,0 +1,18 @@
+import { useState } from 'react'
+import type { CgGraph } from '../../api/types'
+import { deriveFlowPage } from './flowpage'
+import { FlowChart } from './FlowChart'
+
+export interface FlowPageViewProps {
+  baseline: CgGraph
+  entryNodeId: string
+  onBack: () => void
+  onEnterEntry: (id: string) => void
+}
+
+export function FlowPageView({ baseline, entryNodeId, onBack, onEnterEntry }: FlowPageViewProps) {
+  const model = deriveFlowPage({ baseline, entryNodeId })
+  const [tab, setTab] = useState<'basic' | 'chain' | 'outside'>('basic')
+  const entryName = model.entry?.name ?? entryNodeId
+  return <section data-flow-page className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4"><header className="mb-3 flex items-center gap-3"><button type="button" data-flow-back className="rounded border px-2 py-1 text-xs hover:bg-muted" onClick={onBack}>← 结构轴</button><div><h2 className="text-base font-semibold">行为轴 · {entryName}</h2><p className="text-xs text-muted-foreground">程序入口 → 流程图 · 一条程序入口一张泳道</p></div><span data-flow-ownership className="ml-auto rounded border px-2 py-1 text-xs">入口归属：{model.ownership.text}</span></header><div className="flex min-h-0 flex-1 gap-4"><main className="min-w-0 flex-1 overflow-auto">{model.degraded ? <div data-flow-degraded className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"><b>流程图降级</b><p className="mt-1 text-xs">{model.degradedReason}。补齐 flows 后本页会保留同一格位。</p></div> : <FlowChart steps={model.steps} onEnterEntry={onEnterEntry} />}</main><aside data-flow-right-panel className="w-80 shrink-0 overflow-y-auto rounded-lg border bg-background p-3 text-sm"><div role="tablist" aria-label="行为轴详情"><button type="button" role="tab" aria-selected={tab === 'basic'} className="mr-1 rounded px-2 py-1 text-xs" onClick={() => setTab('basic')}>基本信息</button><button type="button" role="tab" aria-selected={tab === 'chain'} className="mr-1 rounded px-2 py-1 text-xs" onClick={() => setTab('chain')}>调用链（给 agent）</button><button type="button" role="tab" aria-selected={tab === 'outside'} className="rounded px-2 py-1 text-xs" onClick={() => setTab('outside')}>对外面</button></div>{tab === 'basic' ? <div data-flow-tab="basic" className="mt-4 space-y-2"><p>程序入口：{entryName}</p><p>通道：{model.channel ?? '通道未标注'}</p><p>入口注册：{model.registration.text}</p><p>触达领域：{model.touchedDomainCount}</p>{model.ownership.state === 'multiple' ? <p data-multi-ownership className="text-xs text-amber-700">多值候选：{model.ownership.labels.join('、')}</p> : null}</div> : null}{tab === 'chain' ? <div data-flow-tab="chain" className="mt-4"><p data-chain-notice className="mb-2 rounded bg-muted p-2 text-xs">{model.callChain.notice}</p><ol data-mechanical-sequence className="space-y-1 text-xs">{model.callChain.sequence.map((id) => <li key={id} className="border-b py-1">{model.callChain.nodes.find((node) => baseline.nodes[id] === node)?.name ?? baseline.nodes[id]?.name ?? id}</li>)}</ol></div> : null}{tab === 'outside' ? <div data-flow-tab="outside" className="mt-4 text-xs"><p>对外入缝是被调进来的跨层符号；程序入口是外部通道入口。</p>{model.steps.filter((step) => step.iface).map((step) => <section key={step.id} data-interface-implementations={step.to} className="mt-2 border-t pt-2"><b>{step.to ?? '接口缺失'} 的全部实现</b>{step.implementations.length ? step.implementations.map((implementation) => <button type="button" key={implementation.id} data-implementation-entry={implementation.id} className="mt-1 block w-full rounded border px-2 py-1 text-left hover:bg-muted" onClick={() => onEnterEntry(implementation.id)}>{implementation.name}</button>) : <p data-no-implementations className="mt-1 text-muted-foreground">无实现记录</p>}</section>)}</div> : null}</aside></div></section>
+}

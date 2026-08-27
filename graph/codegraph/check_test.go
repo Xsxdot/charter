@@ -37,9 +37,8 @@ func bestFixtureForDomains(v *View, ids ...string) *Best {
 	}
 	for _, id := range ids {
 		b.Domains[id] = BestDomain{
-			Label:          id,
-			Responsibility: "fixture",
-			Type:           "logic",
+			Label: id,
+			Type:  "logic",
 		}
 	}
 	for containerID := range v.Containers {

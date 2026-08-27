@@ -31,10 +31,9 @@ type BestMeta struct {
 // target.json 的 contracts[].from/to 引用的正是这些顶层领域 id（契约 §2-1）。
 // Type 只对顶层领域有意义，取值 logic / boundary。
 type BestDomain struct {
-	Label          string `json:"label"`
-	Responsibility string `json:"responsibility"`
-	Parent         string `json:"parent,omitempty"`
-	Type           string `json:"type,omitempty"`
+	Label  string `json:"label"`
+	Parent string `json:"parent,omitempty"`
+	Type   string `json:"type,omitempty"`
 }
 
 // Best 是 codegraph/best.json 的顶层结构：应然结构。
@@ -89,9 +88,6 @@ func ValidateBest(b *Best) []string {
 
 	hasChild := make(map[string]bool)
 	for id, d := range b.Domains {
-		if strings.TrimSpace(d.Responsibility) == "" {
-			issues = append(issues, fmt.Sprintf("领域 %s 的 responsibility 不能为空", id))
-		}
 		if d.Parent == "" {
 			if d.Type != "logic" && d.Type != "boundary" {
 				issues = append(issues, fmt.Sprintf("顶层领域 %s 的 type %q 无效", id, d.Type))

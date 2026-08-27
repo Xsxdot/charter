@@ -3,7 +3,7 @@
 // 职责：只读 best/target/report，投影出查看器所需的稳定读数。
 // 边界：不读 DOM、不发请求、不写入数据；组件只负责渲染和交互。
 //       唯一读 baseline 节点的地方是 containerFacts——它只取文件目录与节点计数这两个事实。
-import type { CgBest, CgBestDomain, CgCheckReport, CgFinding, CgGraph, CgTarget } from '../../api/types'
+import type { CgBest, CgBestDomain, CgCheckReport, CgDomainDecls, CgFinding, CgGraph, CgTarget } from '../../api/types'
 
 export interface BestSubsystem {
   id: string
@@ -167,14 +167,14 @@ function descendantDomainIds(best: CgBest, parentId: string): string[] {
 }
 
 /** 枚举顶层子系统及其嵌套领域，供卡片和详情共用。 */
-export function bestSubsystems(best: CgBest): BestSubsystem[] {
+export function bestSubsystems(best: CgBest, decls?: CgDomainDecls): BestSubsystem[] {
   return topLevelSubsystemIds(best).map((id) => {
     const domain = best.domains[id]
     const descendants = descendantDomainIds(best, id)
     return {
       id,
       label: domain.label,
-      responsibility: domain.responsibility,
+      responsibility: decls?.[id]?.responsibility ?? '',
       type: domain.type ?? '',
       childIds: childBestDomainIds(best, id),
       descendantIds: descendants,
@@ -183,7 +183,7 @@ export function bestSubsystems(best: CgBest): BestSubsystem[] {
 }
 
 /** 按最佳归属侧聚合卡片读数；每个 misplaced finding 算一次命中。 */
-export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record<string, BestCardReadout> {
+export function aggregateBestCards(best: CgBest, report?: CgCheckReport, decls?: CgDomainDecls): Record<string, BestCardReadout> {
   const byContainer = containerSubsystems(best)
   const misplacedBySubsystem: Record<string, number> = {}
   for (const finding of report?.warns ?? []) {
@@ -193,7 +193,7 @@ export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record
   }
 
   const result: Record<string, BestCardReadout> = {}
-  for (const subsystem of bestSubsystems(best)) {
+  for (const subsystem of bestSubsystems(best, decls)) {
     const containerCount = Object.values(byContainer).filter((id) => id === subsystem.id).length
     result[subsystem.id] = {
       id: subsystem.id,
@@ -573,7 +573,7 @@ function scopeCard(best: CgBest, report: CgCheckReport | undefined, domainId: st
   return {
     id: external ? `ext:${domainId}` : domainId,
     label: domain?.label ?? domainId,
-    responsibility: domain?.responsibility ?? '',
+    responsibility: '',
     type: domain?.type ?? '',
     external,
     containerCount,

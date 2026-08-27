@@ -4,6 +4,11 @@ export interface CgMeta { project: string; branch: string; commit: string; scann
 export interface CgTestRef { name: string; file: string }
 export interface CgDomain { label: string; kind: string; summary?: string; desc?: string; parent?: string }
 export interface CgContainer { label: string; kind: string; entry?: boolean; domain?: string }
+export const CG_CONTAINER_KINDS = [
+  '类型方法', '函数组', '实体', 'TypeScript 模型', 'React 组件/函数', '入口', 'TypeScript 函数组', 'TypeScript 实体',
+] as const
+export type CgContainerKind = typeof CG_CONTAINER_KINDS[number]
+export const CG_FALLBACK_CONTAINER_KINDS = ['函数组', 'TypeScript 函数组'] as const
 export interface CgNode {
   kind: 'entry' | 'func' | 'model'; container: string; order?: number; name: string; file: string; line: number
   signature?: string; signatureOld?: string; params?: string[][]; returns?: string; summary?: string
@@ -58,8 +63,8 @@ export interface CgStaleNode { id: string; file: string; line: number; reason: s
 // charter docs/contracts/2026-08-24-codegraph-viewer-compare-contract.md）。
 // 字段名与库 JSON tag 一致；三键可选，缺席即分级降级（契约 C2/C6）。
 
-/** CgBestDomain 理想树领域：parent 为空即顶层子系统。 */
-export interface CgBestDomain { label: string; responsibility: string; parent?: string; type?: string }
+/** CgBestDomain 理想树领域：parent 为空即顶层子系统；正文职责只在 CgDomainDecl。 */
+export interface CgBestDomain { label: string; parent?: string; type?: string }
 
 /** CgBest 最优图：理想结构树 + 现状容器归属映射。 */
 export interface CgBest {

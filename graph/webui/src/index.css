@@ -47,9 +47,8 @@
   /* 确定的高度链，三层缺一不可。CodegraphPage 的根元素是 flex h-full flex-col，
      h-full 是 height:100%——百分比高度只有在祖先链每一层都有确定高度时才解析，
      碰到 auto 就退化。min-height 撑不起这条链（它不给子元素可解析的高度）。
-     断链的后果不是差几像素：三栏塌成内容高，CallTree/DetailPanel 的 overflow
-     不再各自滚动，FocusGraph 的 el.clientHeight/2 与 DomainPanorama 的
-     clientHeight - pad 都会按塌掉的高度算坐标。
+     断链的后果不是差几像素：三栏塌成内容高，左右内容区的 overflow
+     不再各自滚动，中图坐标与全景区高度也会按塌掉的高度计算。
      用 100% 而不是 100vh：查看器被宿主放在 iframe 里，要填满的是 iframe 的
      视口，vh 在部分嵌套场景下量的不是这个盒子。 */
   html, body, #root { height: 100%; }

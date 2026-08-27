@@ -14,9 +14,21 @@ import (
 // 检查项：节点的 container 必须存在；每条边两端必须是已定义节点。
 func Validate(g *Graph) []string {
 	var issues []string
+	for id, c := range g.Containers {
+		// 空 kind 是旧基线的兼容缺席形态；一旦扫描器给出值，就必须来自
+		// C12 词表，未知值不可落入某个近似类别而继续渲染。
+		if c.Kind != "" && !validContainerKind(c.Kind) {
+			issues = append(issues, fmt.Sprintf("容器 %s 的 kind %q 不在受控词表中", id, c.Kind))
+		}
+	}
 	for id, n := range g.Nodes {
 		if _, ok := g.Containers[n.Container]; !ok {
 			issues = append(issues, fmt.Sprintf("节点 %s 引用不存在的容器 %s", id, n.Container))
+		}
+	}
+	for id, n := range g.Nodes {
+		if issue := validateEntryChannel(id, n.Channel, "入口"); issue != "" && n.Kind == "entry" {
+			issues = append(issues, issue)
 		}
 	}
 	for _, e := range g.Edges {
@@ -40,7 +52,75 @@ func Validate(g *Graph) []string {
 	issues = append(issues, validatePackages(g)...)
 	issues = append(issues, validateModelKind(g)...)
 	issues = append(issues, validateDomains(g)...)
+	issues = append(issues, validateFlows(g)...)
 	sort.Strings(issues)
+	return issues
+}
+
+func validateEntryChannel(id, channel, label string) string {
+	if channel == "" {
+		return ""
+	}
+	switch channel {
+	case ChannelCLI, ChannelHTTP, ChannelWS, ChannelWeb:
+		return ""
+	default:
+		return fmt.Sprintf("%s %s 的 channel %q 不在受控词表中", label, id, channel)
+	}
+}
+
+func validateFlows(g *Graph) []string {
+	if len(g.Flows) == 0 {
+		return nil
+	}
+	issues := []string{}
+	for owner, flow := range g.Flows {
+		if _, ok := g.Nodes[owner]; !ok {
+			issues = append(issues, fmt.Sprintf("流程 %s 的承重函数不在 nodes 中", owner))
+		}
+		known := make(map[string]bool, len(flow.Steps))
+		for _, step := range flow.Steps {
+			if step.ID == "" {
+				issues = append(issues, fmt.Sprintf("流程 %s 含空步骤 id", owner))
+			}
+			if known[step.ID] && step.ID != "" {
+				issues = append(issues, fmt.Sprintf("流程 %s 重复步骤 id %s", owner, step.ID))
+			}
+			known[step.ID] = true
+			if step.Line <= 0 {
+				issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 line 必须为正数", owner, step.ID))
+			}
+			switch step.Kind {
+			case FlowStepCall:
+				if step.To == "" {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 call 缺少 to", owner, step.ID))
+				} else if _, ok := g.Nodes[step.To]; !ok {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 to 引用不存在的节点 %s", owner, step.ID, step.To))
+				}
+			case FlowStepBranch, FlowStepLoop:
+				if step.Cond == "" {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 %s 缺少 cond", owner, step.ID, step.Kind))
+				}
+				if step.Kind == FlowStepBranch && (step.Then == nil || step.Else == nil) {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 branch 缺少 then 或 else", owner, step.ID))
+				}
+				if step.Kind == FlowStepLoop && step.Body == nil {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 loop 缺少 body", owner, step.ID))
+				}
+			case FlowStepReturn:
+			default:
+				issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 的 kind %q 不在受控词表中", owner, step.ID, step.Kind))
+			}
+		}
+		for _, step := range flow.Steps {
+			refs := append(append(append([]string{}, step.Then...), step.Else...), step.Body...)
+			for _, ref := range refs {
+				if !known[ref] {
+					issues = append(issues, fmt.Sprintf("流程 %s 步骤 %s 引用不存在的子步骤 %s", owner, step.ID, ref))
+				}
+			}
+		}
+	}
 	return issues
 }
 
@@ -200,6 +280,9 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 	// containersAdded 是分支新建容器的唯一合法来源；先校验其 id 与领域，避免
 	// 用一个看似新增的条目静默覆盖基线，或把容器挂到图外领域（契约 §7-R1）。
 	for id, c := range d.ContainersAdded {
+		if c.Kind != "" && !validContainerKind(c.Kind) {
+			issues = append(issues, fmt.Sprintf("新增容器 %s 的 kind %q 不在受控词表中", id, c.Kind))
+		}
 		if _, ok := g.Containers[id]; ok {
 			issues = append(issues, fmt.Sprintf("新增容器 %s 已存在于基线，containersAdded 只接受新容器", id))
 		}
@@ -217,6 +300,9 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 		return ok
 	}
 	for id, n := range d.NodesAdded {
+		if issue := validateEntryChannel(id, n.Channel, "新增入口"); issue != "" && n.Kind == "entry" {
+			issues = append(issues, issue)
+		}
 		if _, ok := g.Containers[n.Container]; !ok {
 			if _, added := d.ContainersAdded[n.Container]; added {
 				continue
@@ -224,7 +310,10 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 			issues = append(issues, fmt.Sprintf("新增节点 %s 引用不存在的容器 %s", id, n.Container))
 		}
 	}
-	for id := range d.NodesModified {
+	for id, n := range d.NodesModified {
+		if issue := validateEntryChannel(id, n.Channel, "修改入口"); issue != "" && n.Kind == "entry" {
+			issues = append(issues, issue)
+		}
 		if _, ok := g.Nodes[id]; !ok {
 			issues = append(issues, fmt.Sprintf("修改的节点 %s 不在基线里", id))
 		}

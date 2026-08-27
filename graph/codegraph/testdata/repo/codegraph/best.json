@@ -1,9 +1,9 @@
 {
   "meta": { "version": 1, "project": "fixture" },
   "domains": {
-    "d_svc": { "label": "服务", "responsibility": "服务与落库", "type": "logic" },
-    "d_cmd": { "label": "入口", "responsibility": "命令入口", "type": "logic" },
-    "d_web": { "label": "前端", "responsibility": "前端边界", "type": "boundary" }
+    "d_svc": { "label": "服务", "type": "logic" },
+    "d_cmd": { "label": "入口", "type": "logic" },
+    "d_web": { "label": "前端", "type": "boundary" }
   },
   "containers": {
     "c_cli": "d_cmd",

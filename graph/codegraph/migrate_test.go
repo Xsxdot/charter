@@ -98,10 +98,10 @@ func TestMigrateTargetV2ProducesDualArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("v2 migrate: %v", err)
 	}
-	if !got.Migrated || got.From != 2 || got.To != 3 || len(got.Notes) != 3 {
+	if !got.Migrated || got.From != 2 || got.To != 3 || len(got.Notes) != 2 {
 		t.Fatalf("migrate result: %+v", got)
 	}
-	for _, note := range []string{"机械翻译", "不是最优结构", "Responsibility", "container-misplaced", "预期条数"} {
+	for _, note := range []string{"机械翻译", "不是最优结构", "container-misplaced", "预期条数"} {
 		found := false
 		for _, item := range got.Notes {
 			if strings.Contains(item, note) {
@@ -128,9 +128,7 @@ func TestMigrateTargetV2ProducesDualArtifacts(t *testing.T) {
 		if domain.Parent != "" {
 			t.Fatalf("初版 best 不得伪造父子树: %s=%+v", id, domain)
 		}
-		if domain.Responsibility != "（迁移生成，待填写）" {
-			t.Fatalf("空 note 应使用固定占位责任: %s=%+v", id, domain)
-		}
+		_ = id
 	}
 	if issues := ValidateBest(best); len(issues) != 0 {
 		t.Fatalf("迁移生成的 best 不应有 issue: %v", issues)

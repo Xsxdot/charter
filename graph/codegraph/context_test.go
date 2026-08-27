@@ -184,7 +184,7 @@ func TestAssembleContextActualReportsRealMisplacement(t *testing.T) {
 func TestAssembleContextBestParentSubtree(t *testing.T) {
 	best := &Best{
 		Domains: map[string]BestDomain{
-			"d_top":  {Label: "顶", Responsibility: "父域"},
+			"d_top":  {Label: "顶"},
 			"d_leaf": {Label: "叶", Parent: "d_top"},
 			"d_out":  {Label: "外"},
 		},
