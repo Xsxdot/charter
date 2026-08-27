@@ -8,7 +8,7 @@
   },
   "containers": {
     "c_cli": {"label": "CLI 命令", "kind": "入口", "entry": true, "domain": "d_cli"},
-    "k_svc": {"label": "svc.Server", "kind": "函数组", "domain": "d_svc/api"},
+    "k_svc": {"label": "svc.Server", "kind": "服务端", "domain": "d_svc/api"},
     "k_ent": {"label": "store 实体", "kind": "实体", "domain": "d_svc/store"}
   },
   "nodes": {

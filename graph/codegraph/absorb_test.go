@@ -87,7 +87,7 @@ func TestAbsorbContainersAddedAndValidate(t *testing.T) {
 	g := loadFixture(t)
 	d := &Diff{
 		ContainersAdded: map[string]Container{
-			"k_new": {Label: "new.Server", Kind: "函数组", Domain: "d_svc/api"},
+			"k_new": {Label: "new.Server", Kind: "服务端", Domain: "d_svc/api"},
 		},
 		NodesAdded: map[string]Node{
 			"n_new": {Kind: "func", Container: "k_new", File: "svc/new.go"},

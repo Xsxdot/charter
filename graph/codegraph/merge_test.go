@@ -61,7 +61,7 @@ func TestMergeSkipsInvalidAddedEdges(t *testing.T) {
 func TestMergeContainersAdded(t *testing.T) {
 	g := loadFixture(t)
 	d := &Diff{ContainersAdded: map[string]Container{
-		"k_new": {Label: "new.Server", Kind: "函数组", Domain: "d_svc/api"},
+		"k_new": {Label: "new.Server", Kind: "服务端", Domain: "d_svc/api"},
 	}}
 	v := Merge(g, d)
 	got, ok := v.Containers["k_new"]

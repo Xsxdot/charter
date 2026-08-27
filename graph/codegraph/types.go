@@ -31,38 +31,6 @@ type Container struct {
 	Domain string `json:"domain,omitempty"`
 }
 
-// Container kind 是扫描侧与查看器共用的受控词表。
-const (
-	ContainerKindTypeMethod  = "类型方法"
-	ContainerKindFunctionSet = "函数组"
-	ContainerKindEntity      = "实体"
-	ContainerKindTSModel     = "TypeScript 模型"
-	ContainerKindReact       = "React 组件/函数"
-	ContainerKindEntry       = "入口"
-	ContainerKindTSFunction  = "TypeScript 函数组"
-	ContainerKindTSEntity    = "TypeScript 实体"
-)
-
-// ContainerKinds 返回受控词表的只读副本，调用方可安全排序或修改返回值。
-func ContainerKinds() []string {
-	return []string{
-		ContainerKindTypeMethod, ContainerKindFunctionSet, ContainerKindEntity,
-		ContainerKindTSModel, ContainerKindReact, ContainerKindEntry,
-		ContainerKindTSFunction, ContainerKindTSEntity,
-	}
-}
-
-func validContainerKind(kind string) bool {
-	switch kind {
-	case ContainerKindTypeMethod, ContainerKindFunctionSet, ContainerKindEntity,
-		ContainerKindTSModel, ContainerKindReact, ContainerKindEntry,
-		ContainerKindTSFunction, ContainerKindTSEntity:
-		return true
-	default:
-		return false
-	}
-}
-
 // Domain 是一个领域：领域图的一级组织单位，可嵌套。
 //
 // 领域由扫描产出、人可在入库后修改（spec §3.1）。Parent 串成树，为空即顶层。

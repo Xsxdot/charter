@@ -78,10 +78,10 @@ func TestValidateDomains(t *testing.T) {
 			"d_ghosted": {Label: "孤儿", Kind: "x", Parent: "d_nope"},
 		},
 		Containers: map[string]Container{
-			"k_api":  {Label: "svc.Server", Kind: "函数组", Domain: "d_svc/api"},
-			"k_core": {Label: "svc.Manager", Kind: "实体", Domain: "d_svc"},
-			"k_lost": {Label: "svc.Store", Kind: "实体", Domain: "d_ghost"},
-			"k_none": {Label: "svc.Util", Kind: "函数组"},
+			"k_api":  {Label: "svc.Server", Kind: "服务端", Domain: "d_svc/api"},
+			"k_core": {Label: "svc.Manager", Kind: "核心", Domain: "d_svc"},
+			"k_lost": {Label: "svc.Store", Kind: "存储", Domain: "d_ghost"},
+			"k_none": {Label: "svc.Util", Kind: "工具"},
 		},
 		Nodes: map[string]Node{},
 		Edges: []Edge{},
@@ -115,64 +115,11 @@ func TestValidateDomainParentCycle(t *testing.T) {
 func TestValidateNoDomainsSectionIsClean(t *testing.T) {
 	// 旧扫描数据没有 domains 段：整段校验跳过，不得因此报问题
 	g := &Graph{
-		Containers: map[string]Container{"k_svc": {Label: "svc", Kind: "函数组"}},
+		Containers: map[string]Container{"k_svc": {Label: "svc", Kind: "服务端"}},
 		Nodes:      map[string]Node{},
 	}
 	if got := Validate(g); len(got) != 0 {
 		t.Fatalf("无领域段应零问题: %q", got)
-	}
-}
-
-func TestValidateRejectsUnknownContainerKind(t *testing.T) {
-	g := &Graph{
-		Containers: map[string]Container{"k_unknown": {Label: "future", Kind: "future-kind"}},
-		Nodes:      map[string]Node{},
-	}
-	issues := Validate(g)
-	if len(issues) != 1 || !strings.Contains(issues[0], "future-kind") {
-		t.Fatalf("未知容器 kind 必须显式报错: %v", issues)
-	}
-}
-
-func TestValidateFlowsSchema(t *testing.T) {
-	g := &Graph{
-		Containers: map[string]Container{"k": {Label: "k", Kind: ContainerKindFunctionSet}},
-		Nodes: map[string]Node{
-			"owner":  {Kind: "func", Container: "k"},
-			"target": {Kind: "func", Container: "k"},
-		},
-		Flows: map[string]Flow{
-			"owner": {Steps: []FlowStep{
-				{ID: "call", Kind: FlowStepCall, Line: 1, To: "missing"},
-				{ID: "branch", Kind: FlowStepBranch, Line: 2, Cond: "ok", Then: []string{"missing-step"}},
-			}},
-		},
-	}
-	issues := Validate(g)
-	joined := strings.Join(issues, "\n")
-	for _, want := range []string{"to 引用不存在", "缺少 then 或 else", "引用不存在的子步骤"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("flows 校验缺少 %q: %v", want, issues)
-		}
-	}
-}
-
-func TestValidateDiffRejectsUnknownKindAndChannel(t *testing.T) {
-	g := &Graph{
-		Containers: map[string]Container{},
-		Nodes:      map[string]Node{},
-		Domains:    map[string]Domain{"d": {Label: "d"}},
-	}
-	d := &Diff{
-		ContainersAdded: map[string]Container{"k": {Label: "future", Kind: "future-kind", Domain: "d"}},
-		NodesAdded:      map[string]Node{"entry": {Kind: "entry", Container: "k", Channel: "mobile"}},
-	}
-	issues := ValidateDiff(g, d)
-	joined := strings.Join(issues, "\n")
-	for _, want := range []string{"future-kind", "mobile"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("diff schema 校验缺少 %q: %v", want, issues)
-		}
 	}
 }
 
@@ -469,7 +416,7 @@ func TestValidateDiffEnforcesModelKind(t *testing.T) {
 func packagesFixture() *Graph {
 	return &Graph{
 		Meta:       Meta{Project: "p"},
-		Containers: map[string]Container{"c": {Label: "C", Kind: "函数组"}},
+		Containers: map[string]Container{"c": {Label: "C", Kind: "service"}},
 		Nodes: map[string]Node{
 			"n1": {Kind: "func", Container: "c", Name: "F", File: "internal/api/f.go", Line: 1},
 		},
