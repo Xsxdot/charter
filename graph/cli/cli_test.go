@@ -663,15 +663,18 @@ func TestGraphCommandCountIncludesMigrate(t *testing.T) {
 		}
 		count++
 	}
-	if count != 15 {
-		t.Fatalf("codegraph 业务子命令数=%d，want 15", count)
+	if count != 17 {
+		t.Fatalf("codegraph 业务子命令数=%d，want 17", count)
 	}
+	seen := map[string]bool{}
 	for _, command := range root.Commands() {
-		if command.Name() == "migrate" {
-			return
+		seen[command.Name()] = true
+	}
+	for _, name := range []string{"migrate", "flow", "tree"} {
+		if !seen[name] {
+			t.Fatalf("子命令列表缺 %s", name)
 		}
 	}
-	t.Fatal("子命令列表缺 migrate")
 }
 
 func TestGraphCLIQueryFlagsAndJSONWire(t *testing.T) {
@@ -1201,5 +1204,63 @@ func TestGraphContextActualCrossesJSONWire(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(noBest), []byte("降级")) {
 		t.Fatalf("best 缺席必须有可见降级告警: %s", noBest)
+	}
+}
+
+func TestGraphFlowDegradedWhenNoFlows(t *testing.T) {
+	out, err := runGraph(t, "flow", "e_run", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("flow 缺数据应成功返回 degraded: %v\n%s", err, out)
+	}
+	var r struct {
+		Degraded bool           `json:"degraded"`
+		Steps    []any          `json:"steps"`
+		Subject  map[string]any `json:"subject"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil {
+		t.Fatalf("非法 JSON: %s", out)
+	}
+	if !r.Degraded || len(r.Steps) != 0 {
+		t.Fatalf("夹具无 flows，不得冒充步骤: %+v %s", r, out)
+	}
+	if r.Subject["id"] != "e_run" {
+		t.Fatalf("subject: %v", r.Subject)
+	}
+}
+
+func TestGraphTreeDownFixture(t *testing.T) {
+	out, err := runGraph(t, "tree", "e_run", "--depth", "2", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r struct {
+		Root struct {
+			ID       string `json:"id"`
+			Children []struct {
+				ID       string `json:"id"`
+				Children []struct {
+					ID string `json:"id"`
+				} `json:"children"`
+			} `json:"children"`
+		} `json:"root"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil {
+		t.Fatalf("非法 JSON: %s", out)
+	}
+	if r.Root.ID != "e_run" || len(r.Root.Children) != 1 || r.Root.Children[0].ID != "n_runE" {
+		t.Fatalf("向下树: %s", out)
+	}
+	if len(r.Root.Children[0].Children) != 1 || r.Root.Children[0].Children[0].ID != "n_do" {
+		t.Fatalf("深度 2 应到 n_do: %s", out)
+	}
+}
+
+func TestGraphTreeFromRequiresThrough(t *testing.T) {
+	out, err := runGraph(t, "tree", "n_save", "--up", "--from", "e_run", "--repo", fixtureRepo)
+	if err == nil {
+		t.Fatalf("只给 --from 应失败: %s", out)
+	}
+	if !strings.Contains(err.Error(), "through") && !strings.Contains(out, "through") {
+		t.Fatalf("错误应提到 through: %v %s", err, out)
 	}
 }
