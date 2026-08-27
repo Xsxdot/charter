@@ -1363,6 +1363,92 @@ func TestGraphTreeDownFixture(t *testing.T) {
 	}
 }
 
+func TestGraphTreeDepthZeroMeansUnlimitedAtCLISeam(t *testing.T) {
+	out, err := runGraph(t, "tree", "e_run", "--depth", "0", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("tree --depth 0 应通过: %v\n%s", err, out)
+	}
+	var wire struct {
+		Root struct {
+			Children []struct {
+				ID       string `json:"id"`
+				Children []struct {
+					ID       string `json:"id"`
+					Children []struct {
+						ID string `json:"id"`
+					} `json:"children"`
+				} `json:"children"`
+			} `json:"children"`
+		} `json:"root"`
+	}
+	if err := json.Unmarshal([]byte(out), &wire); err != nil {
+		t.Fatalf("tree --depth 0 输出必须是 JSON: %v\n%s", err, out)
+	}
+	if len(wire.Root.Children) != 1 || wire.Root.Children[0].ID != "n_runE" ||
+		len(wire.Root.Children[0].Children) != 1 || wire.Root.Children[0].Children[0].ID != "n_do" ||
+		len(wire.Root.Children[0].Children[0].Children) != 1 || wire.Root.Children[0].Children[0].Children[0].ID != "n_save" {
+		t.Fatalf("CLI depth=0 必须翻译为不限深度: %s", out)
+	}
+}
+
+func TestGraphTreeThroughOnlyKeepsAncestorsAboveThrough(t *testing.T) {
+	out, err := runGraph(t, "tree", "n_save", "--up", "--through", "n_do", "--depth", "0", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("只给 --through 应通过: %v\n%s", err, out)
+	}
+	var wire struct {
+		Root struct {
+			Children []struct {
+				ID       string `json:"id"`
+				Children []struct {
+					ID       string `json:"id"`
+					Children []struct {
+						ID string `json:"id"`
+					} `json:"children"`
+				} `json:"children"`
+			} `json:"children"`
+		} `json:"root"`
+	}
+	if err := json.Unmarshal([]byte(out), &wire); err != nil {
+		t.Fatalf("through-only 输出必须是 JSON: %v\n%s", err, out)
+	}
+	if len(wire.Root.Children) != 1 || wire.Root.Children[0].ID != "n_do" ||
+		len(wire.Root.Children[0].Children) != 1 || wire.Root.Children[0].Children[0].ID != "n_runE" ||
+		len(wire.Root.Children[0].Children[0].Children) != 1 || wire.Root.Children[0].Children[0].Children[0].ID != "e_run" {
+		t.Fatalf("只给 through 必须保留 U 之上的祖先: %s", out)
+	}
+}
+
+func TestGraphTreeThroughAndFromKeepsValidCorridor(t *testing.T) {
+	out, err := runGraph(t, "tree", "n_save", "--up", "--through", "n_do", "--from", "n_runE", "--depth", "0", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatalf("有效 through+from 走廊应通过: %v\n%s", err, out)
+	}
+	var wire struct {
+		Root struct {
+			Children []struct {
+				ID       string `json:"id"`
+				Children []struct {
+					ID       string `json:"id"`
+					Children []struct {
+						ID string `json:"id"`
+					} `json:"children"`
+				} `json:"children"`
+			} `json:"children"`
+		} `json:"root"`
+	}
+	if err := json.Unmarshal([]byte(out), &wire); err != nil {
+		t.Fatalf("through+from 输出必须是 JSON: %v\n%s", err, out)
+	}
+	if len(wire.Root.Children) != 1 || wire.Root.Children[0].ID != "n_do" ||
+		len(wire.Root.Children[0].Children) != 1 || wire.Root.Children[0].Children[0].ID != "n_runE" {
+		t.Fatalf("有效 through+from 必须保留 n_runE→n_do→n_save: %s", out)
+	}
+	if len(wire.Root.Children[0].Children[0].Children) != 0 {
+		t.Fatalf("from 走廊不得继续保留 n_runE 之上的 entry: %s", out)
+	}
+}
+
 func TestGraphTreeFromRequiresThrough(t *testing.T) {
 	out, err := runGraph(t, "tree", "n_save", "--up", "--from", "e_run", "--repo", fixtureRepo)
 	if err == nil {

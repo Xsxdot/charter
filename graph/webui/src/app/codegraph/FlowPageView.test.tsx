@@ -15,8 +15,11 @@ const baseline: CgGraph = {
     a: { kind: 'func', container: 'methods', name: 'A.Run', file: 'a.go', line: 2 },
     b: { kind: 'func', container: 'methods', name: 'B.Run', file: 'b.go', line: 3 },
     c: { kind: 'func', container: 'methods', name: 'C.Run', file: 'c.go', line: 4 },
+    iface: { kind: 'func', container: 'methods', name: 'Store.Put', file: 'store.go', line: 5 },
+    impl: { kind: 'func', container: 'methods', name: 'Memory.Put', file: 'memory.go', line: 6 },
   },
-  edges: [['e', 'a'], ['a', 'b'], ['b', 'a'], ['c', 'a']],
+  edges: [['e', 'a'], ['a', 'b'], ['b', 'a'], ['c', 'a'], ['a', 'iface']],
+  implements: [['impl', 'iface']],
   flows: {
     a: { steps: [{ id: 'a-to-b', order: 1, kind: 'call', to: 'b', line: 2 }] },
     b: { steps: [{ id: 'b-to-a', order: 1, kind: 'call', to: 'a', line: 3 }] },
@@ -68,6 +71,22 @@ describe('C17 FlowPageView：方法栈、关系栏与返回', () => {
     expect(channel.getAttribute('data-highlighted')).toBe('true')
     expect(container.querySelector('[data-flow-depth]')?.textContent).toBe('1')
     expect(container.querySelector('[data-selected]')).toBeNull()
+  })
+
+  it('selectedInterfaceCallShowsTargetImplementations', () => {
+    const { container } = renderView({
+      baseline: {
+        ...baseline,
+        flows: {
+          ...baseline.flows,
+          a: { steps: [{ id: 'a-to-iface', order: 1, kind: 'call', to: 'iface', line: 2, iface: true }] },
+        },
+      },
+    })
+    fireEvent.click(container.querySelector('[data-step="a-to-iface"]')!)
+    expect(container.querySelector('[data-flow-page]')?.getAttribute('data-current-subject')).toBe('a')
+    expect(container.querySelector('[data-step="a-to-iface"]')?.getAttribute('data-selected')).toBe('true')
+    expect(container.querySelector('[data-implementation="impl"]')).toBeTruthy()
   })
 
   it('breadcrumbTruncatesAndRootBackPreservesOrigin', () => {

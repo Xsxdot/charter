@@ -46,6 +46,15 @@ export function FlowPageView({ baseline, initial, onBackToStructure }: FlowPageV
   const [highlightedChannel, setHighlightedChannel] = useState('')
   const current = stack[stack.length - 1]!
   const model = useMemo(() => deriveFlowPage({ baseline, entryNodeId: current.subjectId }), [baseline, current.subjectId])
+  const selectedStep = model.steps.find((step) => step.id === selectedStepId)
+  const selectedImplementations = useMemo(() => {
+    if (selectedStep?.kind !== 'call' || selectedStep.iface !== true || selectedStep.to === undefined) {
+      return model.implementations
+    }
+    // 接口调用的 to 才是动态分派的契约主语；实现清单必须从该接口 join，
+    // 不能沿用当前泳道主语的实现清单。
+    return deriveFlowPage({ baseline, entryNodeId: selectedStep.to }).implementations
+  }, [baseline, model.implementations, selectedStep])
   useEffect(() => {
     if (model.degraded) {
       console.warn('[codegraph] flow page degraded', { subjectId: model.subject.id, missing: model.missing })
@@ -136,7 +145,7 @@ export function FlowPageView({ baseline, initial, onBackToStructure }: FlowPageV
             </section>
             <section data-flow-implementations>
               <h3 className="mb-1 font-semibold">实现</h3>
-              {model.implementations.length === 0 ? emptyRelation('实现') : model.implementations.map((ref) => <RelationButton key={ref.id} ref={ref} attribute="data-implementation" onClick={() => pushSubject(ref.id, 'implementation')} />)}
+              {selectedImplementations.length === 0 ? emptyRelation('实现') : selectedImplementations.map((ref) => <RelationButton key={ref.id} ref={ref} attribute="data-implementation" onClick={() => pushSubject(ref.id, 'implementation')} />)}
             </section>
             <section data-flow-callers>
               <h3 className="mb-1 font-semibold">被谁调用</h3>

@@ -79,7 +79,7 @@ func LookupFlow(v *View, g *Graph, repoRoot, query, id string) (*FlowLookupResul
 	}
 	sortFlowRefs(out.Implementations)
 	out.Channels = flowChannels(v, radj, id)
-	slog.Default().Info("flow lookup completed", "id", id, "degraded", out.Degraded, "steps", len(out.Steps), "callers", len(out.Callers), "channels", len(out.Channels))
+	slog.Default().Info("flow lookup completed", "query", query, "id", id, "view", out.View, "degraded", out.Degraded, "steps", len(out.Steps), "callers", len(out.Callers), "implementations", len(out.Implementations), "channels", len(out.Channels))
 	return out, nil
 }
 

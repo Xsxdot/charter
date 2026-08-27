@@ -13,8 +13,10 @@ function wireWorld(withFlows: boolean): Record<string, unknown> {
       nodes: {
         e_cli: { kind: 'entry', container: 'entries', name: 'CLI', file: 'cmd.go', line: 1, channel: 'cli' },
         m_run: { kind: 'func', container: 'methods', name: 'Runner.Run', file: 'run.go', line: 0 },
+        m_impl: { kind: 'func', container: 'methods', name: 'Memory.Run', file: 'memory.go', line: 8 },
       },
       edges: [['e_cli', 'm_run']],
+      implements: [['m_impl', 'm_run']],
       ...(withFlows ? { flows: { m_run: { steps: [{ id: 'return', order: 1, kind: 'return', line: 0 }] } } } : {}),
     },
     views: {}, stale: [],
@@ -45,7 +47,22 @@ describe('C17 Response JSON → CgGraph → deriveFlowPage → DOM', () => {
     expect(container.querySelector('[data-flow-page]')?.getAttribute('data-current-subject')).toBe('m_run')
     expect(container.querySelector('[data-subject-line="0"]')).toBeTruthy()
     expect(container.querySelector('[data-step-line="0"]')).toBeTruthy()
+    expect(container.querySelector('[data-implementation="m_impl"]')).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('wireKeepsMissingLineDistinctFromZero', async () => {
+    const world = wireWorld(true)
+    const baseline = world.baseline as { nodes: Record<string, Record<string, unknown>> }
+    delete baseline.nodes.m_run.line
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(world))
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = render(<CodegraphPage />)
+    await waitFor(() => expect(container.querySelector('[data-two-axis-page]')).toBeTruthy())
+    openWireMethod(container)
+    await waitFor(() => expect(container.querySelector('[data-flow-page]')).toBeTruthy())
+    expect(container.querySelector('[data-subject-line]')).toBeNull()
+    expect(container.querySelector('[data-step-line="0"]')).toBeTruthy()
   })
 
   it('missingFlowsIsDegradedNotTransportFailure', async () => {

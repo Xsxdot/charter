@@ -609,8 +609,12 @@ var graphFlowCmd = &cobra.Command{
 			slog.Default().Error("graph flow lookup failed", "id", id, "error", err)
 			return err
 		}
-		slog.Default().Info("graph flow completed", "id", id, "degraded", out.Degraded, "steps", len(out.Steps))
-		return graphPrintJSON(cmd, out)
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph flow print failed", "query", args[0], "id", id, "view", out.View, "error", err)
+			return err
+		}
+		slog.Default().Info("graph flow completed", "command", cmd.Name(), "query", args[0], "id", id, "view", out.View, "degraded", out.Degraded, "steps", len(out.Steps), "callers", len(out.Callers), "implementations", len(out.Implementations), "channels", len(out.Channels), "result", "flow")
+		return nil
 	},
 }
 
@@ -654,8 +658,12 @@ var graphTreeCmd = &cobra.Command{
 			slog.Default().Error("graph tree failed", "id", id, "error", err)
 			return err
 		}
-		slog.Default().Info("graph tree completed", "id", id, "up", opts.Up)
-		return graphPrintJSON(cmd, out)
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph tree print failed", "query", args[0], "id", id, "view", out.View, "error", err)
+			return err
+		}
+		slog.Default().Info("graph tree completed", "command", cmd.Name(), "query", args[0], "id", id, "view", out.View, "up", opts.Up, "result", "tree")
+		return nil
 	},
 }
 
