@@ -3,6 +3,11 @@
 graph/webui/node_modules/
 graph/webui/*.tsbuildinfo
 
+# Claude Code 本地配置与工作树：包含机器路径和运行时产物，不进仓。
+.claude/launch.json
+.claude/settings.local.json
+.claude/worktrees/
+
 # Python 字节码缓存：py_compile / 导入时生成的本地产物。
 __pycache__/
 *.pyc

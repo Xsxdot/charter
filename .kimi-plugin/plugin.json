@@ -1,0 +1,22 @@
+{
+  "name": "charter",
+  "version": "0.1.0",
+  "description": "契约先行、分子系统并行的开发流程套件：每个流程节点一个 skill，同一正文既是本地 subagent 纪律，也是 handoff 工作流节点的纪律块。",
+  "author": {
+    "name": "xsx"
+  },
+  "keywords": [
+    "workflow",
+    "domain-partitioned",
+    "contract-first",
+    "discipline"
+  ],
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "using-charter"
+  },
+  "interface": {
+    "displayName": "Charter",
+    "shortDescription": "契约先行、分子系统并行的开发流程套件"
+  }
+}
