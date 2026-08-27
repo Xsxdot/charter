@@ -28,11 +28,11 @@ func TestCheckBestGapFindingsAreWarnsAndContainerScoped(t *testing.T) {
 	b := &Best{
 		Meta: BestMeta{Version: 1, Project: "test"},
 		Domains: map[string]BestDomain{
-			"d_a":      {Responsibility: "a", Type: "logic"},
-			"d_b":      {Responsibility: "b", Type: "logic"},
-			"d_empty":  {Responsibility: "empty", Type: "logic"},
-			"d_parent": {Responsibility: "parent", Type: "logic"},
-			"d_leaf":   {Responsibility: "leaf", Parent: "d_parent"},
+			"d_a":      {Type: "logic"},
+			"d_b":      {Type: "logic"},
+			"d_empty":  {Type: "logic"},
+			"d_parent": {Type: "logic"},
+			"d_leaf":   {Parent: "d_parent"},
 		},
 		Containers: map[string]string{
 			"c_good":     "d_b",
@@ -90,8 +90,8 @@ func TestCheckBestCoverageCountsLiveCrossDomainEdges(t *testing.T) {
 	b := &Best{
 		Meta: BestMeta{Version: 1, Project: "test"},
 		Domains: map[string]BestDomain{
-			"d_a": {Responsibility: "a", Type: "logic"},
-			"d_b": {Responsibility: "b", Type: "logic"},
+			"d_a": {Type: "logic"},
+			"d_b": {Type: "logic"},
 		},
 		Containers: map[string]string{"c_a": "d_a", "c_b": "d_b"},
 	}

@@ -8,12 +8,30 @@ export interface CgNode {
   kind: 'entry' | 'func' | 'model'; container: string; order?: number; name: string; file: string; line: number
   signature?: string; signatureOld?: string; params?: string[][]; returns?: string; summary?: string
   tests?: CgTestRef[]; fields?: string[][]; unscanned?: boolean; projScanned?: boolean
-  modelKind?: 'entity' | 'dto' | 'config'
+  modelKind?: 'entity' | 'dto' | 'config'; channel?: CgEntryChannel
 }
 export interface CgLifecycleRef { who: string; model: string; kind: 'creator' | 'writer'; field?: string }
 export interface CgDeclAnchor { from: string; to: string }
 export interface CgInvariant { text: string; testRef?: string }
 export interface CgTransition { from: string; to: string; anchor?: string }
+
+/** 流程步骤 kind 受控词表（C12 wire 契约，schema 草案 §2）。 */
+export type CgFlowStepKind = 'call' | 'branch' | 'loop' | 'return'
+
+/** 承重函数内一步可排序的调用/控制流；call 必有 to，branch/loop 必有 cond 与子步骤列。 */
+export interface CgFlowStep {
+  id: string; order: number; kind: CgFlowStepKind; line: number
+  to?: string; cond?: string
+  then?: string[]; else?: string[]; body?: string[]
+  /** 为真表示 to 是接口方法、本调用点是动态分派；实现清单从既有 implements join。 */
+  iface?: boolean
+}
+
+export interface CgFlow { steps: CgFlowStep[] }
+
+/** entry 节点的对外通道受控词表（C12 schema 草案 §8.5）。 */
+export type CgEntryChannel = 'cli' | 'http' | 'ws' | 'web'
+
 export interface CgDomainDecl {
   domain: string; responsibility: string; invariants?: CgInvariant[]
   lifecycle?: CgDeclAnchor; stateMachine?: CgTransition[]
@@ -24,6 +42,8 @@ export interface CgGraph {
   edges: [string, string][]; implements?: [string, string][]; projections?: [string, string, string][]; lifecycle?: CgLifecycleRef[]
   /** 包摘要段（目录 → 包 doc 摘要），v0.6.0 additive-only 键（B231）；消费归三期。 */
   packages?: Record<string, { summary: string }>
+  /** 流程段（承重函数 id → 步骤序列），C12 additive-only 键；缺席即行为轴降级形态。 */
+  flows?: Record<string, CgFlow>
 }
 export interface CgDiff {
   view: string; base?: string; summary?: string; containersAdded?: Record<string, CgContainer>
@@ -38,8 +58,9 @@ export interface CgStaleNode { id: string; file: string; line: number; reason: s
 // charter docs/contracts/2026-08-24-codegraph-viewer-compare-contract.md）。
 // 字段名与库 JSON tag 一致；三键可选，缺席即分级降级（契约 C2/C6）。
 
-/** CgBestDomain 理想树领域：parent 为空即顶层子系统。 */
-export interface CgBestDomain { label: string; responsibility: string; parent?: string; type?: string }
+/** CgBestDomain 理想树领域：parent 为空即顶层子系统。只留结构——
+ *  职责正文唯一所有者是 CgDomainDecl（codegraph/domains/<id>.json，C12 契约 §2.2-9）。 */
+export interface CgBestDomain { label: string; parent?: string; type?: string }
 
 /** CgBest 最优图：理想结构树 + 现状容器归属映射。 */
 export interface CgBest {

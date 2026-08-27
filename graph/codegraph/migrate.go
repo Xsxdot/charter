@@ -176,14 +176,9 @@ func migrateInitialBest(target *migrateV2Target, graph *Graph) *Best {
 		Containers: make(map[string]string),
 	}
 	for _, subsystem := range target.Subsystems {
-		responsibility := subsystem.Note
-		if responsibility == "" {
-			responsibility = "（迁移生成，待填写）"
-		}
 		best.Domains[subsystem.ID] = BestDomain{
-			Label:          subsystem.Name,
-			Responsibility: responsibility,
-			Type:           subsystem.Type,
+			Label: subsystem.Name,
+			Type:  subsystem.Type,
 		}
 	}
 
@@ -213,7 +208,6 @@ func migrateInitialBest(target *migrateV2Target, graph *Graph) *Best {
 func migrationNotes() []string {
 	return []string{
 		"初版是现状的机械翻译，不是最优结构。",
-		"Responsibility 是占位符，请逐项补写。",
 		"container-misplaced 初版下的预期条数为 0；这不代表没有 gap。",
 	}
 }

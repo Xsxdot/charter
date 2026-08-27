@@ -83,16 +83,16 @@
 20. **两条流程缺陷已立卡，见账本**：`C7`（charter 仓内真源的派发模板 `target` 为空，自举安装把可派发的 v4 覆盖成必然失败的 v5，而漂移检查报「一致」——检查的是一致不是可用）、`C8`（review 节点越轨：审阅轮改了 401 行代码并自审自批，`charter-review.md:38` 的只读纪律今天只有文字、无机械执法）。两条都是 2026-08-25 推 C1.5 时实测撞上的。来源：C1.5 推进实录。
 21. **查看器原型与源码分居两仓**：查看器源码在 charter（`graph/webui`），其形态基准原型在 handoff（`prototypes/codegraph-phase3/`）。charter 侧的 review 执行者结构上看不见原型，于是每一轮都重复报「原型副本缺失、逐屏对照未验证」——C1.10 为此白费了两轮。两条出路：把查看器原型移到 charter（形态基准跟着源码走），或把「跨仓原型对照」显式写成协调者职责并从 review 纪律里摘掉。来源：C1.10 review 第一、二轮实测。
 22. **入库 dist 被 tailwind 自扫，构建产物自我污染**：`graph/webui/dist/` 入库，而 tailwind v4 的自动源探测会扫仓库里的 dist 自身，于是每次构建都从上一版 bundle 里「捡」回一批源码根本没用到的类名（实测 `.hidden`/`.blur`/`.resize`），CSS 只增不减。修法是把 dist 排除出源探测。来源：C1.10 合并前 dist 可复现性核查（干净树重建 CSS 比入库版小 1264 B）。
-23. **领域页 `no-inbound-seams` 空态未写样式**：`BestDomainPage.tsx` 里它是本页唯一没有 className 的空态，在入缝为 0 的域（如 `d_web_cards`）上表现为一行裸文字夹在卡片之间。一行样式不值一个 implement 轮次，随下次动该文件时顺手补。来源：C1.10 真机复验。
-24. **`semantic.empty.noDeclaration` 在纯函数单测层没被锁死**：现有两支（期望 true / 期望 false）在「把判据从"本域无声明"改成"整个 decls 段缺席"」这一变异下读数恰好重合，故该标志在单测缝上没有牙。行为面已由页面端到端用例覆盖并经变异实证，缺的是一条「decls 存在但本域缺席」的纯函数 fixture。来源：C1.10 补断言轮的变异查因。
-25. **C1.10 的「K>=3 收桩」标记真机未目击**：收桩与列截断标记在代码里都有（`DomainCascadeDrawer.tsx`），单测 + 变异也锁住了，但真机采样的 10 条泳道恰好没触达 K>=3 节点——真实数据里这类节点有 33 个，而每域只显示前 5 条入缝，采样打不到。后续验收时若能挑到含 K>=3 的入缝，补看一眼。来源：C1.10 真机验收。
+23. ~~领域页 `no-inbound-seams` 空态未写样式~~ **已销账（2026-08-27，C12 实现轮）**：旧 `BestDomainPage` 已退役；新结构轴容器/领域空态有显式 className 与文案。来源：C1.10 真机复验。
+24. ~~`semantic.empty.noDeclaration` 在纯函数单测层没被锁死~~ **已销账（2026-08-27，C12 实现轮）**：新 `deriveScopePage` 输出 `noDeclaration`，并由 scopepage 纯函数夹具覆盖声明缺席与路径提示。来源：C1.10 补断言轮的变异查因。
+25. ~~C1.10 的「K>=3 收桩」标记真机未目击~~ **已销账（2026-08-27，C12 实现轮）**：旧级联抽屉与领域页载体已退役；新行为轴只保留明确的流程/机械链降级格位，旧标记不再适用。来源：C1.10 真机验收。
 26. **`codegraph` 其余子命令仍按现状词表**：C10 只把 `context` 转向最优树词表，`chain` / `who-calls` / `sym` / `entity` 等仍按现状词表工作。是否也该转向、以及转向后如何与现状视图共存，本期不做。来源：C10 spec 的 Out of Scope。
-27. **扫描侧产出真流程数据（刀 6）**：现有图 4728 条边全部是长度为 2 的无序数组，节点字段无任何控制流信息，`lifecycle` 只有 creator/writer——**图里不存在先后与分支**。原型 `order-flow-demo.html` 的 `LANES` 是手写假数据（`steps` 线性、无分支），其头部注释自陈是在等「刀 6 流程视图（函数级）」产出真数据。C12 的领域层流程图本期只做降级形态（泳道=入口、步骤=可达的下层域入口序列，界面显式标注「机械可达序列，非执行顺序」）；刀 6 落地后只换内容不改格位。用户另提的 switch/if 分支展示比原型还多一档，一并归此条。来源：C12 spec 的 Out of Scope-1。
+27. **扫描侧产出真流程数据（刀 6）**：现有图 4728 条边全部是长度为 2 的无序数组，节点字段无任何控制流信息，`lifecycle` 只有 creator/writer——**图里不存在先后与分支**。原型 `order-flow-demo.html` 的 `LANES` 是手写假数据（`steps` 线性、无分支），其头部注释自陈是在等「刀 6 流程视图（函数级）」产出真数据。C12 查看器已能消费 `flows` 命中形态，并在缺席时显式降级为入口机械可达序列（标注「无次序无分支」）；扫描侧仍待刀 6 产出真数据，届时只换内容不改格位。用户另提的 switch/if 分支展示比原型还多一档，一并归此条。来源：C12 spec 的 Out of Scope-1。
 28. **入口容器按服务的领域拆分**：扫描配方两条规则打架——`docs/codegraph-scan-recipe.md:314` 规定「入口分 CLI/HTTP/WS 三容器」，`:257` 又要求「入口容器挂到它服务的领域上」。一个 `c_http` 只能挂一个域，于是 72 个端点（`/api/tasks`→任务编排、`/api/projects`→项目与工作区、`/api/pty`→终端会话、`/api/machines`→跨机连接、`/api/discipline`→运行策略、`/api/update`→安装与换版，至少 6 个域）全部记在 `d_gateway` 名下。**改配方即可修，代码零改动**，但需全量重扫，故压在 B228 上。C12 的行为轴入口族从入口节点名分组算出，不依赖此项。来源：C12 spec 的 Out of Scope-2。
 29. **视觉对照闸门**：C12 卡诉求的「拦住『结构对、样式无』这一族」的重判据——对着基准原型做截图或 DOM 结构比对。C12 本期只补轻判据（新增交互控件必须有非空 className；禁止断言具体 class 值的原有纪律不变）。轻判据拦不住「形态没做 / 形态做反」那两层，重判据仍缺。来源：C12 spec 的 Out of Scope-5 与 C12 卡第一条更正。
 30. ~~第 21 条的紧迫度因 C12 上升~~ **已解（2026-08-25）**：用户裁决「原型跟着源码走」，charter 建站完成（`prototypes/base/` + `.gitignore`，只 base 入库），C12 的分支副本落 `prototypes/codegraph-two-axis/`。**第 21 条随之销账**——charter 侧的 review 执行者从此结构上看得见原型。残留一条归 handoff 卡：handoff 仓那几份 `prototypes/codegraph-*`（phase2/phase3/subsystem）是否清理或标注为历史。来源：C12 spec 载体裁决。
-31. **第 23、24、25 条可能随 C12 销账**：三条都指向 C1.10 的领域页与级联抽屉（`BestDomainPage.tsx` 的 `no-inbound-seams` 空态样式、`semantic.empty.noDeclaration` 的纯函数缝断言、`DomainCascadeDrawer.tsx` 的 K>=3 收桩真机目击）。C12 重设计中级联抽屉整体退场、领域页派生器退役，这三条的载体可能不复存在。C12 落地时逐条复核：载体没了即销账，载体还在则照办。来源：C12 spec 的退场裁决。
-32. **Go 工具链扫描器（机械层工具化）**：`go/ast` + `go/types` + `x/tools/go/ssa` 取代 AI 扫机械层，产出节点清单、精确调用边与 `flows` 控制流段；AI 只留语义层（领域归属、职责、不变式、状态机）。收益有实测账：AI 扫实测 `cmd/` 50 个文件里 9 个零节点、`handoff card` 族 24 个命令全漏而 validate 全绿、下游 gap 少报约 18%，且被迫长出两道人工完整性自检。迁移四步（并行对照轮 → 机械层切工具 → flows 按承重函数增量 → 状态机随卡补）见 `docs/specs/2026-08-25-codegraph-scan-schema-draft.md` §6。C12 只冻结 schema，不实现扫描器。来源：C12 spec 的 Out of Scope-1 与 schema 草案。
+31. ~~第 23、24、25 条可能随 C12 销账~~ **已销账（2026-08-27，C12 实现轮）**：原 `BestDomainPage`/`DomainCascadeDrawer`/旧领域派生器已整体退役；新结构轴模型覆盖无声明、无实体、无入缝及复用折叠的纯函数断言，旧载体不再存在。来源：C12 spec 的退场裁决。
+32. **Go 工具链扫描器（机械层工具化）**：`go/ast` + `go/types` + `x/tools/go/ssa` 取代 AI 扫机械层，产出节点清单、精确调用边与 `flows` 控制流段；AI 只留语义层（领域归属、职责、不变式、状态机）。收益有实测账：AI 扫实测 `cmd/` 50 个文件里 9 个零节点、`handoff card` 族 24 个命令全漏而 validate 全绿、下游 gap 少报约 18%，且被迫长出两道人工完整性自检。迁移四步（并行对照轮 → 机械层切工具 → flows 按承重函数增量 → 状态机随卡补）见 `docs/specs/2026-08-25-codegraph-scan-schema-draft.md` §6。C12 已落消费侧 `flows`/`channel`/受控 kind 的显式模型与校验；扫描器、真 flows 数据和状态机互证闸仍待后续卡。来源：C12 spec 的 Out of Scope-1 与 schema 草案。
 33. **状态机 ≙ 流程 ✎ 步骤的互证闸**：schema 草案给 `CgDomainDecl.stateMachine[]` 加 `anchor`（`file#Symbol`）后，可机械执法「每条迁移边的 anchor 必须出现在该域某条 flow 的 call 步骤里，且在 `lifecycle` 中是对应实体的 writer」。今天两边数据都缺（状态机 0 条、flows 不存在），闸上不了；数据齐备后开启。来源：C12 spec 实现决定「状态机」。
 34. **查看器布局判据落成可复核的实现约束**：C12 走查定下四条——方向靠箭头不靠位置；摆放以「能看见全部节点时空白最少、连线交叉最少」为准（连接权重贪心排序 + 货架装箱且目标长宽比贴合画布 + 相邻交换降交叉）；分层只用于节点本身就是聚合单位的层，孤立节点不进分层图；容器层按包聚成群组、边接到具体容器。这四条今天是原型里的实现，尚未成为可机械复核的约束——将来若查看器再漂，靠什么拦住它，与第 29 条（视觉对照重判据）同源，一并另议。来源：C12 原型走查（2026-08-25）。
 
@@ -118,3 +118,15 @@
     附带一条运维事实：linux-01 在 `~/.handoff/config.yaml` 里是 **relay-only**（无直连
     `addr`，只有 `wss://handoff.chanliu.net/relay`），所以配额一断就没有任何绕过路径；
     mac-02 与本机有直连 addr。派发选型时值得把这一点算进可用性。
+
+37. **C12 acceptance：结构轴真机路径未执行**（2026-08-27 integrate 交棒）：需在真实浏览器走通「根→领域→容器」，逐屏对照 `prototypes/base/README.md` 的两轴确认形态，并实测容器原子、箭头方向、空白与连线交叉；本仓无项目级图，机内测试不能替代此项。来源：C12 集成报告 §6-1。
+38. **C12 acceptance：行为轴真机路径未执行**（2026-08-27 integrate 交棒）：需走通「入口→流程图→接口→实现」，核对蛇形折列、紫框递归下钻、双线框接口与右栏全部实现；FlowChart/jsdom 绿只证明 DOM 形状，不证明真实布局。来源：C12 集成报告 §6-2。
+39. **C12 acceptance：浏览器交互与降级未执行**（2026-08-27 integrate 交棒）：需在真实宽度/DPR 下拖右栏分隔条，清 storage/隐私模式核对宽度降级，以及键盘/读屏 tab 与组织切换；来源：C12 集成报告 §6-3。
+40. **C12 acceptance：大图性能未执行**（2026-08-27 integrate 交棒）：需用 4000+ 边真实图测页面耗时、布局和交互流畅度，不以测试夹具或 bundle 体积推断；来源：C12 集成报告 §6-4。
+41. **C12 acceptance：handoff 宿主联调未执行**（2026-08-27 integrate 交棒）：需核对 iframe 的 `?project=` 传参、宿主 CodegraphFrame 单向传参和 best/decl 双写差异；宿主不在 charter，本轮只能登记交棒。来源：C12 集成报告 §6-5。
+42. **C12 acceptance：真 flows/162 入口与状态机互证未执行**（2026-08-27 integrate 交棒）：需在真 flows 到达后复现 162 个入口的归属三态、注册散度、入口族、接口实现 join 与 stateMachine.anchor 互证；缺席时只验显式降级。扫描器与数据面仍对应既有条目 27、32、33。来源：C12 集成报告 §6-6。
+43. **C12 handoff：best responsibility 正文搬运未执行**（2026-08-27 integrate 交棒）：best 已在 charter 删除职责字段，但旧正文逐条搬入 handoff `codegraph/domains/<id>.json`、并核对双写差异仍属 handoff 仓动作，不能由 viewer 侧 `decls` 类型通过替代。来源：C12 contract §6.2-1①、集成报告 §3 条 12/§6-5。
+44. **C12 handoff：扫描配方自洽修复未执行**（2026-08-27 integrate 交棒）：入口按 CLI/HTTP/WS 分容器与按服务领域挂载两规则仍需在 handoff 配方裁决并全量重扫；查看器按入口名分族不依赖该缺口。来源：C12 contract §6.2-1②、既有 roadmap 28。
+45. **C12 scanner：未知 kind/channel 与承重 flows 校验未执行**（2026-08-27 integrate 交棒）：viewer 已有八值 kind/四值 channel 的消费与显式未知态，扫描侧拒绝器、承重范围和真 flows 产出需在后续扫描卡开启；不得把 viewer 类型联合当作扫描校验完成。来源：C12 contract §2.1-5/§2.1-15、既有 roadmap 27/32。
+46. **C12 scanner：stateMachine.anchor 互证闸未执行**（2026-08-27 integrate 交棒）：需在真实 flows、lifecycle writer 与声明迁移边齐备后执行 `file#Symbol` 三方互证；当前仅有字段和 UI 显式未接入格位。来源：C12 contract §2.1-16、既有 roadmap 33。
+47. **C12 集成基线引用记录不一致**（2026-08-27 实测）：补充文本指定 `894d02281`，但远端基线分支可达链显示 `a41b3226`、`e3a91b7e`、`a3ca5409`，`git cat-file -t 894d02281` 原始报错为 `fatal: Not a valid object name 894d02281`。后续需由协调者补齐正确 commit 映射或修正卡面，不得静默换 hash。来源：C12 集成报告 §1。

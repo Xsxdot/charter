@@ -114,6 +114,31 @@ describe('codegraph JSON transport', () => {
     expect(empty.decls).toEqual({})
   })
 
+  it('C12.1 同刀后 best 领域不带职责键：缺失可辨；旧文件带键也 tolerated', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const base = {
+      baseline: {
+        meta: { project: 'demo', branch: 'main', commit: 'c', scannedAt: 'now', generator: 'test' },
+        containers: {}, nodes: {}, edges: [],
+      },
+      views: {}, stale: [],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...base,
+      best: { meta: { version: 1, project: 'demo' }, domains: { d_x: { label: 'X', type: 'logic' } }, containers: {} },
+    }))
+    const fresh = await fetchCodegraph('demo')
+    expect((fresh.best?.domains.d_x as unknown as { responsibility?: string }).responsibility).toBeUndefined()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...base,
+      best: { meta: { version: 1, project: 'demo' }, domains: { d_x: { label: 'X', responsibility: '旧正文', type: 'logic' } }, containers: {} },
+    }))
+    const legacy = await fetchCodegraph('demo')
+    expect((legacy.best?.domains.d_x as unknown as { responsibility?: string }).responsibility).toBe('旧正文')
+  })
+
   // 401 文案会原样显示在错误态里（CodegraphPage 照抄 error 原文）。这个包挂在
   // 任意宿主下，文案里出现某个宿主专用的兑换命令，等于让其它宿主的用户照着
   // 敲一条本机没有的命令。保留「会话失效、重新登录」这层可观察性即可。
