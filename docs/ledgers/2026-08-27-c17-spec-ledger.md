@@ -118,3 +118,20 @@ file:// 直开路径：`prototypes/codegraph-two-axis/pages/behav-flow.html`（�
 - 修正核对 `if test -e codegraph; then find ...; else printf ...; fi`：退出码 `0`；原始 stdout：`NO_PROJECT_CODEGRAPH_DIR`。据此确认当前仓根没有项目级 `codegraph` 目录，目标图/视图跳过。
 - 执行 `git add docs/superpowers/specs/c17-contract.md docs/ledgers/2026-08-27-c17-spec-ledger.md && git diff --cached --check && git diff --cached --stat`：退出码 `0`；暂存 2 个文件，共 303 行新增。
 - 执行 `git commit -m "docs(C17): freeze contract method flow and tree semantics"`：退出码 `0`；原始 stdout：`[cards/C17-charter 27df497] docs(C17): freeze contract method flow and tree semantics`，2 个文件、303 行新增。
+
+## 读数 7：C17 breakdown 节点核对（2026-08-28）
+
+- 执行 `git status --short --branch`：退出码 `0`；原始 stdout：`## cards/C17-charter-2`；起始工作树无未报告改动。
+- 执行 `git show -s --format='%H%n%P%n%s' cb830c12`：退出码 `0`；原始 stdout：`cb830c12d13a777b5272062e0fdfab6bf8fd4e06d3`、父提交 `04ed7a6a2ae95a7f3e8e3f3aa6590d43420362d3`、主题 `docs(C17): freeze contract method flow and tree semantics`。
+- 执行项目图存在性核对：`PROJECT_BEST_ABSENT`、`PROJECT_TARGET_ABSENT`；当前仓根没有项目级 `codegraph/best.json` / `codegraph/target.json`，子系统清单按冻结契约交棒人工降档，不读取测试夹具冒充项目最优图。
+- 执行 `git ls-files graph/webui`：成功，输出包含 `graph/webui/src/app/codegraph/flowpage.ts`、`FlowPageView.tsx`、`FlowChart.tsx`、`flowlayout.ts`、`TwoAxisPage.tsx`、`RightPanel.tsx` 及对应测试；据此确认 `graph/webui` 是当前 charter 工作树的跟踪代码。
+- 现状符号核对：`graph/webui/src/app/codegraph/flowpage.ts#deriveFlowPage` 仍输出 C12 旧入口归属/族字段；`FlowPageView.tsx#FlowPageView` 当前栈只支持上一张、不支持祖先面包屑；`FlowChart.tsx#FlowChart` 紫框仍由 `targetIsEntry` 驱动；`TwoAxisPage.tsx#TwoAxisPage` 与 `RightPanel.tsx#RightPanel` 仍把结构轴程序入口接到 `onOpenEntry`。这些是待实现轮的现状入口，不是冻结语义。
+- 现状 CLI 核对：`graph/cli/cli.go#graphFlowCmd`、`#graphTreeCmd`、`#graphSummaryCmd`、`#init` 已挂 `flow`/`tree`，`graph/codegraph/{flow.go,tree.go}` 已有对应库入口；契约明确要求实现轮按冻结 JSON/语义复核，不能把现状字段自动视为终态。
+- 边界澄清已回写 `docs/superpowers/specs/c17-contract.md` §6：`graph/webui` 旧缺席读数纠正为当前 charter 侧实现范围；不改冻结 wire/语义，不新增契约面；handoff 扫描配方仍交棒。
+- 本节点形态按用户注入的 L3 轻档执行：不扇出、不建子卡；交付一个跨 `graph/codegraph`（含 CLI）与 `graph/webui` 的单轮有界实现包，并单列 handoff 扫描配方交棒欠账。
+- 执行 `rg -n "点程序入口进流程图|程序入口.*流程图|flow <符号>|tree <符号>" skills/using-charter/SKILL.md`：退出码 `1`；原始 stdout：`NO_LOCAL_C16_OR_QUERY_MENU_HIT`。当前仓没有可圈定的 C16 旧术语/查询菜单本地命中，不能据此虚构文件范围。
+- 写入法定产物 `docs/superpowers/specs/c17-breakdown.md`：包含稿首待拍板清单（无待拍板）、S1/S2/S3 类型与资格核对、contract §2.1-1～§2.7-67 逐条核对、无子卡单轮实现包、依赖 DAG、三方缺陷族审查和真机清单；未写实现代码、未建子卡、未派卡。
+- 执行 `rg -n '^## |待拍板|未验证，需真机|子卡清单|DAG|TestGraphTreeFromRequiresThrough``|npm test -- \.\.\.' docs/superpowers/specs/c17-breakdown.md`：退出码 `0`；原始 stdout 命中九个章节、待拍板/真机清单、子卡/DAG 声明，未命中坏锚或 `npm test -- ...` 占位符。
+- 执行 `rg -c '^\| §2\.' docs/superpowers/specs/c17-breakdown.md`：退出码 `0`；原始 stdout：`67`。
+- 执行 `git diff --check`：退出码 `0`；原始 stdout 为空。
+- 执行 `git add docs/superpowers/specs/c17-breakdown.md docs/superpowers/specs/c17-contract.md docs/ledgers/2026-08-27-c17-spec-ledger.md && git diff --cached --check && git diff --cached --stat && git status --short --branch`：退出码 `0`；原始 stdout 为 `3 files changed, 291 insertions(+)`，暂存状态为当前分支 `cards/C17-charter-2` 上 1 个新增拆解稿与 2 个修改文档。
