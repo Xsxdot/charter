@@ -159,8 +159,10 @@ func BuildCallTree(v *View, opts TreeOptions) (*TreeResult, error) {
 func treeAdjacency(v *View) (adj, radj map[string][]string) {
 	adj, radj = map[string][]string{}, map[string][]string{}
 	for _, e := range v.Edges {
-		if e.Status == "deleted" ||
-			v.Nodes[e.From].Status == "deleted" || v.Nodes[e.To].Status == "deleted" {
+		from, fromOK := v.Nodes[e.From]
+		to, toOK := v.Nodes[e.To]
+		if e.Status == "deleted" || !fromOK || !toOK ||
+			from.Status == "deleted" || to.Status == "deleted" {
 			continue
 		}
 		adj[e.From] = append(adj[e.From], e.To)

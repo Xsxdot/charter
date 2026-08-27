@@ -13,7 +13,7 @@
 // 任何债读数/归属判据；不访问 DOM、零 console。视觉质量（走线好不好看、菱形
 // 摆放、中文折行）机内不可断言，归真机清单；本模块只保证确定性、翻转正确性、
 // 折列接续对的奇偶方向这些可机检性质。
-import type { FlowStepView } from './flowpage'
+import type { CgFlowStep } from '../../api/types'
 
 /** 步骤图形词表：kind 四值 → 四种图形，词表外 → unknown 显式降级节点。 */
 export type FlowShape = 'rect' | 'diamond' | 'loop' | 'terminal' | 'unknown'
@@ -79,7 +79,7 @@ export interface FlowLayout {
   width: number
 }
 
-function shapeOf(step: FlowStepView): FlowShape {
+function shapeOf(step: CgFlowStep): FlowShape {
   switch (step.kind) {
     case 'call': return 'rect'
     case 'branch': return 'diamond'
@@ -94,7 +94,7 @@ function shapeOf(step: FlowStepView): FlowShape {
  * wire 原序与模型已排序的 steps 序）。共享子干（同一步骤被两个父引用）只在首次
  * 出现处放置节点、其余补边不重复放盒；悬空引用（danglingChildRefs）不产生节点。
  */
-export function layoutFlowSteps(steps: FlowStepView[], width: number): FlowLayout {
+export function layoutFlowSteps(steps: readonly CgFlowStep[], width: number): FlowLayout {
   const byId = new Map(steps.map((s) => [s.id, s]))
 
   const referenced = new Set<string>()
@@ -108,7 +108,7 @@ export function layoutFlowSteps(steps: FlowStepView[], width: number): FlowLayou
   const childEdges: FlowChildEdge[] = []
   const guardAnchor = new Map<string, string>()
 
-  const place = (step: FlowStepView, depth: number, guard: boolean, anchorId: string): void => {
+  const place = (step: CgFlowStep, depth: number, guard: boolean, anchorId: string): void => {
     placed.add(step.id)
     const box: FlowNodeBox = {
       id: step.id,
@@ -153,7 +153,7 @@ export function layoutFlowSteps(steps: FlowStepView[], width: number): FlowLayou
     visit(ids, depth, fromId, label, allReturn)
   }
 
-  const expandArms = (step: FlowStepView, depth: number): void => {
+  const expandArms = (step: CgFlowStep, depth: number): void => {
     if (step.kind === 'branch') {
       arm(step.then, depth + 1, step.id, '是')
       arm(step.else, depth + 1, step.id, '否')

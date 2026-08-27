@@ -33,15 +33,17 @@ type FlowLookupResult struct {
 	Channels        []FlowRef  `json:"channels"`
 }
 
-// LookupFlow 取出 id 的流程图与邻域摘要。g 为 nil 或没有 flows 段时一律 degraded。
+// LookupFlow 取出已决议 id 的流程图与一跳邻域摘要。
+// 参数 v 是活跃视图，g 提供 baseline flows，repoRoot 仅用于既有 SymMatch 再锚定；
+// 返回值在缺少流程数据时成功降级（steps=[]），但缺少/删除 subject 时返回 error。
 func LookupFlow(v *View, g *Graph, repoRoot, query, id string) (*FlowLookupResult, error) {
-	slog.Default().Info("flow lookup started", "query", query, "id", id)
+	slog.Default().Info("flow lookup started", "query", query, "id", id, "view", viewName(v), "hasFlows", g != nil && g.Flows != nil)
 	if v == nil {
-		slog.Default().Error("flow lookup rejected nil view")
+		slog.Default().Error("flow lookup rejected nil view", "query", query, "id", id)
 		return nil, fmt.Errorf("flow 需要非空视图")
 	}
 	if _, ok := v.Nodes[id]; !ok || v.Nodes[id].Status == "deleted" {
-		slog.Default().Error("flow lookup subject missing", "id", id)
+		slog.Default().Error("flow lookup subject missing", "query", query, "id", id, "view", v.Name)
 		return nil, fmt.Errorf("符号 %s 不在视图中", id)
 	}
 	out := &FlowLookupResult{
@@ -67,18 +69,15 @@ func LookupFlow(v *View, g *Graph, repoRoot, query, id string) (*FlowLookupResul
 	for _, cid := range uniqueSorted(radj[id], v) {
 		out.Callers = append(out.Callers, flowRefOf(v, cid))
 	}
-	if g != nil {
-		for _, e := range g.Implements {
-			if e[1] == id {
-				if _, ok := v.Nodes[e[0]]; ok && v.Nodes[e[0]].Status != "deleted" {
-					out.Implementations = append(out.Implementations, flowRefOf(v, e[0]))
-				}
-			}
+	for _, e := range v.Implements {
+		if e.Status == "deleted" || e.To != id {
+			continue
 		}
-		sort.Slice(out.Implementations, func(i, j int) bool {
-			return out.Implementations[i].Name < out.Implementations[j].Name
-		})
+		if implementation, ok := v.Nodes[e.From]; ok && implementation.Status != "deleted" {
+			out.Implementations = append(out.Implementations, flowRefOf(v, e.From))
+		}
 	}
+	sortFlowRefs(out.Implementations)
 	out.Channels = flowChannels(v, radj, id)
 	slog.Default().Info("flow lookup completed", "id", id, "degraded", out.Degraded, "steps", len(out.Steps), "callers", len(out.Callers), "channels", len(out.Channels))
 	return out, nil
@@ -91,9 +90,10 @@ func flowRefOf(v *View, id string) FlowRef {
 
 func uniqueSorted(ids []string, v *View) []string {
 	seen := map[string]bool{}
-	var out []string
+	out := make([]string, 0, len(ids))
 	for _, id := range ids {
-		if seen[id] || v.Nodes[id].Status == "deleted" {
+		node, ok := v.Nodes[id]
+		if !ok || seen[id] || node.Status == "deleted" {
 			continue
 		}
 		seen[id] = true
@@ -108,10 +108,19 @@ func uniqueSorted(ids []string, v *View) []string {
 	return out
 }
 
+func sortFlowRefs(refs []FlowRef) {
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Name != refs[j].Name {
+			return refs[i].Name < refs[j].Name
+		}
+		return refs[i].ID < refs[j].ID
+	})
+}
+
 func flowChannels(v *View, radj map[string][]string, id string) []FlowRef {
 	seen := map[string]bool{id: true}
 	q := []string{id}
-	var ch []FlowRef
+	ch := make([]FlowRef, 0)
 	if v.Nodes[id].Kind == "entry" {
 		ch = append(ch, flowRefOf(v, id))
 	}
@@ -119,7 +128,8 @@ func flowChannels(v *View, radj map[string][]string, id string) []FlowRef {
 		cur := q[0]
 		q = q[1:]
 		for _, p := range radj[cur] {
-			if seen[p] || v.Nodes[p].Status == "deleted" {
+			node, ok := v.Nodes[p]
+			if !ok || seen[p] || node.Status == "deleted" {
 				continue
 			}
 			seen[p] = true
@@ -129,11 +139,13 @@ func flowChannels(v *View, radj map[string][]string, id string) []FlowRef {
 			q = append(q, p)
 		}
 	}
-	sort.Slice(ch, func(i, j int) bool {
-		if ch[i].Name != ch[j].Name {
-			return ch[i].Name < ch[j].Name
-		}
-		return ch[i].ID < ch[j].ID
-	})
+	sortFlowRefs(ch)
 	return ch
+}
+
+func viewName(v *View) string {
+	if v == nil {
+		return ""
+	}
+	return v.Name
 }

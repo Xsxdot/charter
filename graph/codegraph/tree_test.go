@@ -1,6 +1,7 @@
 package codegraph
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ func diamondView() *View {
 		return ViewNode{Node: Node{Kind: "func", Name: name, File: id + ".go", Line: 1, Container: "k"}}
 	}
 	return &View{
-		Name: "diamond",
+		Name:       "diamond",
 		Containers: map[string]Container{"k": {Label: "k", Kind: "组"}},
 		Nodes: map[string]ViewNode{
 			"a": n("a", "A"),
@@ -138,5 +139,105 @@ func TestCallTreeOnceCollapsesRepeat(t *testing.T) {
 	}
 	if got := countID(tree.Root, "d"); got != 1 {
 		t.Fatalf("--once 下 D 应只展开一次，得到 %d", got)
+	}
+}
+
+func TestCallTreeDownSortsByNameThenID(t *testing.T) {
+	v := diamondView()
+	v.Nodes["b"] = ViewNode{Node: Node{Kind: "func", Name: "same", Container: "k"}}
+	v.Nodes["c"] = ViewNode{Node: Node{Kind: "func", Name: "same", Container: "k"}}
+	v.Nodes["d"] = ViewNode{Node: Node{Kind: "func", Name: "alpha", Container: "k"}}
+	v.Edges = []ViewEdge{{From: "a", To: "c"}, {From: "a", To: "d"}, {From: "a", To: "b"}}
+	tree, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := childIDs(tree.Root); !reflect.DeepEqual(got, []string{"d", "b", "c"}) {
+		t.Fatalf("子节点必须按 name 后 id 排序: %v", got)
+	}
+}
+
+func TestCallTreeSelfLoopEntryDoesNotImplicitlyStop(t *testing.T) {
+	v := diamondView()
+	v.Nodes["entry"] = ViewNode{Node: Node{Kind: "entry", Name: "entry", Container: "k"}}
+	v.Edges = []ViewEdge{{From: "entry", To: "a"}, {From: "a", To: "entry"}}
+	tree, err := BuildCallTree(v, TreeOptions{Focus: "entry", Depth: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Root.Children) != 1 || tree.Root.Children[0].ID != "a" {
+		t.Fatalf("entry 必须按普通节点展开: %+v", tree.Root)
+	}
+	if len(tree.Root.Children[0].Children) != 1 || tree.Root.Children[0].Children[0].ID != "entry" {
+		t.Fatalf("entry 回路应保留一层路径: %+v", tree.Root.Children[0])
+	}
+}
+
+func TestCallTreeDepthAndTruncation(t *testing.T) {
+	v := diamondView()
+	rootOnly, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootOnly.Root.Children) != 0 || rootOnly.Root.Dist != 0 {
+		t.Fatalf("Depth=0 只能输出根: %+v", rootOnly.Root)
+	}
+	one, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one.Root.Children) != 2 || one.Root.Children[0].Dist != 1 || len(one.Root.Children[0].Children) != 0 {
+		t.Fatalf("Depth=1 只能输出一层: %+v", one.Root)
+	}
+	all, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countID(all.Root, "d") != 2 || all.Truncated != nil {
+		t.Fatalf("Depth<0 应不限且不静默截断: %+v", all)
+	}
+	limited, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: -1, MaxNodes: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limited.Truncated == nil || limited.Truncated.AtDepth == 1 || limited.Truncated.DroppedNodes < 1 || limited.Truncated.Reason != "max-tree-nodes" {
+		t.Fatalf("MaxNodes 截断必须显式带元数据: %+v", limited.Truncated)
+	}
+}
+
+func TestCallTreeCorridorValidation(t *testing.T) {
+	v := diamondView()
+	cases := []TreeOptions{
+		{Focus: "d", Up: true, Through: "b", From: "d"},
+		{Focus: "d", Through: "b"},
+		{Focus: "d", Up: true, Through: "c", From: "b"},
+		{Focus: "d", Up: true, Through: "b", From: "c"},
+	}
+	for i, opts := range cases {
+		if got, err := BuildCallTree(v, opts); err == nil || got != nil {
+			t.Fatalf("非法走廊 %d 必须返回 error/nil: tree=%+v err=%v", i, got, err)
+		}
+	}
+}
+
+func TestCallTreeFiltersDeletedEdgesAndNodes(t *testing.T) {
+	v := diamondView()
+	v.Nodes["dead"] = ViewNode{Node: Node{Kind: "func", Name: "dead", Container: "k"}, Status: "deleted"}
+	v.Edges = append(v.Edges,
+		ViewEdge{From: "a", To: "dead"},
+		ViewEdge{From: "ghost", To: "a"},
+		ViewEdge{From: "a", To: "ghost"},
+	)
+	for i := range v.Edges {
+		if v.Edges[i].From == "a" && v.Edges[i].To == "c" {
+			v.Edges[i].Status = "deleted"
+		}
+	}
+	tree, err := BuildCallTree(v, TreeOptions{Focus: "a", Depth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countID(tree.Root, "dead") != 0 || countID(tree.Root, "ghost") != 0 || countID(tree.Root, "c") != 0 {
+		t.Fatalf("删除节点/边与悬空端点不得进入树: %+v", tree.Root)
 	}
 }

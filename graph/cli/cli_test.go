@@ -1215,16 +1215,124 @@ func TestGraphFlowDegradedWhenNoFlows(t *testing.T) {
 	var r struct {
 		Degraded bool           `json:"degraded"`
 		Steps    []any          `json:"steps"`
+		Missing  string         `json:"missing"`
+		Callers  []any          `json:"callers"`
+		Impls    []any          `json:"implementations"`
+		Channels []any          `json:"channels"`
 		Subject  map[string]any `json:"subject"`
 	}
 	if json.Unmarshal([]byte(out), &r) != nil {
 		t.Fatalf("非法 JSON: %s", out)
 	}
-	if !r.Degraded || len(r.Steps) != 0 {
+	if !r.Degraded || len(r.Steps) != 0 || r.Missing == "" {
 		t.Fatalf("夹具无 flows，不得冒充步骤: %+v %s", r, out)
+	}
+	if r.Steps == nil || r.Callers == nil || r.Impls == nil || r.Channels == nil {
+		t.Fatalf("flow 成功降级仍须输出数组而非 null: %s", out)
 	}
 	if r.Subject["id"] != "e_run" {
 		t.Fatalf("subject: %v", r.Subject)
+	}
+	if bytes.Contains([]byte(out), []byte(`"steps":[{"id":"n_runE"`)) {
+		t.Fatalf("不得把 chain 节点伪装成 steps: %s", out)
+	}
+}
+
+func TestGraphFlowJSONContract(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	path := filepath.Join(repo, "codegraph", "baseline.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var graph codegraph.Graph
+	if err := json.Unmarshal(raw, &graph); err != nil {
+		t.Fatal(err)
+	}
+	graph.Flows = map[string]codegraph.Flow{"n_do": {Steps: []codegraph.FlowStep{
+		{ID: "branch", Order: 1, Kind: codegraph.FlowStepBranch, Line: 4, Cond: "ok", Then: []string{"call"}, Else: []string{"ret"}},
+		{ID: "call", Order: 2, Kind: codegraph.FlowStepCall, To: "n_save", Line: 5, Iface: true},
+		{ID: "ret", Order: 3, Kind: codegraph.FlowStepReturn, Line: 6},
+	}}}
+	updated, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, updated, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runGraphSeparate(t, "flow", "Server.Do", "--repo", repo)
+	if err != nil {
+		t.Fatalf("有流程数据的 flow 应通过: %v\nstdout=%s\nstderr=%s", err, stdout, stderr)
+	}
+	if len(stdout) == 0 || stdout[len(stdout)-1] != '\n' {
+		t.Fatalf("成功 JSON 必须以换行结束: %q", stdout)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &wire); err != nil {
+		t.Fatalf("flow stdout 必须是 JSON: %v\n%s", err, stdout)
+	}
+	for _, key := range []string{"view", "query", "subject", "degraded", "steps", "callers", "implementations", "channels"} {
+		if _, ok := wire[key]; !ok {
+			t.Fatalf("flow wire 缺字段 %q: %s", key, stdout)
+		}
+	}
+	var degraded bool
+	if err := json.Unmarshal(wire["degraded"], &degraded); err != nil || degraded {
+		t.Fatalf("命中 flows 时 degraded 必须为 false: %s", stdout)
+	}
+	if bytes.Contains([]byte(stderr), []byte(`"view"`)) {
+		t.Fatalf("成功 JSON 不得写 stderr: %s", stderr)
+	}
+}
+
+func TestGraphFlowRejectsUnknownAndAmbiguous(t *testing.T) {
+	unknown, err := runGraph(t, "flow", "missing-node", "--repo", fixtureRepo)
+	if err == nil || bytes.Contains([]byte(unknown), []byte("{\n")) {
+		t.Fatalf("未命中 flow 必须非零且不输出成功 JSON: err=%v out=%s", err, unknown)
+	}
+	for _, query := range []string{"n_do", "Server.Do", "Do"} {
+		out, err := runGraph(t, "flow", query, "--repo", fixtureRepo)
+		if err != nil {
+			t.Fatalf("%s 应按 id/name/尾段唯一决议: %v\n%s", query, err, out)
+		}
+		var wire struct {
+			Subject struct {
+				ID string `json:"id"`
+			} `json:"subject"`
+		}
+		if err := json.Unmarshal([]byte(out), &wire); err != nil || wire.Subject.ID != "n_do" {
+			t.Fatalf("%s 应解析到 n_do: err=%v wire=%s", query, err, out)
+		}
+	}
+	ambiguous, err := runGraph(t, "flow", "Task", "--repo", fixtureRepo)
+	if err == nil || !strings.Contains(err.Error(), "m_task") || !strings.Contains(err.Error(), "m_task_ts") {
+		t.Fatalf("同名 Task 必须列出两个候选并失败: err=%v out=%s", err, ambiguous)
+	}
+}
+
+func TestGraphSummaryIncludesFlowAndTree(t *testing.T) {
+	out, err := runGraph(t, "summary", "--repo", fixtureRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"flow", "tree", "chain", "who-calls"} {
+		if !strings.Contains(out, command) {
+			t.Fatalf("summary 菜单缺 %s: %s", command, out)
+		}
+	}
+}
+
+func TestGraphCommandTreeUsesBehaviorNotCount(t *testing.T) {
+	for _, use := range []string{"codegraph", "graph"} {
+		root := New(use)
+		for _, name := range []string{"flow", "tree", "chain", "who-calls"} {
+			command, _, err := root.Find([]string{name})
+			if err != nil || command == nil || command.Name() != name {
+				t.Fatalf("%s 挂载缺少行为命令 %s: command=%v err=%v", use, name, command, err)
+			}
+		}
 	}
 }
 
