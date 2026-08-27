@@ -26,9 +26,9 @@ function declarationsFor(sel: string): string {
 
 describe('index.css 全局样式', () => {
   // 为什么必须是确定高度：CodegraphPage 根元素是 flex h-full flex-col，h-full 的
-  // 百分比对着 auto 高度会解析失败，三栏塌成内容高，左右内容区各自的
-  // overflow 滚动失效，中图坐标与全景区高度也会按塌掉的高度计算。min-height
-  // 撑不起百分比链。
+  // 百分比对着 auto 高度会解析失败，内容区塌成内容高，TwoAxisPage/FlowPageView
+  // 各自的 overflow 滚动失效，画布的 clientHeight 测量也会算在塌掉的高度上。
+  // （旧三态组件名随 C12.6 退役从本注释移除）min-height 撑不起百分比链。
   it.each(['html', 'body', '#root'])('%s 有确定高度，撑起 h-full 百分比链', (sel) => {
     expect(declarationsFor(sel)).toMatch(/height:\s*100%/)
   })

@@ -128,7 +128,15 @@ func TestMigrateTargetV2ProducesDualArtifacts(t *testing.T) {
 		if domain.Parent != "" {
 			t.Fatalf("初版 best 不得伪造父子树: %s=%+v", id, domain)
 		}
-		_ = id
+	}
+	// 占位符写入与提示行已随 §2.2-8 同刀移除：迁移产物不得再携带
+	// responsibility 键——否则迁移命令本身就在制造第二份职责正文。
+	migratedRaw, err := os.ReadFile(filepath.Join(repo, "codegraph", "best.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(migratedRaw), "responsibility") {
+		t.Fatalf("迁移产物不得再写职责正文键: %s", migratedRaw)
 	}
 	if issues := ValidateBest(best); len(issues) != 0 {
 		t.Fatalf("迁移生成的 best 不应有 issue: %v", issues)

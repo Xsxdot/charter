@@ -1,10 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+// TwoAxisPage —— 结构轴页面壳：scope 状态、组织切换、右栏装配与覆盖层。
+//
+// 职责：持有 organization/scopeId/选中态/抽屉开合等页面状态；按 scope 调用缝 1
+// deriveScopePage（§2.3-18 地址冻结，递归同构——每一层共用同一个派生器）；装配
+// 直调债四档色映射与迁移清单两个获准的 join（R2 备案 / §2.5-39①）；渲染面包屑
+// 导航栈。双击领域即换 scope，「进领域」不是单独动作（spec 导航修订二）。
+// 边界：结构读数唯一数据源是 ScopePageModel——本组件不重算任何债读数/折叠判据；
+// 组织切换控件不进任何 tablist（§2.3-21，机械消解 BestDomainPage.tsx:172 缺陷）；
+// 本卡不发起网络请求，取数由 K6 装配层经 props 注入。行为轴入口只回调
+// onOpenEntry（K5/K6 接线）。
+import { useMemo, useState } from 'react'
+import type { JSX } from 'react'
 import type { CgBest, CgCheckReport, CgDomainDecls, CgGraph, CgTarget } from '../../api/types'
-import { deriveScopePage } from './scopepage'
-import { ScopeCanvas } from './ScopeCanvas'
+import type { MigrationItem } from './besttree'
+import { assembleDirections, migrationGroups } from './besttree'
+import { MigrationDrawer } from './MigrationDrawer'
 import { RightPanel } from './RightPanel'
-import { FlowPageView } from './FlowPageView'
-import { MigrationDrawer, type MigrationDrawerItem } from './MigrationDrawer'
+import type { EdgeStatusMap } from './ScopeCanvas'
+import { ScopeCanvas } from './ScopeCanvas'
+import { deriveScopePage, type ScopeOrganization } from './scopepage'
 
 export interface TwoAxisPageProps {
   baseline: CgGraph
@@ -12,42 +25,183 @@ export interface TwoAxisPageProps {
   decls?: CgDomainDecls
   target?: CgTarget
   report?: CgCheckReport
+  /** 点程序入口进入行为轴流程图（K5/K6 接线）；未接线时点击仍记录日志并给按钮反馈。 */
+  onOpenEntry?: (entryNodeId: string) => void
 }
 
-function migrationItems(best: CgBest | undefined, baseline: CgGraph, report?: CgCheckReport): MigrationDrawerItem[] {
-  if (!best) return []
-  return (report?.warns ?? []).filter((finding) => finding.kind === 'container-misplaced' && !!finding.from).map((finding) => {
-    const id = finding.from!
-    const expected = best.containers[id] ?? '未映射目标'
-    return { id, label: baseline.containers[id]?.label ?? id, current: baseline.containers[id]?.domain ?? '未归属', expected: best.domains[expected]?.label ?? expected }
-  }).sort((a, b) => a.id.localeCompare(b.id))
+interface TrailEntry {
+  id: string
+  label: string
 }
 
-export function TwoAxisPage({ baseline, best, decls, target, report }: TwoAxisPageProps) {
-  const [axis, setAxis] = useState<'structure' | 'behavior'>('structure')
-  const [organization, setOrganization] = useState<'best' | 'current'>(best ? 'best' : 'current')
+export function TwoAxisPage({ baseline, best, decls, target, report, onOpenEntry }: TwoAxisPageProps): JSX.Element {
+  const [organization, setOrganization] = useState<ScopeOrganization>(best ? 'best' : 'current')
   const [scopeId, setScopeId] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState('')
-  const [flowEntryId, setFlowEntryId] = useState('')
-  const [containerNotice, setContainerNotice] = useState('')
+  // 面包屑走导航栈：label 取下钻时那张卡的模型字段，不在装配层重算祖先链
+  const [trail, setTrail] = useState<TrailEntry[]>([])
+  const [selectedNodeId, setSelectedNodeId] = useState('')
   const [migrationOpen, setMigrationOpen] = useState(false)
-  const model = useMemo(() => deriveScopePage({ baseline, best, decls, target, organization, scopeId }), [baseline, best, decls, target, organization, scopeId])
-  const migrations = useMemo(() => migrationItems(best, baseline, report), [best, baseline, report])
+  const [migrationSelectedContainer, setMigrationSelectedContainer] = useState('')
 
-  useEffect(() => {
-    if (selectedId && !model.nodes.some((node) => node.id === selectedId)) setSelectedId('')
-    setContainerNotice('')
-  }, [model.nodes, selectedId])
+  const model = useMemo(
+    () => deriveScopePage({ baseline, best, decls, target, organization, scopeId }),
+    [baseline, best, decls, target, organization, scopeId],
+  )
 
-  const enterScope = (id: string) => {
-    if (!model.nodes.some((node) => node.id === id)) return
-    setScopeId(id); setSelectedId(''); setContainerNotice('')
+  // R2 备案的装配 join：直调债四档色的数据源在 report，不在 §2.3-19 冻结输入里；
+  // 复用既有 assembleDirections，键＝`${from}->${to}`，画布按边键直查。
+  const edgeStatus = useMemo<EdgeStatusMap>(() => {
+    const map: EdgeStatusMap = {}
+    for (const direction of assembleDirections(target, report)) {
+      map[direction.key] = direction.status
+    }
+    return map
+  }, [target, report])
+
+  // §2.5-39① 迁移抽屉的数据源：besttree.migrationGroups（report.warns 的
+  // container-misplaced），与旧 CodegraphPage 同一函数同一口径。
+  const migrations = useMemo(
+    () => (best ? migrationGroups(best, baseline, report) : []),
+    [best, baseline, report],
+  )
+
+  const openScope = (nextId: string, label: string) => {
+    setTrail((current) => [...current, { id: nextId, label }])
+    setScopeId(nextId)
+    setSelectedNodeId('')
   }
-  const enterSelectedContainer = () => setContainerNotice('容器没有下一层：它是结构轴的原子节点')
-  const switchOrganization = (next: 'best' | 'current') => {
-    if (next === 'best' && !best) return
-    setOrganization(next); setScopeId(null); setSelectedId(''); setFlowEntryId('')
+
+  const goRoot = () => {
+    console.info('[codegraph] scope enter', { from: scopeId, to: null, organization })
+    setScopeId(null)
+    setTrail([])
+    setSelectedNodeId('')
   }
 
-  return <section data-two-axis-page className="flex h-full min-h-0 flex-col"><header className="flex flex-wrap items-center gap-3 border-b px-4 py-3"><div><h1 className="text-base font-semibold">代码图 · 两轴查看器</h1><p className="text-xs text-muted-foreground">首层是子系统连线图；行为从程序入口进入</p></div><div data-axis-tabs role="tablist" aria-label="查看器轴"><button type="button" role="tab" aria-selected={axis === 'structure'} className="rounded px-2 py-1 text-xs" onClick={() => { setAxis('structure'); setFlowEntryId('') }}>结构轴</button><button type="button" role="tab" aria-selected={axis === 'behavior'} className="rounded px-2 py-1 text-xs" onClick={() => setAxis('behavior')}>行为轴</button></div><div data-organization-switch className="ml-auto flex items-center gap-1 rounded border p-1"><span className="px-1 text-[11px] text-muted-foreground">组织</span><button type="button" data-organization="best" className="rounded px-2 py-1 text-xs" disabled={!best} aria-pressed={organization === 'best'} onClick={() => switchOrganization('best')}>最优树</button><button type="button" data-organization="current" className="rounded px-2 py-1 text-xs" aria-pressed={organization === 'current'} onClick={() => switchOrganization('current')}>现状领域</button></div></header>{axis === 'behavior' && flowEntryId ? <FlowPageView baseline={baseline} entryNodeId={flowEntryId} onBack={() => { setFlowEntryId(''); setAxis('structure') }} onEnterEntry={setFlowEntryId} /> : <div className="flex min-h-0 flex-1">{axis === 'behavior' ? <section data-behavior-entry-picker className="min-w-0 flex-1 overflow-auto p-6"><h2 className="mb-3 text-base font-semibold">选择程序入口进入流程图</h2><p className="mb-4 text-sm text-muted-foreground">程序入口挂在右栏基本信息；从任意结构层点击入口即可进入行为轴。</p><div className="grid gap-2 sm:grid-cols-2">{Object.entries(baseline.nodes).filter(([, node]) => node.kind === 'entry').map(([id, node]) => <button type="button" key={id} className="rounded border p-3 text-left text-sm hover:bg-muted" onClick={() => setFlowEntryId(id)}>{node.name}<span className="mt-1 block text-xs text-muted-foreground">{node.channel ?? '通道未标注'}</span></button>)}</div></section> : <><ScopeCanvas model={model} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setContainerNotice('') }} onEnter={enterScope} onContainerNotice={enterSelectedContainer} migrationCount={migrations.length} migrationSlot={<MigrationDrawer items={migrations} open={migrationOpen} onToggle={() => setMigrationOpen((open) => !open)} onSelect={(id) => { setSelectedId(id); setMigrationOpen(false) }} />} /><RightPanel model={model} baseline={baseline} best={best} decls={decls} target={target} selectedId={selectedId} organization={organization} onOrganizationChange={switchOrganization} onSelectEntry={(id) => { setFlowEntryId(id); setAxis('behavior') }} /></>}</div>}{containerNotice ? <div data-container-notice role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded border bg-background px-3 py-2 text-xs shadow">{containerNotice}</div> : null}</section>
+  const goTrail = (index: number) => {
+    if (index < 0) {
+      goRoot()
+      return
+    }
+    const next = trail[index]
+    if (!next) return
+    console.info('[codegraph] scope enter', { from: scopeId, to: next.id, via: 'breadcrumb', organization })
+    setTrail(trail.slice(0, index + 1))
+    setScopeId(next.id)
+    setSelectedNodeId('')
+  }
+
+  const switchOrganization = (next: ScopeOrganization) => {
+    console.info('[codegraph] scope organization select', { organization: next, scopeId })
+    setOrganization(next)
+    setSelectedNodeId('')
+  }
+
+  const handleSelectMigration = (item: MigrationItem) => {
+    console.info('[codegraph] best migration select', {
+      containerId: item.containerId,
+      expectedDomainId: item.expectedDomainId,
+      currentDomainId: item.currentDomainId,
+    })
+    setMigrationSelectedContainer(item.containerId)
+  }
+
+  const handleOpenEntry = (entryNodeId: string) => {
+    console.info('[codegraph] entry open', { entryNodeId, scopeId, wired: onOpenEntry !== undefined })
+    onOpenEntry?.(entryNodeId)
+  }
+
+  return (
+    <section data-two-axis-page data-scope={scopeId ?? ''} data-organization={organization} className="relative flex min-h-0 flex-1 flex-col">
+      <div data-page-header className="flex items-center gap-2 border-b px-3 py-1.5 text-sm">
+        <nav data-breadcrumbs className="flex items-center gap-1.5">
+          <button
+            type="button"
+            data-breadcrumb="root"
+            onClick={goRoot}
+            className="rounded px-1.5 py-0.5 font-semibold hover:bg-muted"
+          >
+            子系统连线图
+          </button>
+          {trail.map((entry, index) => (
+            <span key={entry.id} className="inline-flex items-center gap-1.5">
+              <span className="text-muted-foreground">▸</span>
+              {index === trail.length - 1 ? (
+                <b className="px-0.5">{entry.label}</b>
+              ) : (
+                <button
+                  type="button"
+                  data-breadcrumb={entry.id}
+                  onClick={() => goTrail(index)}
+                  className="rounded px-1 py-0.5 text-muted-foreground hover:bg-muted hover:underline"
+                >
+                  {entry.label}
+                </button>
+              )}
+            </span>
+          ))}
+        </nav>
+        <div data-organization-switch className="ml-auto flex items-center gap-1">
+          {/* 组织切换是结构轴内部正交维度：绝不放进 role=tablist（§2.3-21） */}
+          <button
+            type="button"
+            data-organization="best"
+            disabled={!best}
+            onClick={() => switchOrganization('best')}
+            className={'rounded-full border px-2.5 py-0.5 text-xs hover:bg-muted '
+              + (organization === 'best' ? 'bg-muted font-semibold outline outline-1 outline-primary' : '')}
+          >
+            按最优树
+          </button>
+          <button
+            type="button"
+            data-organization="current"
+            onClick={() => switchOrganization('current')}
+            className={'rounded-full border px-2.5 py-0.5 text-xs hover:bg-muted '
+              + (organization === 'current' ? 'bg-muted font-semibold outline outline-1 outline-primary' : '')}
+          >
+            按现状领域
+          </button>
+        </div>
+        <div data-migration-area className="relative inline-flex items-center">
+          <MigrationDrawer
+            groups={migrations}
+            open={migrationOpen}
+            onToggle={() => {
+              console.info('[codegraph] migration drawer toggle', { open: !migrationOpen, count: migrations.reduce((sum, group) => sum + group.count, 0) })
+              setMigrationOpen((open) => !open)
+            }}
+            selectedContainer={migrationSelectedContainer}
+            onSelectContainer={handleSelectMigration}
+          />
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1">
+        <div data-scope-banners className="pointer-events-none absolute left-3 top-3 z-30 flex flex-col gap-1.5">
+          {model.empty.noDeclaration && scopeId !== null && (
+            <div data-scope-empty="declaration" role="status" className="pointer-events-auto rounded-full border bg-background px-3 py-1 text-xs shadow-sm">
+              本层职责未声明：写入 <code className="mx-0.5 font-mono">codegraph/domains/{scopeId}.json</code>
+            </div>
+          )}
+          {model.empty.noEntities && (
+            <div data-scope-empty="entities" role="status" className="pointer-events-auto rounded-full border bg-background px-3 py-1 text-xs shadow-sm">
+              本层没有实体（modelKind=entity 的扫描事实）；若应有请检查扫描覆盖
+            </div>
+          )}
+        </div>
+        <ScopeCanvas
+          model={model}
+          edgeStatus={edgeStatus}
+          selectedNodeId={selectedNodeId}
+          onSelect={(id) => {
+            console.info('[codegraph] scope card select', { scopeId, nodeId: id })
+            setSelectedNodeId(id)
+          }}
+          onOpenScope={openScope}
+        />
+        <RightPanel model={model} selectedNodeId={selectedNodeId} onOpenEntry={handleOpenEntry} />
+      </div>
+    </section>
+  )
 }

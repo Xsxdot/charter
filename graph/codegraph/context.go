@@ -108,7 +108,7 @@ func AssembleContext(v *View, g *Graph, best *Best, repoRoot, domainID string, o
 		slog.Default().Error("context declarations failed", "domain", domainID, "stage", "load-declarations", "error", err)
 		return nil, fmt.Errorf("context %s 加载声明失败: %w", domainID, err)
 	}
-	ctxDomain, member, err := contextVocabulary(v, best, domainID, decls)
+	ctxDomain, member, err := contextVocabulary(v, best, decls, domainID)
 	if err != nil {
 		return nil, err
 	}
@@ -328,12 +328,13 @@ func appendWarning(current, next string) string {
 
 // contextVocabulary 决议本次 context 用哪套领域词表，并产出成员判据。
 //
-// 参数：v 当前视图、best 最优图（nil = 降级）、domainID 领域 id。
+// 参数：v 当前视图、best 最优图（nil = 降级）、decls 已加载的声明表、domainID 领域 id。
 // 返回：领域元信息、成员判据 member（判断一个节点是否属于本域）、错误。
+// 领域摘要自 C12 起取 decls 正文，无声明为空。
 //
 // 两套词表只是两种 member 构造，遍历逻辑仍是同一份——这是本次改动刻意收敛的点：
 // 若让两套词表各写一遍包/接口/焦点的遍历，日后必然只改一边。
-func contextVocabulary(v *View, best *Best, domainID string, decls map[string]DomainDecl) (ContextDomain, func(Node) bool, error) {
+func contextVocabulary(v *View, best *Best, decls map[string]DomainDecl, domainID string) (ContextDomain, func(Node) bool, error) {
 	if best == nil {
 		domain, ok := v.Domains[domainID]
 		if !ok {
@@ -349,11 +350,7 @@ func contextVocabulary(v *View, best *Best, domainID string, decls map[string]Do
 			}
 		}
 		sort.Strings(children)
-		summary := ""
-		if decl, ok := decls[domainID]; ok {
-			summary = decl.Responsibility
-		}
-		out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Kind, Summary: summary,
+		out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Kind, Summary: domain.Summary,
 			Desc: domain.Desc, Parent: domain.Parent, Children: children}
 		return out, func(n Node) bool { return sub[nodeDomain(v, n)] }, nil
 	}
@@ -370,13 +367,16 @@ func contextVocabulary(v *View, best *Best, domainID string, decls map[string]Do
 		}
 	}
 	sort.Strings(children)
-	summary := ""
-	if decl, ok := decls[domainID]; ok {
-		summary = decl.Responsibility
-	}
 	out := ContextDomain{ID: domainID, Label: domain.Label, Kind: domain.Type,
-		Summary: summary, Parent: domain.Parent, Children: children}
+		Summary: declSummary(decls, domainID), Parent: domain.Parent, Children: children}
 	return out, func(n Node) bool { return sub[best.DomainOfContainer(n.Container)] }, nil
+}
+
+// declSummary 是 best 分支领域摘要的唯一取数点：职责正文唯一所有者是 decl
+// 文件（C12 契约 §2.2-9），无声明如实为空串（omitempty 后键省略），
+// 禁止任何来自 best 结构的兜底回填。
+func declSummary(decls map[string]DomainDecl, domainID string) string {
+	return decls[domainID].Responsibility
 }
 
 // unknownBestDomainError 产出**可行动**的未知领域报错。

@@ -42,17 +42,15 @@ func TestBestJSONGolden(t *testing.T) {
 	}
 }
 
-// TestBestDomainOmitempty 单独钉 parent/type 的 omitempty，以及 label 不带
-// omitempty；职责正文不属于 best wire。
-//
-// 分开成一支的理由：金样本里顶层领域必然带 type、必然不带 parent，
-// 单靠它无法区分「叶子领域省略了 parent」和「叶子领域根本没有 parent 字段」。
-func TestBestDomainOmitempty(t *testing.T) {
-	leaf, err := json.Marshal(BestDomain{Parent: "d_coordination", Label: ""})
+// TestBestDomainWireShape 钉死删除职责正文后的 BestDomain wire 形状
+// （C12 契约 §2.2-8/-9）：parent/type 保持 omitempty，label 保持必出；
+// 序列化输出不得再出现 responsibility 键——这是跨仓手写文件格式契约，
+// 键一旦回流，handoff 侧会把 best 再度读成双写正文。
+func TestBestDomainWireShape(t *testing.T) {
+	leaf, err := json.Marshal(BestDomain{Parent: "d_coordination"})
 	if err != nil {
 		t.Fatalf("编码叶子领域: %v", err)
 	}
-	// label 无 omitempty，空值也要出现；职责正文不应出现在 best。
 	if want := `{"label":"","parent":"d_coordination"}`; string(leaf) != want {
 		t.Fatalf("叶子领域编码漂移:\n got %s\nwant %s", leaf, want)
 	}
@@ -62,6 +60,10 @@ func TestBestDomainOmitempty(t *testing.T) {
 	}
 	if want := `{"label":"L","type":"boundary"}`; string(top) != want {
 		t.Fatalf("顶层领域编码漂移:\n got %s\nwant %s", top, want)
+	}
+	empty, err := json.Marshal(BestDomain{})
+	if err != nil || strings.Contains(string(empty), "responsibility") {
+		t.Fatalf("零值编码不得再含 responsibility 键: raw=%s err=%v", empty, err)
 	}
 }
 
@@ -97,6 +99,32 @@ func TestLoadBest(t *testing.T) {
 	}
 }
 
+// 旧版 best.json 含 responsibility 键（C12 刀前的手写文件）：encoding/json
+// 默认忽略未知键（c12-contract §3-1），加载必须成功且结构字段无损——
+// 存量项目在重扫前仍是旧形状，这是过渡期的真实输入而非脏数据。
+func TestLoadBestToleratesLegacyResponsibilityKey(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "codegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"meta":{"version":1,"project":"legacy"},` +
+		`"domains":{"d_x":{"label":"X","responsibility":"旧正文","type":"logic"}},` +
+		`"containers":{}}`
+	if err := os.WriteFile(filepath.Join(root, "codegraph", "best.json"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	best, err := LoadBest(root)
+	if err != nil || best == nil {
+		t.Fatalf("旧形状 best 必须照常加载: best=%#v err=%v", best, err)
+	}
+	if best.Domains["d_x"].Label != "X" || best.Domains["d_x"].Type != "logic" {
+		t.Fatalf("未知键不得影响结构解析: %+v", best.Domains["d_x"])
+	}
+	if issues := ValidateBest(best); len(issues) != 0 {
+		t.Fatalf("旧形状文件在新校验器下必须合法: %v", issues)
+	}
+}
+
 func TestValidateBestRules(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -123,6 +151,23 @@ func TestValidateBestRules(t *testing.T) {
 				t.Fatalf("ValidateBest 未报告 %q，issues=%v", tc.want, issues)
 			}
 		})
+	}
+}
+
+func TestValidateBestStopsEnforcingResponsibility(t *testing.T) {
+	b := &Best{
+		Meta:       BestMeta{Version: 1, Project: "test"},
+		Domains:    map[string]BestDomain{"d_leaf": {Label: "leaf", Parent: "d_ghost"}},
+		Containers: map[string]string{},
+	}
+	issues := ValidateBest(b)
+	if !containsIssue(issues, "d_ghost") {
+		t.Fatalf("无关规则不得被顺手弱化，issues=%v", issues)
+	}
+	for _, issue := range issues {
+		if strings.Contains(issue, "responsibility") {
+			t.Fatalf("职责正文已归 decl 所有，校验器不得再报 %q", issue)
+		}
 	}
 }
 

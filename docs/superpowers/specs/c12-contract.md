@@ -163,3 +163,25 @@
 
 - 2026-08-26：初版冻结。纠正三处上游陈述：①草案 §8.2「容器挂叶子没人写过没查过」相对 HEAD 过时（best.go :127-135 已执法）；②responsibility 消费点补齐 besttree 六处；③spec 引用的 domainpage 行号漂移（:283/:16 → 实际 :281/:17）。
 - 2026-08-26（breakdown 节点核对，冻结条目文字不改）：第 8 条同刀清单补遗——删 `BestDomain.Responsibility` 编译强制另触及 `context.go#contextVocabulary`（:370 Summary 取该字段）与 `migrate.go`（迁移写入占位符 + migrationNotes 提示行）及 `check_test.go`/`gap_test.go`/`context_test.go` 带字段字面量，随同一提交处置；channel 分组对存量全缺数据的「通道未标注」降级桶是第 7 条降级语义的应用实例；scopepage/flowpage 导出面属 webui 应用包内部 API，不属宿主契约面。详见 c12-breakdown.md §二【释 1-3】。
+- 2026-08-26（**协调者修订 R1**，C12.2 plan 轮查出）：**§2.3-22 的「触达域散度」归属更正为缝 2（K3），不属缝 1。**
+  依据是本文件与上游的三处自相矛盾——§2.3-22 把它列进缝 1 的四类债读数，而 §4.3 的测试最低集
+  把它列在缝 2 那一行，spec「测试决定」也把它与入口归属/注册散度/入口族分组并列在缝 2 组。
+  三处对一处，且定义本身（**入口族**触达的领域数）依赖 §2.4-34 的入口族分组，那是缝 2 的数据；
+  把它放在缝 1 等于让结构轴派生器去做行为轴的入口族聚合。
+  **性质是本文件内部的笔误，不是语义变更**：四类债读数仍是四类，只是第四类的落点从缝 1 改到缝 2，
+  缝 1 剩三类（兜底桶占比、复用度、真假共享内核）。K3 plan 定稿前更正，返工成本为零。
+- 2026-08-26（**协调者备案 R2**，同轮）：§2.3-19 冻结的 `ScopePageInput` 六字段**不含 `report`**，
+  而「直调债四档色」的数据源在 `report`。处置是**守住冻结的输入字段**：缝 1 不引入 `report`，
+  四档色的 join 移交 K4 装配层（复用既有 `assembleDirections`）。此条不改任何冻结文字，
+  只记录一次「宁可移交也不改冻结输入」的处置先例。
+- 2026-08-26（**协调者修订 R3**，C12.4 plan §1.5 的模型缺口登记触发）：**`ScopePageModel`
+  增加 `invariants` 输出字段，把 `decls[domainId].invariants` 投影出来；`stateMachine`
+  维持未接线指针不变。**
+  理由：handoff 仓 codegraph/domains/ 下 2 个 decl 文件共 7 条真不变式，
+  BestDomainPage.tsx:49-51 今天正在渲染它们，而该文件在 K6 退役集里——不接线就是功能回归；
+  stateMachine 全项目 0 条，指针文案行为等价，无回归。
+  边界：纯输出侧扩展，§2.3-19 冻结的输入字段与缝地址 `deriveScopePage` 一个不动
+  （`decls` 本来就是缝 1 的输入）。
+  形态约束：三态 present/unwritten/no-decl 互斥；text 与 testRef 都透传，
+  testRef 按键缺席语义；容器卡恒 null。
+

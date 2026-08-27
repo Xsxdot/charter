@@ -30,6 +30,7 @@ type BestMeta struct {
 // Parent 为空即顶层领域，**顶层领域就是子系统**——本图不设第二套分组概念，
 // target.json 的 contracts[].from/to 引用的正是这些顶层领域 id（契约 §2-1）。
 // Type 只对顶层领域有意义，取值 logic / boundary。
+// 职责正文不在本结构：唯一所有者是 codegraph/domains/<id>.json 的 DomainDecl（C12 契约 §2.2-9），best 只留结构。
 type BestDomain struct {
 	Label  string `json:"label"`
 	Parent string `json:"parent,omitempty"`
