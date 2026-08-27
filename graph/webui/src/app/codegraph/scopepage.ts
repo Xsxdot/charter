@@ -5,7 +5,7 @@
 // （best/current 只是输入维度，§2.3-19）、兜底桶占比/复用度/真假共享内核三类债
 // 读数（§2.3-22）、噪声折叠判据（§2.3-23，替换 domainpage 的 slice(0, quota) 坏取法）、
 // 大容器如实报（§2.3-24）、三类空态（§2.3-25）、容器职责唯一合法推导（§2.3-26）、
-// 孤立子系统与 projections 第二类边（§2.3-27）。
+// 孤立子系统（call deg 0）与 projections 第二类边（§2.3-27）。
 //
 // 边界：纯函数层——不请求网络、不访问 DOM、零 console；诊断一律走模型显式字段
 // （debt.unknownKind、kindClass='unknown'、ratio=null、organizationAvailable=false、
@@ -21,6 +21,7 @@ import {
   containerFacts,
   topLevelSubsystemIds,
 } from './besttree'
+import type { RegistrationDispersion } from './flowpage'
 
 /** 容器 kind 八值词表（C12 契约 §2.2-14，值随扫描侧冻结）。 */
 export const CONTAINER_KINDS = [
@@ -105,9 +106,7 @@ export interface ScopeNode {
   kind: 'domain' | 'container'
   label: string
   type: string
-  /** 圈外引用卡（ext:<顶层子系统id>，沿 besttree ext: 约定），保留横跳可见性。 */
-  external: boolean
-  /** 当前视图内无调用入边（call 边口径；projection 不算——第二类边不是调用边）。 */
+  /** 当前视图内 call 无入边且无出边（projection 不算——第二类边不是调用边）。 */
   isolated: boolean
   childCount: number
   containerCount: number
@@ -120,6 +119,8 @@ export interface ScopeNode {
   ports: ScopePort[]
   entries: ScopeEntryRef[]
   responsibility: ResponsibilityState
+  /** 入口注册散度（§2.4-33）：仅领域卡携带子树聚合，容器卡恒 null。 */
+  entryDispersion: RegistrationDispersion | null
   /** 领域声明的不变式投影（C12.4 R3）：仅领域卡携带；容器卡恒 null。 */
   invariants: ScopeInvariants | null
   debt: ScopeDebtReadout | null
@@ -156,7 +157,17 @@ export interface ScopeEdge {
   projectionType?: 'twin' | 'typed'
 }
 
-/** 缝 1 输出：每一层同一形状（§2.3-20 递归同构），顶层七键恒定。 */
+/** 调出到本层之外的顶层领域聚合（ext 卡退役后的图例数据源）。 */
+export interface ScopeExternalOut {
+  /** 邻居顶层领域 id，不带 ext: 前缀。 */
+  neighborId: string
+  /** 组织视图解析的展示名。 */
+  label: string
+  /** 本层到邻居的 call 边聚合权重。 */
+  weight: number
+}
+
+/** 缝 1 输出：每一层同一形状（§2.3-20 递归同构），顶层八键恒定。 */
 export interface ScopePageModel {
   scopeId: string | null
   organization: ScopeOrganization
@@ -166,6 +177,8 @@ export interface ScopePageModel {
   edges: ScopeEdge[]
   /** 符号粒度对外面；根层恒空数组（系统外无调用方）。 */
   inboundSeams: InboundSeam[]
+  /** 调出到本层之外；按邻居顶层领域 id 升序，根层恒空数组。 */
+  externalOut: ScopeExternalOut[]
   empty: {
     noDeclaration: boolean
     noEntities: boolean
@@ -243,6 +256,10 @@ function packageDir(file: string): string {
   return slash < 0 ? '' : file.slice(0, slash)
 }
 
+function bareTypeName(label: string): string {
+  return label.split('.').pop() ?? label
+}
+
 function blankModel(scopeId: string | null, organization: ScopeOrganization, organizationAvailable: boolean): ScopePageModel {
   return {
     scopeId,
@@ -251,6 +268,7 @@ function blankModel(scopeId: string | null, organization: ScopeOrganization, org
     nodes: [],
     edges: [],
     inboundSeams: [],
+    externalOut: [],
     empty: { noDeclaration: false, noEntities: false, noInboundSeams: false },
   }
 }
@@ -364,8 +382,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   const visibleContainerSet = new Set(mode === 'containers' ? scopeContainerIds : [])
 
   // 边端点投影：域内折到可见卡（domains 模式=scope 直接子领域；containers 模式=
-  // 所在容器），域外折成 ext:<顶层子系统> 引用卡（保留横跳可见性，besttree ext: 同一约定）。
-  const extDomains = new Set<string>()
+  // 所在容器），域外保留 ext:<顶层子系统> 作为内部聚合键；ext 不再生成节点。
   const projectEndpoint = (nodeId: string): string | null => {
     const leaf = nodeLeafDomain.get(nodeId) ?? ''
     if (!leaf) return null
@@ -386,15 +403,32 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
     }
     const top = nodeTop.get(nodeId) ?? ''
     if (!top) return null
-    extDomains.add(top)
     return `ext:${top}`
   }
 
   const callAgg = new Map<string, { from: string; to: string; weight: number }>()
+  const externalCallAgg = new Map<string, { from: string; to: string; weight: number }>()
+  const externalOutAgg = new Map<string, ScopeExternalOut>()
   for (const [from, to] of baseline.edges) {
     const a = projectEndpoint(from)
     const b = projectEndpoint(to)
     if (!a || !b || a === b) continue
+    if (a.startsWith('ext:') || b.startsWith('ext:')) {
+      const externalKey = `${a}->${b}`
+      const external = externalCallAgg.get(externalKey) ?? { from: a, to: b, weight: 0 }
+      external.weight += 1
+      externalCallAgg.set(externalKey, external)
+      if (scopeId !== null && !a.startsWith('ext:') && b.startsWith('ext:')) {
+        const neighborId = b.slice(4)
+        const previous = externalOutAgg.get(neighborId)
+        externalOutAgg.set(neighborId, {
+          neighborId,
+          label: view.labelOf(neighborId),
+          weight: (previous?.weight ?? 0) + 1,
+        })
+      }
+      continue
+    }
     const key = `${a}->${b}`
     const agg = callAgg.get(key) ?? { from: a, to: b, weight: 0 }
     agg.weight += 1
@@ -417,20 +451,16 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   }
 
   // —— 卡片构建 ——
-  interface CardSeed { id: string; kind: 'domain' | 'container'; domainId: string; external: boolean }
+  interface CardSeed { id: string; kind: 'domain' | 'container'; domainId: string }
   const seeds: CardSeed[] = []
   if (mode === 'domains') {
     for (const id of childDomainIds) {
-      seeds.push({ id, kind: 'domain', domainId: id, external: false })
+      seeds.push({ id, kind: 'domain', domainId: id })
     }
   } else {
     for (const cid of scopeContainerIds) {
-      seeds.push({ id: cid, kind: 'container', domainId: view.containerDomain(cid), external: false })
+      seeds.push({ id: cid, kind: 'container', domainId: view.containerDomain(cid) })
     }
-  }
-  for (const top of [...extDomains].sort()) {
-    const extId = `ext:${top}`
-    seeds.push({ id: extId, kind: 'domain', domainId: top, external: true })
   }
 
   const subtreeContainersOf = (domainId: string): string[] =>
@@ -477,6 +507,17 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
     return entries.filter((entry) => cset.has(nodesById[entry.id]?.container ?? ''))
   }
 
+  const dispersionOver = (domainId: string, cids: string[]): RegistrationDispersion => {
+    const domainEntries = entriesOver(cids)
+    const files = new Set(domainEntries.map((entry) => nodesById[entry.id]?.file).filter(Boolean))
+    return {
+      domainId,
+      entries: domainEntries.length,
+      files: files.size,
+      concentrated: files.size === 1 && domainEntries.length > 3,
+    }
+  }
+
   const domainResponsibility = (domainId: string): ResponsibilityState => {
     // 与 besttree.declaredResponsibilityOf 同一口径：空串正文视同未声明，禁兜底回退。
     const text = input.decls?.[domainId]?.responsibility
@@ -503,6 +544,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   // 容器职责唯一合法推导（§2.3-26）：只有「类型方法」容器可推导——同名**类型**节点
   // （kind='model'）的 doc 摘要，且候选节点的文件目录必须落在容器自身成员的目录集合内；
   // 全局取首个同名会张冠李戴（spec 走查实录：opencode.Adapter 拿到过 claudecode 的注释）。
+  // 同名 = label 最后一个 `.` 之后的类型段；真数据 label 带包前缀时，裸名匹配恒不匹配。
   // 其余 kind 没有职责主体 → no-subject，不硬凑；类型方法匹配失败 → undeclared。
   const containerResponsibility = (containerId: string): ResponsibilityState => {
     const def = containersDef[containerId]
@@ -510,7 +552,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
     const dirs = new Set((nodesByContainer.get(containerId) ?? []).map((nid) => packageDir(nodesById[nid]?.file ?? '')))
     let matched: { id: string; text: string } | null = null
     for (const [nid, node] of Object.entries(nodesById)) {
-      if (node.kind !== 'model' || node.name !== def.label) continue
+      if (node.kind !== 'model' || node.name !== bareTypeName(def.label)) continue
       if (!dirs.has(packageDir(node.file))) continue
       if (!matched || nid < matched.id) matched = { id: nid, text: node.summary ?? '' }
     }
@@ -528,7 +570,6 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
       kind: seed.kind,
       label: seed.kind === 'domain' ? view.labelOf(seed.domainId) : containersDef[seed.id]?.label ?? seed.id,
       type: seed.kind === 'domain' ? view.typeOf(seed.domainId) : containersDef[seed.id]?.kind ?? '',
-      external: seed.external,
       isolated: false,
       childCount: seed.kind === 'domain' ? view.childrenOf(seed.domainId).length : 0,
       containerCount: cids.length,
@@ -539,6 +580,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
       ports: [],
       entries: entriesOver(cids),
       responsibility,
+      entryDispersion: seed.kind === 'domain' ? dispersionOver(seed.domainId, cids) : null,
       invariants: seed.kind === 'domain' ? domainInvariants(seed.domainId) : null,
       debt: seed.kind === 'domain' ? debtOver(cids) : null,
     }
@@ -558,8 +600,9 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   }
   edges.sort((a, b) => a.key.localeCompare(b.key))
 
-  // 孤立与端口：孤立只认 call 入边（projection 不抵孤立）；端口含两类边——画布要画全部连线。
-  const inboundCallWeight = new Map<string, number>()
+  // 孤立与端口：孤立只认 call 入/出边（projection 不抵孤立）；端口含两类边——画布要画全部连线。
+  const inboundCallWeight = new Set<string>()
+  const outboundCallWeight = new Set<string>()
   const portAcc = new Map<string, Map<string, ScopePort>>()
   const addPort = (cardId: string, neighborId: string, direction: 'in' | 'out', weight: number) => {
     const ports = portAcc.get(cardId) ?? new Map<string, ScopePort>()
@@ -570,13 +613,18 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
   }
   for (const edge of edges) {
     if (edge.kind === 'call') {
-      inboundCallWeight.set(edge.to, (inboundCallWeight.get(edge.to) ?? 0) + edge.weight)
+      inboundCallWeight.add(edge.to)
+      outboundCallWeight.add(edge.from)
     }
     addPort(edge.from, edge.to, 'out', edge.weight)
     addPort(edge.to, edge.from, 'in', edge.weight)
   }
+  for (const edge of externalCallAgg.values()) {
+    addPort(edge.from, edge.to, 'out', edge.weight)
+    addPort(edge.to, edge.from, 'in', edge.weight)
+  }
   for (const node of nodes) {
-    node.isolated = (inboundCallWeight.get(node.id) ?? 0) === 0
+    node.isolated = !inboundCallWeight.has(node.id) && !outboundCallWeight.has(node.id)
     node.ports = [...(portAcc.get(node.id)?.values() ?? [])]
       .sort((a, b) => a.neighborId.localeCompare(b.neighborId) || a.direction.localeCompare(b.direction))
   }
@@ -630,6 +678,7 @@ export function deriveScopePage(input: ScopePageInput): ScopePageModel {
     nodes,
     edges,
     inboundSeams,
+    externalOut: [...externalOutAgg.values()].sort((a, b) => a.neighborId.localeCompare(b.neighborId)),
     empty: {
       // 根层没有单一职责格位，noDeclaration 恒 false；领域层的声明格位缺席必须显形。
       noDeclaration: scopeId !== null && !input.decls?.[scopeId]?.responsibility,

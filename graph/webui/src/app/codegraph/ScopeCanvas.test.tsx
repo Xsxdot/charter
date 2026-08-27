@@ -16,7 +16,6 @@ function node(id: string, overrides: Partial<ScopePageModel['nodes'][number]> = 
     kind: 'domain',
     label: id,
     type: 'logic',
-    external: false,
     isolated: false,
     childCount: 0,
     containerCount: 0,
@@ -27,6 +26,7 @@ function node(id: string, overrides: Partial<ScopePageModel['nodes'][number]> = 
     ports: [],
     entries: [],
     responsibility: { state: 'undeclared' },
+    entryDispersion: null,
     invariants: { state: 'no-decl' },
     debt: null,
     ...overrides,
@@ -39,10 +39,9 @@ function modelFixture(overrides: Partial<ScopePageModel> = {}): ScopePageModel {
     organization: 'best',
     organizationAvailable: true,
     nodes: [
-      node('topA', { label: '甲系统', childCount: 2 }),
+      node('topA', { label: '甲系统', childCount: 2, entryDispersion: { domainId: 'topA', entries: 4, files: 1, concentrated: true } }),
       node('leafB', { label: '乙叶子' }),
       node('isoC', { label: '孤岛丙', isolated: true }),
-      node('ext:d_far', { label: '远域', external: true }),
       node('c_big', {
         kind: 'container', label: '杂活', type: '函数组', symbolCount: 45, fileCount: 5, dir: 'b/u', oversized: true, invariants: null,
       }),
@@ -52,6 +51,7 @@ function modelFixture(overrides: Partial<ScopePageModel> = {}): ScopePageModel {
       { key: 'isoC<->topA:twin', from: 'isoC', to: 'topA', weight: 1, kind: 'projection', projectionType: 'twin' },
     ],
     inboundSeams: [],
+    externalOut: [],
     empty: { noDeclaration: false, noEntities: false, noInboundSeams: false },
     ...overrides,
   }
@@ -73,14 +73,16 @@ function renderCanvas(model = modelFixture(), selectedNodeId = '') {
 }
 
 describe('C12.4 画布：卡片投影（§2.3-24/-27、§2.5-39）', () => {
-  it('每张卡带 data-node/kind/external/isolated/nested 标记；嵌套领域卡带虚线框标记', () => {
+  it('每张卡带 data-node/kind/isolated/nested 标记；ext 卡标记退役', () => {
     renderCanvas()
     expect(q('[data-node="topA"]').getAttribute('data-node-kind')).toBe('domain')
     expect(q('[data-node="topA"]').getAttribute('data-nested')).toBe('true')
     expect(q('[data-node="topA"]').className).toContain('border-dashed')
     expect(q('[data-node="leafB"]').getAttribute('data-nested')).toBeNull()
-    expect(q('[data-node="ext:d_far"]').getAttribute('data-external')).toBe('true')
+    expect(document.querySelector('[data-external]')).toBeNull()
     expect(q('[data-node="isoC"]').getAttribute('data-isolated')).toBe('true')
+    expect(q('[data-entry-badge]').textContent).toBe('▣ 4 入口 · 集中')
+    expect(q('[data-entry-badge]').getAttribute('data-entry-badge-concentrated')).toBe('true')
   })
 
   it('大容器卡正面显示符号数/文件数与债务色标记，且无折叠控件（§2.3-24 反面）', () => {
@@ -127,6 +129,97 @@ describe('C12.4 画布：卡片投影（§2.3-24/-27、§2.5-39）', () => {
   it('容器层包群组 frame 存在（嵌套层虚线 frame 标记，§2.5-39④的画布半边）', () => {
     renderCanvas()
     expect(q('[data-package-frame="b/u"]')).toBeTruthy()
+  })
+})
+
+describe('C14 画布：职责、入口徽标与拓扑形态', () => {
+  it('容器卡三态职责直接显示在卡面，声明正文截断样式存在', () => {
+    const noSubject = renderCanvas(modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'no-subject' as const } }
+        : item),
+    }), 'c_big')
+    expect(q('[data-duty]').textContent).toContain('无职责主体（函数组）')
+    expect(q('[data-duty]').className).toBeTruthy()
+    noSubject.unmount()
+
+    const declared = modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'declared' as const, text: '职责正文很长但卡面需要保留两行截断样式' } }
+        : item),
+    })
+    renderCanvas(declared, 'c_big')
+    expect(q('[data-duty]').textContent).toContain('职责正文很长')
+    expect(q('[data-duty]').className).toContain('line-clamp-2')
+    document.body.innerHTML = ''
+
+    const undeclared = modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'undeclared' as const } }
+        : item),
+    })
+    renderCanvas(undeclared, 'c_big')
+    expect(q('[data-duty]').textContent).toBe('未声明职责')
+  })
+
+  it('入口徽标只在根层领域卡显示；0 入口领域不伪造徽标', () => {
+    const root = renderCanvas(modelFixture(), '')
+    expect(q('[data-entry-badge]').textContent).toContain('▣ 4 入口')
+    root.unmount()
+
+    renderCanvas(modelFixture({
+      scopeId: 'topA',
+      nodes: modelFixture().nodes.map((item) => item.id === 'topA'
+        ? { ...item, entryDispersion: { domainId: 'topA', entries: 4, files: 1, concentrated: true } }
+        : item),
+    }))
+    expect(document.querySelector('[data-entry-badge]')).toBeNull()
+    expect(document.querySelector('[data-node="leafB"] [data-entry-badge]')).toBeNull()
+  })
+
+  it('分层、回边、环徽章与孤立区均有 data-* 形态', () => {
+    const chain = modelFixture({
+      nodes: [node('a'), node('b'), node('c'), node('iso', { isolated: true })],
+      edges: [
+        { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
+        { key: 'b->c', from: 'b', to: 'c', weight: 1, kind: 'call' },
+      ],
+    })
+    const first = renderCanvas(chain)
+    expect(q('[data-layer-label="L0"]')).toBeTruthy()
+    expect(q('[data-layer-label="L1"]')).toBeTruthy()
+    expect(q('[data-layer-label="L2"]')).toBeTruthy()
+    expect(q('[data-isolated-row]').textContent).toContain('孤立节点')
+    expect(q('[data-node="iso"]').getAttribute('data-isolated')).toBe('true')
+    expect(q('[data-node="iso"]').className).toContain('pointer-events-auto')
+    first.unmount()
+
+    const cycle = modelFixture({
+      nodes: [node('x'), node('y')],
+      edges: [
+        { key: 'x->y', from: 'x', to: 'y', weight: 1, kind: 'call' },
+        { key: 'y->x', from: 'y', to: 'x', weight: 1, kind: 'call' },
+      ],
+    })
+    renderCanvas(cycle)
+    expect(q('[data-cyclic="true"]').textContent).toContain('⟲')
+    const back = q('[data-edge-key="x->y"]')
+    expect(back.tagName.toLowerCase()).toBe('path')
+    expect(back.getAttribute('data-back-edge')).toBe('true')
+    expect(back.getAttribute('stroke-dasharray')).toBeTruthy()
+  })
+
+  it('externalOut 图例按邻居显示并可跳转；根层无该行', () => {
+    const { onOpenScope } = renderCanvas(modelFixture({
+      scopeId: 'leaf_b',
+      externalOut: [
+        { neighborId: 'd_far', label: '远域', weight: 2 },
+        { neighborId: 'd_next', label: '次域', weight: 1 },
+      ],
+    }))
+    expect(q('[data-external-out]').textContent).toContain('调出到本层之外：远域 2 · 次域 1')
+    fireEvent.click(q('[data-external-out-item="d_far"]'))
+    expect(onOpenScope).toHaveBeenCalledWith('d_far', '远域')
   })
 })
 
@@ -206,15 +299,17 @@ describe('C12.4 画布：双击语义（§2.3-20 容器原子 + 下钻）', () =
   it('双击空白复位平移缩放（spec 布局判据：双击空白复位）', () => {
     const { container } = renderCanvas()
     const canvas = q('[data-scope-canvas]', container)
+    const fitZoom = canvas.getAttribute('data-zoom')
+    const fitTransform = canvas.getAttribute('data-transform')
     fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -240 })
     expect(canvas.getAttribute('data-zoom')).not.toBe('1')
     fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 })
     fireEvent.mouseMove(window, { clientX: 60, clientY: 30 })
     fireEvent.mouseUp(window)
-    expect(canvas.getAttribute('data-transform')).toBe('translate(50,20)')
+    expect(canvas.getAttribute('data-transform')).not.toBe(fitTransform)
     fireEvent.doubleClick(canvas)
-    expect(canvas.getAttribute('data-zoom')).toBe('1')
-    expect(canvas.getAttribute('data-transform')).toBe('translate(0,0)')
+    expect(canvas.getAttribute('data-zoom')).toBe(fitZoom)
+    expect(canvas.getAttribute('data-transform')).toBe(fitTransform)
   })
 })
 
@@ -236,10 +331,11 @@ describe('C12.4 画布：平移缩放与组织降级（真机清单 1 的机内�
   it('空白拖动更新 data-transform；按在卡上不触发平移', () => {
     const { container } = renderCanvas()
     const canvas = q('[data-scope-canvas]', container)
+    const fitTransform = canvas.getAttribute('data-transform')
     fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 })
     fireEvent.mouseMove(window, { clientX: 35, clientY: -15 })
     fireEvent.mouseUp(window)
-    expect(canvas.getAttribute('data-transform')).toBe('translate(25,-25)')
+    expect(canvas.getAttribute('data-transform')).not.toBe(fitTransform)
   })
 
   it('organizationAvailable=false 显式不可用提示，绝不拿空图冒充有数据页（§2.3-19/-25）', () => {

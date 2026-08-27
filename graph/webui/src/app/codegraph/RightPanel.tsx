@@ -79,8 +79,7 @@ export interface RightPanelProps {
 }
 
 function declFileId(node: ScopeNode | null, model: ScopePageModel): string {
-  const raw = node ? node.id : model.scopeId ?? ''
-  return node?.external ? raw.slice(4) : raw
+  return node ? node.id : model.scopeId ?? ''
 }
 
 function ResponsibilityBlock({ node, model }: { node: ScopeNode | null; model: ScopePageModel }) {
@@ -226,7 +225,6 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
                 <h3 className="mb-1 text-sm font-semibold">{selected.label}</h3>
                 <div className="font-mono text-[11px] text-muted-foreground">
                   {selected.kind} · {selected.type || '类型未知'}
-                  {selected.external ? ' · 本层之外引用卡' : ''}
                 </div>
               </section>
 

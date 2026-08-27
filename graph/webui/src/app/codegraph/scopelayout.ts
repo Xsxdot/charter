@@ -1,32 +1,32 @@
 // scopelayout —— 结构轴画布的确定性布局（K4 组件层消费的纯函数）。
 //
-// 职责：把 ScopePageModel 的拓扑事实（nodes/edges）变成每张卡的左上角坐标、
-// 容器层的包群组框、域外引用卡外圈与孤立卡专行。
-// 边界：纯函数、零随机数（Math.random / Date.now 禁用——同一份数据每次打开必须
-// 长得一样，domainlayout 同一纪律）；不访问 DOM、零 console。视觉质量判据
-// （空白最少、交叉最少）机内不可断言，归真机清单 1；本模块只保证确定性、
-// 非重叠与分组归属这些可机检的性质。
+// 职责：把 ScopePageModel 的拓扑事实变成卡片坐标、包群组框、拓扑层信息与
+// 边路径。分层与装箱行为移植自 prototypes/codegraph-two-axis/shared/graph.js；
+// 领域布局对应 :3-64，容器群组对应 :124-212。
+// 边界：纯函数、零随机数、零 DOM、零 console；ext 卡已由 scopepage 退役，布局
+// 不为缺少节点的边创建坐标。所有排序显式按权重或 id 固定，保证重复调用逐位一致。
 import type { ScopeEdge, ScopeNode } from './scopepage'
 
-const ITER = 240        // 力导向迭代次数：够收敛且毫秒级（domainlayout 同款）
-const RX = 340          // 椭圆斥力横向半径 ≈ 卡宽 + 间距
-const RY = 200          // 纵向半径 ≈ 卡高 + 间距
-const REST = 340        // 弹簧静止长度
-const GRAVITY_Y = 330   // 纵向重力目标带
-const SEP_ITER = 80     // 分离迭代上限
 export const CARD_W = 252
-export const CARD_H = 112   // 领域卡高
+export const CARD_H = 112
 export const CONTAINER_H = 128
-export const EXT_W = 176
-export const EXT_H = 56
-const ISOLATED_GAP = 72 // 孤立行与主体云的垂直间隔
+
+const DEFAULT_WIDTH = 1200
+const TOP = 30
+const GAP_X = 14
+const GAP_Y = 160
+const ISOLATED_GAP = 72
+const LAYER_LABEL_W = 40
+const PACKAGE_GAP = 30
+const PACKAGE_PADDING = 14
+const PACKAGE_HEADER = 24
+const BACK_OFFSET = 28
 
 function cardSize(node: ScopeNode): [number, number] {
-  if (node.external) return [EXT_W, EXT_H]
   return node.kind === 'container' ? [CARD_W, CONTAINER_H] : [CARD_W, CARD_H]
 }
 
-/** 包群组框：容器层按包目录聚合的虚线 frame 几何（dir 空串＝跨多目录不猜，照常成框）。 */
+/** 包群组框：容器层按 dir 聚合容器卡的几何边界。 */
 export interface ScopePackageFrame {
   dir: string
   nodeIds: string[]
@@ -37,208 +37,436 @@ export interface ScopePackageFrame {
 }
 
 export interface ScopeLayout {
-  /** 每张卡的左上角坐标；键集与输入 nodes 一一对应。 */
+  /** 每张输入卡的左上角坐标；键集与输入 nodes 一一对应。 */
   positions: Record<string, [number, number]>
+  /** 容器层按 dir 聚出的包框；领域层恒为空。 */
   packageFrames: ScopePackageFrame[]
+  /** 节点到拓扑层号（0 是最外层调用方）；孤立与容器层节点无条目。 */
+  layers: Record<string, number>
+  /** 分层卡的层数；容器层或空图为 0。 */
+  layerCount: number
+  /** SCC 环成员，升序。 */
+  cyclicNodeIds: string[]
+  /** 指向同层或上游的 call 边，升序。 */
+  backEdgeKeys: string[]
+  /** 孤立区成员，升序。 */
+  isolatedIds: string[]
+  /** 全部卡框、包框与左侧层标留白的内容包围盒。 */
+  bounds: { w: number; h: number }
+}
+
+interface LayerResult {
+  layers: Record<string, number>
+  layerCount: number
+  cyclicNodeIds: string[]
+  backEdgeKeys: string[]
+}
+
+function callEdgesBetween(edges: ScopeEdge[], ids: Set<string>): ScopeEdge[] {
+  return edges
+    .filter((edge) => edge.kind === 'call' && ids.has(edge.from) && ids.has(edge.to) && edge.from !== edge.to)
+    .slice()
+    .sort((a, b) => a.key.localeCompare(b.key))
 }
 
 /**
- * 结构轴布局主入口。确定性：同一输入两次调用逐位相同（无随机数、只按 id 序处理）。
- * 孤立卡（无跨域 call 入边）不进主力云——排进云里等于谎称它们是被调方，
- * 单列一行摆在主体下方，原因文案由画布渲染（spec 布局判据）。
+ * 移植自 prototypes/codegraph-two-axis/shared/graph.js :3-32：Tarjan SCC 缩点后
+ * 用最长路求源到目标的层号。排序是 TS 实现的确定性补充；projection 不参与拓扑。
  */
-export function layoutScopeCards(nodes: ScopeNode[], edges: ScopeEdge[]): ScopeLayout {
-  const positions: Record<string, [number, number]> = {}
-  nodes.forEach((node, i) => {
-    positions[node.id] = [340 + ((i * 173) % 640), 90 + ((i * 257) % 420)]
-  })
-  const inner = nodes.filter((n) => !n.external && !n.isolated)
-  const outer = nodes.filter((n) => n.external)
-  const isolated = nodes.filter((n) => n.isolated && !n.external)
-
-  const springs: [string, string, number][] = []
-  for (const edge of edges) {
-    if (edge.kind !== 'call') continue
-    if (positions[edge.from] && positions[edge.to]
-      && inner.some((n) => n.id === edge.from) && inner.some((n) => n.id === edge.to)) {
-      springs.push([edge.from, edge.to, Math.min(edge.weight, 4)])
-    }
+function buildLayers(nodes: ScopeNode[], edges: ScopeEdge[]): LayerResult {
+  const ids = nodes.map((node) => node.id).sort((a, b) => a.localeCompare(b))
+  const idSet = new Set(ids)
+  const calls = callEdgesBetween(edges, idSet)
+  const successors = new Map<string, string[]>(ids.map((id) => [id, []]))
+  for (const edge of calls) {
+    const list = successors.get(edge.from)!
+    if (!list.includes(edge.to)) list.push(edge.to)
   }
+  for (const list of successors.values()) list.sort((a, b) => a.localeCompare(b))
 
-  for (let it = 0; it < ITER; it += 1) {
-    const f: Record<string, [number, number]> = {}
-    for (const n of inner) f[n.id] = [0, 0]
-    for (let i = 0; i < inner.length; i += 1) {
-      for (let j = i + 1; j < inner.length; j += 1) {
-        const a = inner[i].id
-        const b = inner[j].id
-        const dx = positions[a][0] - positions[b][0]
-        const dy = positions[a][1] - positions[b][1]
-        const nd = Math.sqrt((dx / RX) ** 2 + (dy / RY) ** 2) || 0.01
-        if (nd >= 1) continue
-        const len = Math.hypot(dx, dy) || 1
-        const push = (1 - nd) * 46
-        f[a][0] += (dx / len) * push
-        f[a][1] += (dy / len) * push
-        f[b][0] -= (dx / len) * push
-        f[b][1] -= (dy / len) * push
+  const index = new Map<string, number>()
+  const low = new Map<string, number>()
+  const stack: string[] = []
+  const onStack = new Set<string>()
+  const components: string[][] = []
+  let nextIndex = 0
+
+  const visit = (id: string): void => {
+    index.set(id, nextIndex)
+    low.set(id, nextIndex)
+    nextIndex += 1
+    stack.push(id)
+    onStack.add(id)
+    for (const next of successors.get(id) ?? []) {
+      if (!index.has(next)) {
+        visit(next)
+        low.set(id, Math.min(low.get(id)!, low.get(next)!))
+      } else if (onStack.has(next)) {
+        low.set(id, Math.min(low.get(id)!, index.get(next)!))
       }
     }
-    for (const [a, b, w] of springs) {
-      const dx = positions[b][0] - positions[a][0]
-      const dy = positions[b][1] - positions[a][1]
-      const len = Math.hypot(dx, dy) || 1
-      const pull = (len - REST) * 0.012 * w
-      f[a][0] += (dx / len) * pull
-      f[a][1] += (dy / len) * pull
-      f[b][0] -= (dx / len) * pull
-      f[b][1] -= (dy / len) * pull
+    if (low.get(id) !== index.get(id)) return
+    const component: string[] = []
+    for (;;) {
+      const member = stack.pop()!
+      onStack.delete(member)
+      component.push(member)
+      if (member === id) break
     }
-    const damp = (it < 120 ? 1 : 0.5) * 0.5
-    for (const n of inner) {
-      f[n.id][1] += (GRAVITY_Y - positions[n.id][1]) * 0.005
-      positions[n.id][0] = Math.max(30, positions[n.id][0] + f[n.id][0] * damp)
-      positions[n.id][1] = Math.max(64, positions[n.id][1] + f[n.id][1] * damp)
-    }
+    component.sort((a, b) => a.localeCompare(b))
+    components.push(component)
   }
-  separate(positions, inner)
+  for (const id of ids) if (!index.has(id)) visit(id)
 
-  ringOuter(nodes, edges, positions, inner.map((n) => n.id), outer.map((n) => n.id))
-  // 外圈落位后可能压到内圈：只推外圈，内圈已分离定型
-  separate(positions, [...inner, ...outer], new Set(inner.map((n) => n.id)))
-
-  // 孤立行：主体云（含外圈）最低点之下单列一行，按 id 升序从左到右
-  let floorY = 0
-  for (const n of [...inner, ...outer]) {
-    const size = cardSize(n)
-    floorY = Math.max(floorY, positions[n.id][1] + size[1])
-  }
-  if (!Number.isFinite(floorY)) floorY = 200
-  let cursorX = 30
-  for (const n of [...isolated].sort((a, b) => a.id.localeCompare(b.id))) {
-    positions[n.id] = [cursorX, floorY + ISOLATED_GAP]
-    cursorX += CARD_W + 24
-  }
-
-  return { positions, packageFrames: packageFramesOf(nodes, positions) }
-}
-
-/** 容器层包群组框：按 dir 聚合容器卡并算包围盒（含 14px 内边距）。 */
-function packageFramesOf(nodes: ScopeNode[], positions: Record<string, [number, number]>): ScopePackageFrame[] {
-  const byDir = new Map<string, string[]>()
-  for (const n of nodes) {
-    if (n.kind !== 'container' || n.external) continue
-    const list = byDir.get(n.dir) ?? []
-    list.push(n.id)
-    byDir.set(n.dir, list)
-  }
-  const frames: ScopePackageFrame[] = []
-  for (const dir of [...byDir.keys()].sort((a, b) => a.localeCompare(b))) {
-    const ids = byDir.get(dir)!.sort((a, b) => a.localeCompare(b))
-    let x0 = Infinity
-    let y0 = Infinity
-    let x1 = -Infinity
-    let y1 = -Infinity
-    for (const id of ids) {
-      const p = positions[id]
-      if (!p) continue
-      x0 = Math.min(x0, p[0])
-      y0 = Math.min(y0, p[1])
-      x1 = Math.max(x1, p[0] + CARD_W)
-      y1 = Math.max(y1, p[1] + CONTAINER_H)
-    }
-    if (!Number.isFinite(x0)) continue
-    frames.push({ dir, nodeIds: ids, x: x0 - 14, y: y0 - 14, w: x1 - x0 + 28, h: y1 - y0 + 28 })
-  }
-  return frames
-}
-
-// ringOuter 把域外引用卡摆到本层内容外面的一圈上（domainlayout 同款策略：
-// 占位卡是「这条调用出去到哪儿了」的边界注解，位置按它连向的本层卡定方位）。
-function ringOuter(
-  nodes: ScopeNode[],
-  edges: ScopeEdge[],
-  positions: Record<string, [number, number]>,
-  innerIds: string[],
-  outerIds: string[],
-): void {
-  if (!outerIds.length) return
-  const innerSet = new Set(innerIds)
-  let x0 = Infinity
-  let y0 = Infinity
-  let x1 = -Infinity
-  let y1 = -Infinity
-  for (const id of innerIds) {
-    const n = nodes.find((cand) => cand.id === id)
-    const p = positions[id]
-    if (!n || !p) continue
-    const size = cardSize(n)
-    x0 = Math.min(x0, p[0])
-    y0 = Math.min(y0, p[1])
-    x1 = Math.max(x1, p[0] + size[0])
-    y1 = Math.max(y1, p[1] + size[1])
-  }
-  if (!Number.isFinite(x0)) { x0 = 60; y0 = 90; x1 = 60 + CARD_W; y1 = 90 + CARD_H }
-  const cx = (x0 + x1) / 2
-  const cy = (y0 + y1) / 2
-  const rx = (x1 - x0) / 2 + 260
-  const ry = (y1 - y0) / 2 + 190
-  const dir: Record<string, [number, number]> = {}
-  for (const edge of edges) {
-    for (const [a, b] of [[edge.from, edge.to], [edge.to, edge.from]] as const) {
-      if (!outerIds.includes(a) || !innerSet.has(b) || !positions[b]) continue
-      const d = dir[a] ?? (dir[a] = [0, 0])
-      d[0] += positions[b][0] + CARD_W / 2 - cx
-      d[1] += positions[b][1] + CARD_H / 2 - cy
-    }
-  }
-  outerIds.forEach((id, i) => {
-    const d = dir[id]
-    const ang = d && (d[0] || d[1]) ? Math.atan2(d[1], d[0]) : (i / outerIds.length) * Math.PI * 2
-    positions[id] = [
-      Math.max(30, cx + Math.cos(ang) * rx - EXT_W / 2),
-      Math.max(64, cy + Math.sin(ang) * ry - EXT_H / 2),
-    ]
+  const componentOf = new Map<string, number>()
+  components.forEach((component, componentId) => {
+    component.forEach((id) => componentOf.set(id, componentId))
   })
-}
-
-// separate 按矩形真实相交再分离一遍（domainlayout 同款）：斥力是软的，
-// 卡压卡是这张图唯一不可接受的形态问题。确定性：只按传入顺序两两处理。
-function separate(
-  positions: Record<string, [number, number]>,
-  cards: ScopeNode[],
-  frozen?: Set<string>,
-): void {
-  for (let it = 0; it < SEP_ITER; it += 1) {
-    let moved = false
-    for (let i = 0; i < cards.length; i += 1) {
-      for (let j = i + 1; j < cards.length; j += 1) {
-        const a = cards[i]
-        const b = cards[j]
-        const sa = cardSize(a)
-        const sb = cardSize(b)
-        const pa = positions[a.id]
-        const pb = positions[b.id]
-        if (!pa || !pb) continue
-        const ox = Math.min(pa[0] + sa[0], pb[0] + sb[0]) - Math.max(pa[0], pb[0])
-        const oy = Math.min(pa[1] + sa[1], pb[1] + sb[1]) - Math.max(pa[1], pb[1])
-        if (ox <= 0 || oy <= 0) continue
-        moved = true
-        const fa = frozen?.has(a.id) ?? false
-        const fb = frozen?.has(b.id) ?? false
-        if (fa && fb) continue
-        const share = fa || fb ? 1 : 0.5
-        if (ox < oy) {
-          const d = (ox * share + 1) * (pa[0] <= pb[0] ? -1 : 1)
-          if (!fa) pa[0] = Math.max(30, pa[0] + d)
-          if (!fb) pb[0] = Math.max(30, pb[0] - d)
-        } else {
-          const d = (oy * share + 1) * (pa[1] <= pb[1] ? -1 : 1)
-          if (!fa) pa[1] = Math.max(64, pa[1] + d)
-          if (!fb) pb[1] = Math.max(64, pb[1] - d)
+  const componentSuccessors = components.map(() => new Set<number>())
+  for (const edge of calls) {
+    const from = componentOf.get(edge.from)!
+    const to = componentOf.get(edge.to)!
+    if (from !== to) componentSuccessors[from].add(to)
+  }
+  const depth = components.map(() => 0)
+  const orderedComponents = components.map((_, id) => id).sort((a, b) => a - b)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const componentId of orderedComponents) {
+      for (const successor of [...componentSuccessors[componentId]].sort((a, b) => a - b)) {
+        if (depth[successor] < depth[componentId] + 1) {
+          depth[successor] = depth[componentId] + 1
+          changed = true
         }
       }
     }
-    if (!moved) return
   }
+
+  const layers: Record<string, number> = {}
+  for (const id of ids) layers[id] = depth[componentOf.get(id)!]
+  const cyclicNodeIds = components
+    .filter((component) => component.length > 1)
+    .flat()
+    .sort((a, b) => a.localeCompare(b))
+  const backEdgeKeys = calls
+    .filter((edge) => layers[edge.to]! <= layers[edge.from]!)
+    .map((edge) => edge.key)
+    .sort((a, b) => a.localeCompare(b))
+  const layerCount = ids.length === 0 ? 0 : Math.max(...Object.values(layers)) + 1
+  return { layers, layerCount, cyclicNodeIds, backEdgeKeys }
+}
+
+function incomingWeights(nodes: ScopeNode[], edges: ScopeEdge[]): Map<string, number> {
+  const ids = new Set(nodes.map((node) => node.id))
+  const weights = new Map(nodes.map((node) => [node.id, 0]))
+  for (const edge of edges) {
+    if (edge.kind !== 'call' || !ids.has(edge.from) || !ids.has(edge.to)) continue
+    weights.set(edge.to, (weights.get(edge.to) ?? 0) + edge.weight)
+  }
+  return weights
+}
+
+function contentBounds(
+  nodes: ScopeNode[],
+  positions: Record<string, [number, number]>,
+  frames: ScopePackageFrame[],
+): { w: number; h: number } {
+  let right = 0
+  let bottom = 0
+  for (const node of nodes) {
+    const position = positions[node.id]
+    if (!position) continue
+    const [width, height] = cardSize(node)
+    right = Math.max(right, position[0] + width)
+    bottom = Math.max(bottom, position[1] + height)
+  }
+  for (const frame of frames) {
+    right = Math.max(right, frame.x + frame.w)
+    bottom = Math.max(bottom, frame.y + frame.h)
+  }
+  return nodes.length === 0 ? { w: 0, h: 0 } : { w: Math.max(LAYER_LABEL_W, right), h: bottom }
+}
+
+interface GroupLayout {
+  dir: string
+  nodeIds: string[]
+  w: number
+  h: number
+  localPositions: Record<string, [number, number]>
+  cyclicNodeIds: string[]
+  backEdgeKeys: string[]
+  x: number
+  y: number
+}
+
+function layoutPackageGroup(dir: string, nodes: ScopeNode[], edges: ScopeEdge[]): GroupLayout {
+  const calls = callEdgesBetween(edges, new Set(nodes.map((node) => node.id)))
+  const topo = buildLayers(nodes, calls)
+  const weights = incomingWeights(nodes, calls)
+  const localPositions: Record<string, [number, number]> = {}
+  const perRow = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(nodes.length))))
+  let row = 0
+  for (let layer = 0; layer < topo.layerCount; layer += 1) {
+    const members = nodes
+      .filter((node) => topo.layers[node.id] === layer)
+      .sort((a, b) => (weights.get(b.id)! - weights.get(a.id)!) || a.id.localeCompare(b.id))
+    for (let offset = 0; offset < members.length; offset += perRow) {
+      const rowMembers = members.slice(offset, offset + perRow)
+      const x0 = 0
+      rowMembers.forEach((node, index) => {
+        localPositions[node.id] = [x0 + index * (CARD_W + GAP_X), TOP + row * GAP_Y]
+      })
+      row += 1
+    }
+  }
+  const groupNodes = new Map(nodes.map((node) => [node.id, node]))
+  const right = Math.max(...Object.values(localPositions).map(([x]) => x + CARD_W), CARD_W)
+  const bottom = Math.max(...Object.entries(localPositions).map(([id, [, y]]) => y + cardSize(groupNodes.get(id)!)[1]), TOP + CONTAINER_H)
+  return {
+    dir,
+    nodeIds: nodes.map((node) => node.id).sort((a, b) => a.localeCompare(b)),
+    w: right + PACKAGE_PADDING * 2,
+    h: bottom + PACKAGE_PADDING * 2 + PACKAGE_HEADER,
+    localPositions,
+    cyclicNodeIds: topo.cyclicNodeIds,
+    backEdgeKeys: topo.backEdgeKeys,
+    x: 0,
+    y: 0,
+  }
+}
+
+function groupWeight(groups: GroupLayout[], edges: ScopeEdge[]): Map<string, number> {
+  const nodeGroup = new Map<string, string>()
+  for (const group of groups) for (const nodeId of group.nodeIds) nodeGroup.set(nodeId, group.dir)
+  const weights = new Map<string, number>()
+  for (const edge of edges) {
+    if (edge.kind !== 'call') continue
+    const from = nodeGroup.get(edge.from)
+    const to = nodeGroup.get(edge.to)
+    if (from === undefined || to === undefined || from === to) continue
+    const key = [from, to].sort((a, b) => a.localeCompare(b)).join('|')
+    weights.set(key, (weights.get(key) ?? 0) + edge.weight)
+  }
+  return weights
+}
+
+/** 移植自原型 :167-204：按连接权重贪心排序、货架装箱，再做四轮相邻交换降距离。 */
+function arrangePackageGroups(groups: GroupLayout[], edges: ScopeEdge[], width: number): void {
+  const weights = groupWeight(groups, edges)
+  const between = (a: string, b: string): number => weights.get([a, b].sort((x, y) => x.localeCompare(y)).join('|')) ?? 0
+  const left = new Set(groups.map((group) => group.dir))
+  const degree = (dir: string) => groups.reduce((sum, group) => sum + between(dir, group.dir), 0)
+  const order: string[] = []
+  let current = [...left].sort((a, b) => (degree(b) - degree(a)) || a.localeCompare(b))[0]
+  while (current !== undefined) {
+    order.push(current)
+    left.delete(current)
+    current = [...left].sort((a, b) => {
+      const weightA = order.reduce((sum, placed) => sum + between(a, placed), 0)
+      const weightB = order.reduce((sum, placed) => sum + between(b, placed), 0)
+      return (weightB - weightA) || a.localeCompare(b)
+    })[0]
+  }
+  const byDir = new Map(groups.map((group) => [group.dir, group]))
+  const area = groups.reduce((sum, group) => sum + group.w * group.h, 0)
+  const aspect = Math.max(0.6, Math.min(3.2, width / Math.max(240, width * 0.62)))
+  const target = Math.max(...groups.map((group) => group.w), Math.sqrt(area * aspect))
+  const shelves: GroupLayout[][] = []
+  let shelf: GroupLayout[] = []
+  let shelfWidth = 0
+  for (const dir of order) {
+    const group = byDir.get(dir)!
+    const nextWidth = shelfWidth + (shelf.length ? PACKAGE_GAP : 0) + group.w
+    if (shelf.length && nextWidth > target) {
+      shelves.push(shelf)
+      shelf = []
+      shelfWidth = 0
+    }
+    shelf.push(group)
+    shelfWidth += (shelf.length > 1 ? PACKAGE_GAP : 0) + group.w
+  }
+  if (shelf.length) shelves.push(shelf)
+
+  const place = (): void => {
+    let y = PACKAGE_PADDING
+    for (const row of shelves) {
+      let x = PACKAGE_PADDING
+      const height = Math.max(...row.map((group) => group.h))
+      for (const group of row) {
+        group.x = x
+        group.y = y
+        x += group.w + PACKAGE_GAP
+      }
+      y += height + PACKAGE_GAP
+    }
+  }
+  const cost = (): number => {
+    const nodeGroup = new Map<string, string>()
+    for (const group of groups) for (const nodeId of group.nodeIds) nodeGroup.set(nodeId, group.dir)
+    const centers = new Map(groups.map((group) => [group.dir, [group.x + group.w / 2, group.y + group.h / 2] as const]))
+    return edges.reduce((sum, edge) => {
+      if (edge.kind !== 'call') return sum
+      const from = nodeGroup.get(edge.from)
+      const to = nodeGroup.get(edge.to)
+      if (from === undefined || to === undefined || from === to) return sum
+      const a = centers.get(from)!
+      const b = centers.get(to)!
+      return sum + edge.weight * Math.hypot(a[0] - b[0], a[1] - b[1])
+    }, 0)
+  }
+  place()
+  let bestCost = cost()
+  for (let pass = 0; pass < 4; pass += 1) {
+    for (const row of shelves) {
+      for (let i = 0; i < row.length - 1; i += 1) {
+        const currentGroup = row[i]!
+        row[i] = row[i + 1]!
+        row[i + 1] = currentGroup
+        place()
+        const candidate = cost()
+        if (candidate < bestCost) bestCost = candidate
+        else {
+          row[i + 1] = row[i]!
+          row[i] = currentGroup
+          place()
+        }
+      }
+    }
+  }
+}
+
+function layoutDomains(nodes: ScopeNode[], edges: ScopeEdge[], width: number): ScopeLayout {
+  const isolated = nodes.filter((node) => node.isolated).sort((a, b) => a.id.localeCompare(b.id))
+  const linked = nodes.filter((node) => !node.isolated)
+  const topo = buildLayers(linked, edges)
+  const weights = incomingWeights(linked, edges)
+  const positions: Record<string, [number, number]> = {}
+  const available = Math.max(CARD_W, width - LAYER_LABEL_W)
+  const perRow = Math.max(2, Math.floor((width + GAP_X) / (CARD_W + GAP_X)))
+  let row = 0
+  for (let layer = 0; layer < topo.layerCount; layer += 1) {
+    const members = linked
+      .filter((node) => topo.layers[node.id] === layer)
+      .sort((a, b) => (weights.get(b.id)! - weights.get(a.id)!) || a.id.localeCompare(b.id))
+    for (let offset = 0; offset < members.length; offset += perRow) {
+      const rowMembers = members.slice(offset, offset + perRow)
+      const total = rowMembers.length * CARD_W + (rowMembers.length - 1) * GAP_X
+      const x0 = LAYER_LABEL_W + Math.max(0, (available - total) / 2)
+      rowMembers.forEach((node, index) => {
+        positions[node.id] = [x0 + index * (CARD_W + GAP_X), TOP + row * GAP_Y]
+      })
+      row += 1
+    }
+  }
+  let floorY = TOP
+  for (const node of linked) floorY = Math.max(floorY, (positions[node.id]?.[1] ?? TOP) + cardSize(node)[1])
+  const isolatedY = floorY + ISOLATED_GAP
+  isolated.forEach((node, index) => {
+    positions[node.id] = [LAYER_LABEL_W + index * (CARD_W + GAP_X), isolatedY]
+  })
+  return {
+    positions,
+    packageFrames: [],
+    layers: topo.layers,
+    layerCount: topo.layerCount,
+    cyclicNodeIds: topo.cyclicNodeIds,
+    backEdgeKeys: topo.backEdgeKeys,
+    isolatedIds: isolated.map((node) => node.id),
+    bounds: contentBounds(nodes, positions, []),
+  }
+}
+
+function layoutContainers(nodes: ScopeNode[], edges: ScopeEdge[], width: number): ScopeLayout {
+  const groupsByDir = new Map<string, ScopeNode[]>()
+  for (const node of nodes) {
+    const list = groupsByDir.get(node.dir) ?? []
+    list.push(node)
+    groupsByDir.set(node.dir, list)
+  }
+  const groups = [...groupsByDir.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dir, members]) => layoutPackageGroup(dir, members, edges))
+  arrangePackageGroups(groups, edges, width)
+  const positions: Record<string, [number, number]> = {}
+  const frames: ScopePackageFrame[] = []
+  const cyclic = new Set<string>()
+  const backEdges = new Set<string>()
+  for (const group of groups) {
+    for (const nodeId of group.nodeIds) {
+      const local = group.localPositions[nodeId] ?? [0, TOP]
+      positions[nodeId] = [group.x + PACKAGE_PADDING + local[0], group.y + PACKAGE_HEADER + local[1]]
+    }
+    group.cyclicNodeIds.forEach((id) => cyclic.add(id))
+    group.backEdgeKeys.forEach((key) => backEdges.add(key))
+    frames.push({ dir: group.dir, nodeIds: group.nodeIds, x: group.x, y: group.y, w: group.w, h: group.h })
+  }
+  return {
+    positions,
+    packageFrames: frames,
+    layers: {},
+    layerCount: 0,
+    cyclicNodeIds: [...cyclic].sort((a, b) => a.localeCompare(b)),
+    backEdgeKeys: [...backEdges].sort((a, b) => a.localeCompare(b)),
+    isolatedIds: nodes.filter((node) => node.isolated).map((node) => node.id).sort((a, b) => a.localeCompare(b)),
+    bounds: contentBounds(nodes, positions, frames),
+  }
+}
+
+/**
+ * 布局主入口。领域层移植原型 :34-53；容器层移植原型 :124-212。`opts.width`
+ * 只控制可见宽度，不读取 DOM；缺省 1200 与组件 jsdom 兜底一致。
+ */
+export function layoutScopeCards(
+  nodes: ScopeNode[],
+  edges: ScopeEdge[],
+  opts: { width?: number } = {},
+): ScopeLayout {
+  if (nodes.length === 0) {
+    return {
+      positions: {}, packageFrames: [], layers: {}, layerCount: 0,
+      cyclicNodeIds: [], backEdgeKeys: [], isolatedIds: [], bounds: { w: 0, h: 0 },
+    }
+  }
+  const width = Number.isFinite(opts.width) && (opts.width ?? 0) > 0 ? opts.width! : DEFAULT_WIDTH
+  const containers = nodes.filter((node) => node.kind === 'container')
+  const domains = nodes.filter((node) => node.kind !== 'container')
+  if (containers.length === 0) return layoutDomains(nodes, edges, width)
+  if (domains.length === 0) return layoutContainers(nodes, edges, width)
+  const domainLayout = layoutDomains(domains, edges, width)
+  const containerLayout = layoutContainers(containers, edges, width)
+  const containerOffsetY = domainLayout.bounds.h + GAP_Y
+  const positions = { ...domainLayout.positions }
+  for (const [id, [x, y]] of Object.entries(containerLayout.positions)) positions[id] = [x, y + containerOffsetY]
+  const packageFrames = containerLayout.packageFrames.map((frame) => ({ ...frame, y: frame.y + containerOffsetY }))
+  return {
+    positions,
+    packageFrames,
+    layers: domainLayout.layers,
+    layerCount: domainLayout.layerCount,
+    cyclicNodeIds: [...new Set([...domainLayout.cyclicNodeIds, ...containerLayout.cyclicNodeIds])]
+      .sort((a, b) => a.localeCompare(b)),
+    backEdgeKeys: [...new Set([...domainLayout.backEdgeKeys, ...containerLayout.backEdgeKeys])]
+      .sort((a, b) => a.localeCompare(b)),
+    isolatedIds: [...new Set([...domainLayout.isolatedIds, ...containerLayout.isolatedIds])]
+      .sort((a, b) => a.localeCompare(b)),
+    bounds: contentBounds(nodes, positions, packageFrames),
+  }
+}
+
+/** 移植原型 :54-64：正向边向下、回边右侧折返、同层边沿下沿浅弧。 */
+export function scopeEdgePath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  kind: 'forward' | 'back' | 'sibling',
+): string {
+  if (kind === 'forward') return `M${x1},${y1} C${x1},${y1 + 32} ${x2},${y2 - 32} ${x2},${y2}`
+  if (kind === 'back') {
+    const right = Math.max(x1, x2) + BACK_OFFSET
+    return `M${x1},${y1} C${right},${y1} ${right},${y2} ${x2},${y2}`
+  }
+  const dip = 22 + Math.abs(x1 - x2) * 0.05
+  return `M${x1},${y1} C${x1},${y1 + dip} ${x2},${y2 + dip} ${x2},${y2}`
 }

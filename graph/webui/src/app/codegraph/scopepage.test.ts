@@ -136,26 +136,49 @@ function foldWorld() {
 function respWorld() {
   const best = bestOf(
     { r: { label: '职责域', type: 'logic' } },
-    { c_st: 'r', c_models: 'r', c_ghost: 'r', c_fn: 'r' },
+    { c_st: 'r', c_prefixed: 'r', c_models: 'r', c_ghost: 'r', c_fn: 'r' },
   )
   const baseline: CgGraph = {
     ...blankGraph(),
     containers: {
       c_st: { label: 'Store', kind: '类型方法' },
+      c_prefixed: { label: 'pkga.Store', kind: '类型方法' },
       c_models: { label: '模型桶', kind: 'TypeScript 模型' },
       c_ghost: { label: 'Ghost', kind: '类型方法' },
       c_fn: { label: '杂活', kind: '函数组' },
     },
     nodes: {
       m1: { kind: 'func', container: 'c_st', name: 'Store.Get', file: 'pkga/store.go', line: 1 },
+      p1: { kind: 'func', container: 'c_prefixed', name: 'Store.Get', file: 'pkga/prefix/service.go', line: 2 },
       tA: { kind: 'model', container: 'c_models', name: 'Store', file: 'pkga/store.go', line: 10, modelKind: 'dto', summary: '甲侧存储注释' },
       tB: { kind: 'model', container: 'c_models', name: 'Store', file: 'pkgb/store.go', line: 11, modelKind: 'dto', summary: '别家的存储注释' },
+      tPrefA: { kind: 'model', container: 'c_models', name: 'Store', file: 'pkga/prefix/model.go', line: 12, modelKind: 'dto', summary: '前缀甲侧存储注释' },
+      tPrefB: { kind: 'model', container: 'c_models', name: 'Store', file: 'pkgb/model.go', line: 13, modelKind: 'dto', summary: '前缀别家存储注释' },
       gh: { kind: 'func', container: 'c_ghost', name: 'gh', file: 'pkgc/ghost.go', line: 1 },
       fn: { kind: 'func', container: 'c_fn', name: 'util', file: 'pkga/util.go', line: 1 },
     },
     edges: [],
   }
   return { best, baseline }
+}
+
+function entryWorld(files: string[]) {
+  const best = bestOf({ r: { label: '入口域', type: 'logic' } }, { c_entries: 'r' })
+  const nodes: CgGraph['nodes'] = {}
+  files.forEach((file, index) => {
+    const number = index + 1
+    nodes[`entry${number}`] = {
+      kind: 'entry', container: 'c_entries', name: `entry ${number}`, file, line: number,
+    }
+  })
+  return {
+    best,
+    baseline: {
+      ...blankGraph(),
+      containers: { c_entries: { label: '入口容器', kind: '入口' } },
+      nodes,
+    },
+  }
 }
 
 // W5 大容器世界：41 符号分两个文件；对照小容器 1 符号。
@@ -249,32 +272,30 @@ describe('C12.2 缝 1：递归同构与组织切换', () => {
     ])
   })
 
-  it('孤立判据=无调用入边：纯调用方与孤岛都单列，projection 不抵孤立', () => {
+  it('孤立判据=call 入边与出边都为空：纯调用方不孤立，projection 不抵孤立', () => {
     const w = isoWorld()
     const m = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: null })
     const byId = new Map(m.nodes.map((n) => [n.id, n]))
-    expect(byId.get('ss_a')?.isolated).toBe(true)
+    expect(byId.get('ss_a')?.isolated).toBe(false)
     expect(byId.get('ss_b')?.isolated).toBe(false)
     expect(byId.get('ss_c')?.isolated).toBe(true)
   })
 
-  it('中层看子领域卡、圈外端点折 ext 卡并保留横跳边', () => {
+  it('中层看子领域卡、圈外端点不产节点、横跳权重聚合进 externalOut', () => {
     const w = isoWorld()
     const m = deriveScopePage({ baseline: w.baseline, best: w.best, decls: w.decls, organization: 'best', scopeId: 'ss_a' })
-    // 圈外端点折 ext 卡：call 对手乙、twin 对手丙都保留横跳可见性
-    expect(m.nodes.map((n) => n.id)).toEqual(['a_mid', 'ext:ss_b', 'ext:ss_c'])
-    const inner = m.nodes.find((n) => n.id === 'a_mid')
-    const ext = m.nodes.find((n) => n.id === 'ext:ss_b')
-    expect(inner?.external).toBe(false)
-    expect(ext?.external).toBe(true)
-    expect(ext?.label).toBe('乙子系统')
-    expect(m.edges.map((e) => e.key)).toEqual(['a_mid->ext:ss_b', 'a_mid->ext:ss_c:twin'])
+    expect(m.nodes.map((n) => n.id)).toEqual(['a_mid'])
+    expect(m.nodes.every((node) => !Object.prototype.hasOwnProperty.call(node, 'external'))).toBe(true)
+    expect(m.externalOut).toEqual([{ neighborId: 'ss_b', label: '乙子系统', weight: 1 }])
+    expect(m.edges.map((e) => e.key)).toEqual(['a_mid->ext:ss_c:twin'])
+    const root = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: null })
+    expect(root.externalOut).toEqual([])
   })
 
   it('叶子领域的容器层是原子节点：childCount 恒 0、入口引用带 channel 透传', () => {
     const w = isoWorld()
     const leafA = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: 'a_mid' })
-    expect(leafA.nodes.map((n) => n.id)).toEqual(['c_fb', 'ext:ss_b', 'ext:ss_c'])
+    expect(leafA.nodes.map((n) => n.id)).toEqual(['c_fb'])
     const fb = leafA.nodes.find((n) => n.id === 'c_fb')
     expect(fb?.kind).toBe('container')
     expect(fb?.childCount).toBe(0)
@@ -388,7 +409,7 @@ describe('C12.2 缝 1：大容器如实报与容器职责推导', () => {
     expect(m.nodes.find((n) => n.id === 'c_tiny')).toMatchObject({ symbolCount: 1, fileCount: 1, oversized: false })
     const keys = Object.keys(bigCard ?? {}).sort()
     expect(keys).toEqual([
-      'childCount', 'containerCount', 'debt', 'dir', 'entries', 'external', 'fileCount', 'id',
+      'childCount', 'containerCount', 'debt', 'dir', 'entries', 'entryDispersion', 'fileCount', 'id',
       'invariants', 'isolated', 'kind', 'label', 'oversized', 'ports', 'responsibility',
       'symbolCount', 'type',
     ])
@@ -399,6 +420,25 @@ describe('C12.2 缝 1：大容器如实报与容器职责推导', () => {
     const w = respWorld()
     const m = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: 'r' })
     expect(m.nodes.find((n) => n.id === 'c_st')?.responsibility).toEqual({ state: 'declared', text: '甲侧存储注释' })
+  })
+
+  it('容器职责匹配：容器 label 带包前缀时按最后类型段命中 model doc', () => {
+    const w = respWorld()
+    const m = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: 'r' })
+    expect(m.nodes.find((n) => n.id === 'c_prefixed')?.responsibility).toEqual({
+      state: 'declared', text: '前缀甲侧存储注释',
+    })
+  })
+
+  it('容器职责匹配：带包前缀的同名 model 跨包时仍只命中容器成员目录', () => {
+    const w = respWorld()
+    const m = deriveScopePage({ baseline: w.baseline, best: w.best, organization: 'best', scopeId: 'r' })
+    expect(m.nodes.find((n) => n.id === 'c_prefixed')?.responsibility).toEqual({
+      state: 'declared', text: '前缀甲侧存储注释',
+    })
+    expect(m.nodes.find((n) => n.id === 'c_prefixed')?.responsibility).not.toEqual({
+      state: 'declared', text: '前缀别家存储注释',
+    })
   })
 
   it('类型方法无同名匹配=undeclared；函数组/TypeScript 模型=no-subject，不硬凑', () => {
@@ -426,6 +466,37 @@ describe('C12.2 缝 1：大容器如实报与容器职责推导', () => {
       organization: 'best', scopeId: null,
     })
     expect(withText.nodes.find((n) => n.id === 'r')?.responsibility).toEqual({ state: 'declared', text: '人写的职责正文' })
+  })
+})
+
+describe('C14 缝 1：入口注册散度上卡', () => {
+  it('根层领域卡报告入口数/文件数/集中注册边界，容器卡保持 null', () => {
+    const four = deriveScopePage({
+      ...entryWorld(['entry/routes.go', 'entry/routes.go', 'entry/routes.go', 'entry/routes.go']),
+      organization: 'best', scopeId: null,
+    })
+    expect(four.nodes.find((node) => node.id === 'r')?.entryDispersion).toEqual({
+      domainId: 'r', entries: 4, files: 1, concentrated: true,
+    })
+
+    const three = deriveScopePage({
+      ...entryWorld(['entry/routes.go', 'entry/routes.go', 'entry/routes.go']),
+      organization: 'best', scopeId: null,
+    })
+    expect(three.nodes.find((node) => node.id === 'r')?.entryDispersion).toEqual({
+      domainId: 'r', entries: 3, files: 1, concentrated: false,
+    })
+
+    const zero = deriveScopePage({ ...entryWorld([]), organization: 'best', scopeId: null })
+    expect(zero.nodes.find((node) => node.id === 'r')?.entryDispersion).toEqual({
+      domainId: 'r', entries: 0, files: 0, concentrated: false,
+    })
+
+    const leaf = deriveScopePage({
+      ...entryWorld(['entry/routes.go', 'entry/routes.go', 'entry/routes.go', 'entry/routes.go']),
+      organization: 'best', scopeId: 'r',
+    })
+    expect(leaf.nodes.find((node) => node.id === 'c_entries')?.entryDispersion).toBeNull()
   })
 })
 
@@ -515,17 +586,15 @@ describe('C12.4 R3：invariants 投影（三态互斥 + testRef 逐字透传）'
     expect(Object.prototype.hasOwnProperty.call(inv.items[1], 'testRef')).toBe(false)
   })
 
-  it('圈外引用卡（ext:<顶层id>）同样投影其域的 invariants：横跳卡不丢声明正文', () => {
+  it('圈外调出不生成引用卡：横跳数据改由 externalOut 承载', () => {
     const w = isoWorld()
     const m = deriveScopePage({
       baseline: w.baseline, best: w.best,
       decls: { ss_b: { domain: 'ss_b', responsibility: '乙', invariants: [{ text: '乙域承重不变式', testRef: 'TestLeafB' }] } },
       organization: 'best', scopeId: 'ss_a',
     })
-    expect(m.nodes.find((n) => n.id === 'ext:ss_b')?.invariants).toEqual({
-      state: 'present',
-      items: [{ text: '乙域承重不变式', testRef: 'TestLeafB' }],
-    })
+    expect(m.nodes.find((n) => n.id === 'ext:ss_b')).toBeUndefined()
+    expect(m.externalOut).toEqual([{ neighborId: 'ss_b', label: '乙子系统', weight: 1 }])
     expect(m.nodes.find((n) => n.id === 'a_mid')?.invariants).toEqual({ state: 'no-decl' })
   })
 

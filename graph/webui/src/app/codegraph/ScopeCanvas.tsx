@@ -2,16 +2,17 @@
 //
 // 职责：把 ScopePageModel 的拓扑事实画出来——布局坐标来自 scopelayout 纯函数；
 // 单击选中（相连高亮 + 不相连压暗同时生效）、双击领域下钻 / 双击容器显原子说明、
-// 空白拖动平移、⌘/Ctrl+滚轮缩放、双击空白复位。
+// 空白拖动平移、⌘/Ctrl+滚轮缩放、双击空白回到 fit 态。
 // 边界：只消费模型与装配层注入的直调债四档色映射（edgeStatus，R2 备案的装配
 // join）；选中高亮/压暗是运行期选择状态对 model.edges 的直接投影，不是模型读数
 // 重算。wheel 缩放与拖拽平移的浏览器兼容归真机清单 1，机内只断言事件驱动状态变化
-// （data-zoom / data-transform）。禁 snapshot，全部 data-* 行为查询。
-import { useEffect, useMemo, useRef, useState } from 'react'
+// （data-zoom / data-transform）。ext 卡已退役，跨层调出走 externalOut 图例。
+// 禁 snapshot，全部 data-* 行为查询。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { DirectionStatus } from './besttree'
 import type { ScopeNode, ScopePageModel } from './scopepage'
-import { CARD_H, CARD_W, CONTAINER_H, EXT_H, EXT_W, layoutScopeCards } from './scopelayout'
+import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgePath } from './scopelayout'
 
 /** 直调债四档色板词表（besttree.DirectionStatus 同源，禁止第二份字面量）。 */
 const DIRECTION_STATUSES: readonly DirectionStatus[] = ['declared', 'over-budget', 'dead-contract', 'new-direction']
@@ -30,15 +31,15 @@ export interface ScopeCanvasProps {
   edgeStatus?: EdgeStatusMap
   selectedNodeId: string
   onSelect: (nodeId: string) => void
-  /** 双击领域卡（含域外引用卡，剥 ext: 前缀）换 scope；容器卡不会触发。 */
+  /** 双击领域卡换 scope；容器卡不会触发。 */
   onOpenScope: (scopeId: string, label: string) => void
 }
 
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 2.5
+const TOP_LAYER_FALLBACK = 30
 
 function cardSize(node: ScopeNode): [number, number] {
-  if (node.external) return [EXT_W, EXT_H]
   return node.kind === 'container' ? [CARD_W, CONTAINER_H] : [CARD_W, CARD_H]
 }
 
@@ -49,6 +50,25 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
   const wrap = useRef<HTMLDivElement>(null)
 
   const layout = useMemo(() => layoutScopeCards(model.nodes, model.edges), [model])
+  const fitToBounds = useCallback(() => {
+    const viewportWidth = wrap.current?.clientWidth || 1200
+    const viewportHeight = wrap.current?.clientHeight || 620
+    const boundsWidth = Math.max(layout.bounds.w, 1)
+    const boundsHeight = Math.max(layout.bounds.h, 1)
+    const nextZoom = Math.min(viewportWidth / boundsWidth, viewportHeight / boundsHeight, 1)
+    const nextPan = {
+      x: Math.max(0, (viewportWidth - boundsWidth * nextZoom) / 2),
+      y: Math.max(0, (viewportHeight - boundsHeight * nextZoom) / 2),
+    }
+    console.info('[codegraph] scope fit', { scopeId: model.scopeId, zoom: nextZoom, bounds: layout.bounds })
+    setZoom(nextZoom)
+    setPan(nextPan)
+  }, [layout.bounds.h, layout.bounds.w, model.scopeId])
+
+  // 首次渲染与 scope 切换才重算 fit；选中、拖动、滚轮不会被模型对象变化重置。
+  useEffect(() => {
+    fitToBounds()
+  }, [fitToBounds, model.scopeId])
 
   // 选中态投影（验收 9）：邻居=与选中卡共享任一条模型边的卡；高亮与压暗同一次渲染算定，
   // 「只压暗不高亮」在结构上不可能出现。
@@ -102,8 +122,7 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
 
   const onBlankDoubleClick = (ev: React.MouseEvent) => {
     if ((ev.target as HTMLElement).closest('[data-node]')) return
-    setPan({ x: 0, y: 0 })
-    setZoom(1)
+    fitToBounds()
   }
 
   const onCardDoubleClick = (node: ScopeNode, ev: React.MouseEvent) => {
@@ -113,7 +132,7 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
       setAtomicNote('容器没有下一层：结构轴到容器为止')
       return
     }
-    const targetId = node.external ? node.id.slice(4) : node.id
+    const targetId = node.id
     console.info('[codegraph] scope enter', { from: model.scopeId, to: targetId, label: node.label })
     setAtomicNote('')
     onOpenScope(targetId, node.label)
@@ -133,6 +152,81 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
     width = Math.max(width, x + size[0] + 200)
     height = Math.max(height, y + size[1] + 160)
   }
+
+  const isolatedIds = new Set(layout.isolatedIds)
+  const cyclicIds = new Set(layout.cyclicNodeIds)
+  const renderCard = (node: ScopeNode) => {
+    const [x, y] = layout.positions[node.id] ?? [0, 0]
+    const size = cardSize(node)
+    const isSelected = node.id === selectedNodeId
+    const isNeighbor = highlightIds.has(node.id) || projectionNeighborIds.has(node.id)
+    const related = isSelected || isNeighbor
+    const duty = node.responsibility.state === 'declared'
+      ? node.responsibility.text
+      : node.responsibility.state === 'no-subject'
+        ? `无职责主体（${node.type || '未知类型'}）`
+        : '未声明职责'
+    return (
+      <div
+        key={node.id}
+        data-node={node.id}
+        data-node-kind={node.kind}
+        {...(node.isolated ? { 'data-isolated': 'true' } : {})}
+        {...(node.kind === 'domain' && node.childCount > 0 ? { 'data-nested': 'true' } : {})}
+        {...(node.oversized ? { 'data-oversized': 'true' } : {})}
+        {...(isSelected ? { 'data-selected': 'true' } : {})}
+        {...(isNeighbor && !isSelected ? { 'data-highlight': 'true' } : {})}
+        {...(!related ? { 'data-dimmed': 'true' } : {})}
+        onClick={() => {
+          setAtomicNote('')
+          onSelect(node.id)
+        }}
+        onDoubleClick={(ev) => onCardDoubleClick(node, ev)}
+        style={{ left: x, top: y, width: size[0], height: size[1] }}
+        className={'pointer-events-auto absolute cursor-pointer rounded-xl border-2 bg-background p-2 shadow-sm '
+          + (node.kind === 'domain' && node.childCount > 0 ? 'border-dashed ' : '')
+          + (isSelected ? 'border-primary outline outline-2 outline-primary/60 z-10 ' : isNeighbor ? 'border-primary/70 z-[9] ' : 'opacity-50 border-neutral-300 ')}
+      >
+        <div className="truncate text-sm font-semibold">{node.label}</div>
+        <div className="truncate font-mono text-[11px] text-muted-foreground">
+          {node.type}{node.containerCount > 0 ? ` · ${node.containerCount} 容器` : ''}
+          {node.symbolCount > 0 ? ` · ${node.symbolCount} 符号` : ''}
+        </div>
+        {node.kind === 'container' && (
+          <div data-duty className={'mt-1 text-[10.5px] leading-tight '
+            + (node.responsibility.state === 'declared' ? 'line-clamp-2 text-neutral-600' : 'italic text-muted-foreground')}>
+            {duty}
+          </div>
+        )}
+        {node.kind === 'domain' && model.scopeId === null && node.entryDispersion && node.entryDispersion.entries > 0 && (
+          <div
+            data-entry-badge
+            {...(node.entryDispersion.concentrated ? { 'data-entry-badge-concentrated': 'true' } : {})}
+            className={'mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] leading-tight '
+              + (node.entryDispersion.concentrated ? 'bg-amber-100 text-amber-800' : 'bg-muted text-muted-foreground')}
+          >
+            ▣ {node.entryDispersion.entries} 入口{node.entryDispersion.concentrated ? ' · 集中' : ''}
+          </div>
+        )}
+        {cyclicIds.has(node.id) && (
+          <span data-cyclic="true" className="absolute right-2 top-1 rounded-full bg-red-100 px-1 text-[10px] text-red-600">⟲</span>
+        )}
+        {node.oversized && (
+          <div data-debt-mark className="mt-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] leading-tight text-amber-800">
+            超大容器 · {node.symbolCount} 符号 / {node.fileCount} 文件 · 无声明职责如实报
+          </div>
+        )}
+        {node.isolated && (
+          <div data-isolated-reason className="mt-1 text-[10.5px] leading-tight text-muted-foreground">
+            {canvasIsolationReason(node, model)}
+          </div>
+        )}
+      </div>
+    )
+  }
+  const layerNumbers = [...new Set(Object.values(layout.layers))].sort((a, b) => a - b)
+  const isolatedNodes = model.nodes.filter((node) => isolatedIds.has(node.id))
+  const linkedNodes = model.nodes.filter((node) => !isolatedIds.has(node.id))
 
   return (
     <section
@@ -159,6 +253,11 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
               <path d="M 0 0 L 10 5 L 0 10 z" className="fill-current text-neutral-500" />
             </marker>
           </defs>
+          {layerNumbers.map((layer) => {
+            const first = model.nodes.find((node) => layout.layers[node.id] === layer)
+            const y = first ? (layout.positions[first.id]?.[1] ?? TOP_LAYER_FALLBACK) + 15 : 15
+            return <text key={layer} data-layer-label={`L${layer}`} x={4} y={y} className="fill-neutral-400 text-[11px]">L{layer}</text>
+          })}
           {layout.packageFrames.map((frame) => (
             <rect
               key={frame.dir || '(no-dir)'}
@@ -182,72 +281,41 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
             const [x2, y2] = centerOf(to)
             const status = edgeStatus?.[`${edge.from}->${edge.to}`]
             return (
-              <line
+              <path
                 key={edge.key}
                 data-edge-key={edge.key}
                 data-edge-kind={edge.kind}
                 {...(edge.projectionType !== undefined ? { 'data-projection-type': edge.projectionType } : {})}
                 {...(status !== undefined ? { 'data-direction-status': status } : {})}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
+                d={scopeEdgePath(
+                  x1,
+                  y1,
+                  x2,
+                  y2,
+                  layout.backEdgeKeys.includes(edge.key)
+                    ? 'back'
+                    : layout.layers[edge.from] !== undefined && layout.layers[edge.from] === layout.layers[edge.to]
+                      ? 'sibling'
+                      : 'forward',
+                )}
                 markerEnd="url(#cg-arrow)"
                 strokeWidth={edge.weight >= 8 ? 3 : edge.weight >= 3 ? 2 : 1}
-                className={edge.kind === 'projection' ? 'stroke-purple-400' : status === 'dead-contract' || status === 'over-budget' ? 'stroke-amber-500' : 'stroke-neutral-400'}
-                strokeDasharray={edge.kind === 'projection' ? '6 4' : undefined}
+                className={edge.kind === 'projection' ? 'stroke-purple-400' : layout.backEdgeKeys.includes(edge.key) ? 'stroke-red-600' : status === 'dead-contract' || status === 'over-budget' ? 'stroke-amber-500' : 'stroke-neutral-400'}
+                strokeDasharray={edge.kind === 'projection' ? '6 4' : layout.backEdgeKeys.includes(edge.key) ? '6 3' : undefined}
+                {...(layout.backEdgeKeys.includes(edge.key) ? { 'data-back-edge': 'true' } : {})}
                 fill="none"
               />
             )
           })}
         </svg>
 
-        {model.nodes.map((node) => {
-          const [x, y] = layout.positions[node.id] ?? [0, 0]
-          const size = cardSize(node)
-          const isSelected = node.id === selectedNodeId
-          const isNeighbor = highlightIds.has(node.id) || projectionNeighborIds.has(node.id)
-          const related = isSelected || isNeighbor
-          return (
-            <div
-              key={node.id}
-              data-node={node.id}
-              data-node-kind={node.kind}
-              {...(node.external ? { 'data-external': 'true' } : {})}
-              {...(node.isolated ? { 'data-isolated': 'true' } : {})}
-              {...(node.kind === 'domain' && node.childCount > 0 ? { 'data-nested': 'true' } : {})}
-              {...(node.oversized ? { 'data-oversized': 'true' } : {})}
-              {...(isSelected ? { 'data-selected': 'true' } : {})}
-              {...(isNeighbor && !isSelected ? { 'data-highlight': 'true' } : {})}
-              {...(!related ? { 'data-dimmed': 'true' } : {})}
-              onClick={() => {
-                setAtomicNote('')
-                onSelect(node.id)
-              }}
-              onDoubleClick={(ev) => onCardDoubleClick(node, ev)}
-              style={{ left: x, top: y, width: size[0], height: size[1] }}
-              className={'absolute cursor-pointer rounded-xl border-2 bg-background p-2 shadow-sm '
-                + (node.kind === 'domain' && node.childCount > 0 ? 'border-dashed ' : '')
-                + (isSelected ? 'border-primary outline outline-2 outline-primary/60 z-10 ' : isNeighbor ? 'border-primary/70 z-[9] ' : 'opacity-50 border-neutral-300 ')}
-            >
-              <div className="truncate text-sm font-semibold">{node.label}</div>
-              <div className="truncate font-mono text-[11px] text-muted-foreground">
-                {node.type}{node.containerCount > 0 ? ` · ${node.containerCount} 容器` : ''}
-                {node.symbolCount > 0 ? ` · ${node.symbolCount} 符号` : ''}
-              </div>
-              {node.oversized && (
-                <div data-debt-mark className="mt-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] leading-tight text-amber-800">
-                  超大容器 · {node.symbolCount} 符号 / {node.fileCount} 文件 · 无声明职责如实报
-                </div>
-              )}
-              {node.isolated && (
-                <div data-isolated-reason className="mt-1 text-[10.5px] leading-tight text-muted-foreground">
-                  {canvasIsolationReason(node, model)}
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {linkedNodes.map(renderCard)}
+        {isolatedNodes.length > 0 && (
+          <div data-isolated-row className="pointer-events-none absolute inset-0">
+            <div className="absolute left-2 top-0 text-[11px] text-muted-foreground">孤立节点（本层内既不调用别人也不被调用）</div>
+            {isolatedNodes.map(renderCard)}
+          </div>
+        )}
       </div>
 
       {atomicNote && (
@@ -265,6 +333,18 @@ export function ScopeCanvas({ model, edgeStatus, selectedNodeId, onSelect, onOpe
         ))}
         <span data-projection-legend className="text-muted-foreground">紫虚线＝projections 投影边，不是调用边</span>
         <span data-nested-legend className="text-muted-foreground">虚线框＝还有下层领域</span>
+        {model.externalOut.length > 0 && (
+          <span data-external-out className="text-muted-foreground">
+            调出到本层之外：{model.externalOut.map((item, index) => (
+              <span key={item.neighborId}>
+                {index > 0 ? ' · ' : ''}
+                <button type="button" data-external-out-item={item.neighborId} className="underline" onClick={() => onOpenScope(item.neighborId, item.label)}>
+                  {item.label} {item.weight}
+                </button>
+              </span>
+            ))}
+          </span>
+        )}
       </div>
     </section>
   )

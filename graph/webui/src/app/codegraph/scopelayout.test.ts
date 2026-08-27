@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScopeEdge, ScopeNode } from './scopepage'
-import { CARD_H, CARD_W, CONTAINER_H, EXT_H, EXT_W, layoutScopeCards } from './scopelayout'
+import { CARD_H, CARD_W, CONTAINER_H, layoutScopeCards, scopeEdgePath } from './scopelayout'
 
 // 夹具纪律（沿 K2/K3 同款）：断言只走 layoutScopeCards 一个入口；期望值硬编码。
 function domainNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
@@ -9,7 +9,6 @@ function domainNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
     kind: 'domain',
     label: id,
     type: 'logic',
-    external: false,
     isolated: false,
     childCount: 0,
     containerCount: 0,
@@ -20,6 +19,7 @@ function domainNode(id: string, overrides: Partial<ScopeNode> = {}): ScopeNode {
     ports: [],
     entries: [],
     responsibility: { state: 'undeclared' },
+    entryDispersion: null,
     invariants: { state: 'no-decl' },
     debt: null,
     ...overrides,
@@ -38,9 +38,9 @@ describe('C12.4 scopelayout：确定性与覆盖', () => {
   })
 
   it('每张输入卡都有坐标；空输入返回空布局不崩溃', () => {
-    const nodes = [domainNode('a'), domainNode('b'), domainNode('ext:x', { external: true }), domainNode('iso', { isolated: true })]
+    const nodes = [domainNode('a'), domainNode('b'), domainNode('iso', { isolated: true })]
     const layout = layoutScopeCards(nodes, [])
-    expect(Object.keys(layout.positions).sort()).toEqual(['a', 'b', 'ext:x', 'iso'])
+    expect(Object.keys(layout.positions).sort()).toEqual(['a', 'b', 'iso'])
     expect(layout.packageFrames).toEqual([])
     const empty = layoutScopeCards([], [])
     expect(empty.positions).toEqual({})
@@ -60,10 +60,10 @@ describe('C12.4 scopelayout：确定性与覆盖', () => {
       for (let j = i + 1; j < nodes.length; j += 1) {
         const a = positions[nodes[i].id]!
         const b = positions[nodes[j].id]!
-        const aw = nodes[i].external ? EXT_W : CARD_W
-        const ah = nodes[i].kind === 'container' ? CONTAINER_H : nodes[i].external ? EXT_H : CARD_H
-        const bw = nodes[j].external ? EXT_W : CARD_W
-        const bh = nodes[j].kind === 'container' ? CONTAINER_H : nodes[j].external ? EXT_H : CARD_H
+        const aw = CARD_W
+        const ah = nodes[i].kind === 'container' ? CONTAINER_H : CARD_H
+        const bw = CARD_W
+        const bh = nodes[j].kind === 'container' ? CONTAINER_H : CARD_H
         const ox = Math.min(a[0] + aw, b[0] + bw) - Math.max(a[0], b[0])
         const oy = Math.min(a[1] + ah, b[1] + bh) - Math.max(a[1], b[1])
         expect({ pair: `${nodes[i].id}|${nodes[j].id}`, ox, oy }).toEqual({
@@ -94,27 +94,24 @@ describe('C12.4 scopelayout：确定性与覆盖', () => {
     expect(positions['iso_a']![0]).toBeLessThan(positions['iso_b']![0])
   })
 
-  it('域外引用卡摆在本层内容外圈：整体在内部包围盒之外', () => {
+  it('布局包围盒覆盖领域卡与孤立区，且所有坐标非负', () => {
     const nodes = [
       domainNode('a'),
       domainNode('b'),
-      domainNode('ext:y', { external: true }),
-      domainNode('ext:z', { external: true }),
+      domainNode('iso', { isolated: true }),
     ]
     const edges: ScopeEdge[] = [
       { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
-      { key: 'a->ext:y', from: 'a', to: 'ext:y', weight: 1, kind: 'call' },
     ]
-    const { positions } = layoutScopeCards(nodes, edges)
-    const innerX0 = Math.min(positions.a![0], positions.b![0])
-    const innerX1 = Math.max(positions.a![0] + CARD_W, positions.b![0] + CARD_W)
-    const innerY0 = Math.min(positions.a![1], positions.b![1])
-    const innerY1 = Math.max(positions.a![1] + CARD_H, positions.b![1] + CARD_H)
-    for (const id of ['ext:y', 'ext:z']) {
-      const [x, y] = positions[id]!
-      const outside = x + EXT_W < innerX0 - 8 || x > innerX1 + 8 || y + EXT_H < innerY0 - 8 || y > innerY1 + 8
-      expect({ id, outside }).toEqual({ id, outside: true })
+    const layout = layoutScopeCards(nodes, edges)
+    for (const node of nodes) {
+      const [x, y] = layout.positions[node.id]!
+      expect({ id: node.id, x, y }).toEqual({ id: node.id, x: expect.any(Number), y: expect.any(Number) })
+      expect(x).toBeGreaterThanOrEqual(0)
+      expect(y).toBeGreaterThanOrEqual(0)
     }
+    expect(layout.bounds.w).toBeGreaterThanOrEqual(CARD_W)
+    expect(layout.bounds.h).toBeGreaterThan(layout.positions.iso![1])
   })
 
   it('包群组框：容器按 dir 聚合、包围盒盖住全部成员、dir 缺席归入空串框；领域卡不成框', () => {
@@ -136,5 +133,85 @@ describe('C12.4 scopelayout：确定性与覆盖', () => {
         && positions[id]![1] >= one.y && positions[id]![1] + CONTAINER_H <= one.y + one.h
       expect({ id, inside }).toEqual({ id, inside: true })
     }
+  })
+})
+
+describe('C14 容器层：包群组装箱与边路径', () => {
+  it('两组包各自成 frame，frame 覆盖组内全部容器卡', () => {
+    const nodes = [
+      containerNode('a1', { dir: 'p/a' }), containerNode('a2', { dir: 'p/a' }), containerNode('a3', { dir: 'p/a' }),
+      containerNode('b1', { dir: 'p/b' }), containerNode('b2', { dir: 'p/b' }), containerNode('b3', { dir: 'p/b' }),
+    ]
+    const layout = layoutScopeCards(nodes, [], { width: 1200 })
+    expect(layout.packageFrames.map((frame) => frame.dir)).toEqual(['p/a', 'p/b'])
+    for (const frame of layout.packageFrames) {
+      for (const id of frame.nodeIds) {
+        const [x, y] = layout.positions[id]!
+        expect({ id, inside: x >= frame.x && y >= frame.y && x + CARD_W <= frame.x + frame.w && y + CONTAINER_H <= frame.y + frame.h })
+          .toEqual({ id, inside: true })
+      }
+    }
+  })
+
+  it('12 个容器三组装箱保持单屏宽度与非负坐标', () => {
+    const nodes = Array.from({ length: 12 }, (_, index) => containerNode(`c${index}`, { dir: `p/${index % 3}` }))
+    const layout = layoutScopeCards(nodes, [], { width: 1200 })
+    expect(layout.bounds.w).toBeLessThanOrEqual(1200)
+    expect(Object.values(layout.positions).every(([x, y]) => x >= 0 && y >= 0)).toBe(true)
+    expect(layout.layers).toEqual({})
+    expect(layout.layerCount).toBe(0)
+  })
+
+  it('edge path 三种形态均输出可绘制的 SVG path', () => {
+    expect(scopeEdgePath(10, 20, 30, 160, 'forward')).toBe('M10,20 C10,52 30,128 30,160')
+    expect(scopeEdgePath(30, 160, 10, 20, 'back')).toBe('M30,160 C58,160 58,20 10,20')
+    expect(scopeEdgePath(10, 20, 30, 20, 'sibling')).toBe('M10,20 C10,43 30,43 30,20')
+  })
+})
+
+describe('C14 缝 1：拓扑分层与孤立区', () => {
+  it('调用链按源到目标分层：L0/L1/L2 坐标逐层向下', () => {
+    const nodes = [domainNode('a'), domainNode('b'), domainNode('c')]
+    const edges: ScopeEdge[] = [
+      { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
+      { key: 'b->c', from: 'b', to: 'c', weight: 1, kind: 'call' },
+    ]
+    const layout = layoutScopeCards(nodes, edges)
+    expect(layout.layers).toEqual({ a: 0, b: 1, c: 2 })
+    expect(layout.layerCount).toBe(3)
+    expect(layout.positions.a![1]).toBeLessThan(layout.positions.b![1])
+    expect(layout.positions.b![1]).toBeLessThan(layout.positions.c![1])
+    expect(layout.cyclicNodeIds).toEqual([])
+    expect(layout.backEdgeKeys).toEqual([])
+  })
+
+  it('环内节点同层并标记回边：双向边的输出键序稳定', () => {
+    const nodes = [domainNode('x'), domainNode('y')]
+    const edges: ScopeEdge[] = [
+      { key: 'x->y', from: 'x', to: 'y', weight: 1, kind: 'call' },
+      { key: 'y->x', from: 'y', to: 'x', weight: 1, kind: 'call' },
+    ]
+    const layout = layoutScopeCards(nodes, edges)
+    expect(layout.layers).toEqual({ x: 0, y: 0 })
+    expect(layout.cyclicNodeIds).toEqual(['x', 'y'])
+    expect(layout.backEdgeKeys).toEqual(['x->y', 'y->x'])
+    expect(layout.positions.x![1]).toBe(layout.positions.y![1])
+  })
+
+  it('孤立节点不进层：projection 连接的两个孤立节点仍在底部孤立区', () => {
+    const nodes = [
+      domainNode('a'), domainNode('b'),
+      domainNode('iso_b', { isolated: true }), domainNode('iso_a', { isolated: true }),
+    ]
+    const edges: ScopeEdge[] = [
+      { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
+      { key: 'iso_a->iso_b:twin', from: 'iso_a', to: 'iso_b', weight: 1, kind: 'projection', projectionType: 'twin' },
+    ]
+    const layout = layoutScopeCards(nodes, edges)
+    expect(layout.layers).toEqual({ a: 0, b: 1 })
+    expect(layout.isolatedIds).toEqual(['iso_a', 'iso_b'])
+    expect(layout.positions.iso_a![1]).toBeGreaterThan(layout.positions.b![1])
+    expect(layout.positions.iso_a![1]).toBe(layout.positions.iso_b![1])
+    expect(layout.positions.iso_a![0]).toBeLessThan(layout.positions.iso_b![0])
   })
 })
