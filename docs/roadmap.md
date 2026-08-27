@@ -148,4 +148,8 @@
 52. **查看器「调用链（给 agent）」tab 是否退役**：C17 把 agent 看「怎么走」的主路径改到 CLI `flow`，该 tab 仍是 C12 冻结的机械下游、本期不删。`flow` 落地后若无人再点，再议退役。来源：C17 spec OOS。
 53. **全函数 `flows` 覆盖**：C17 只要求对外入缝 ∪ 紫框下钻目标 ∪ 右栏实现方法有流程图；其余符号 CLI `flow` 显式 degraded。要覆盖到任意方法，取决于扫描器本体（既有第 27/32 条），不在查看器/CLI 侧现场生成 CFG。来源：C17 spec OOS。
 54. **被谁调用在 UI 展开 depth > 1**：C17 右栏只列直接调用方；更深走 `who-calls --depth`。来源：C17 spec OOS。
+55. **C17 S3 真 flows 仍缺席**：2026-08-28 acceptance 读真实 handoff `codegraph/baseline.json`：3636 节点 / 4735 边 / **0 flows** / 7 implements / 162 entry。canonical `codegraph flow` 对真实仓与 testdata 均成功返回 `degraded=true`、`missing=基线没有 flows 段`、`steps=[]`。entry handler 不因 `kind=entry` 自动成为承重主语（`flow Server` 锚定到 model `m_agentd_Server` 后仍降级，不画入口图）。卫语句子列引用无法在真实扫描产物上核——没有 steps 树。交棒既有第 27/32/45/53 条扫描配方，不在本卡补扫。来源：C17 plan §8.2-1/2、breakdown 真机 1–2。
+56. **C17 `handoff graph` 别名尚未挂 `flow`/`tree`**：本机 `handoff graph --help` 子命令表无 flow/tree；`handoff graph summary` 菜单仍是 `sym/who-calls/chain/domains`。同机 canonical `graph/cmd/codegraph` 已挂二者，且 summary 文案含 `flow`/`tree`。等 handoff 升 charter graph 版本并重建别名（与第 1i、第 6 条同族）。来源：C17 plan §8.2-9、breakdown 真机 7。
+57. **C17 原型 fork 文案仍写「入口流程图」**：gitignored `prototypes/codegraph-two-axis/pages/behav-flow.html` 标题/导航仍是 C12「入口」词汇；产品 UI 已改为「正在看方法主语」。对拍差异已记录，不在本卡改 gitignore 副本。`prototypes/base/README.md` 行为轴行已按 C17 主语纠正。来源：C17 plan §8.2-3、finish 文档对齐。
+58. **C17 真机观察：菱形左缘被 overflow 裁切**：acceptance 截图 `03-flow-run.png` 中 `err` 菱形左侧文字被流程图滚动容器切掉；蛇形折列与卫语句侧甩本身通过。布局质量项，不阻塞。来源：C17 acceptance 2026-08-28。
 
