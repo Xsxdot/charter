@@ -1,0 +1,35 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>代码图查看器（现状形态）</title><link rel="stylesheet" href="../shared/style.css"></head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">charter · 代码图</div>
+    <nav>
+      <a href="../index.html" class="nav-item">首页</a>
+      <a href="codegraph.html" class="nav-item active" aria-current="page">代码图查看器</a>
+    </nav>
+  </aside>
+  <div class="main">
+    <header class="topbar"><span class="page-title">代码图查看器 · 现状形态</span></header>
+    <main class="content">
+      <div class="card" style="margin-bottom:12px">
+        <h3>这是现状镜像，不是目标形态</h3>
+        <p class="muted">本页镜像 <span class="mono">graph/webui</span> 今天的形态：面包屑 + 一排控件 + 左侧常驻迁移清单 + 中间全景 + 右侧详情。C12 认定这个信息架构不可读，目标形态见分支副本 <span class="mono">prototypes/codegraph-two-axis/</span>。</p>
+      </div>
+      <div class="card">
+        <div class="crumb" style="margin-bottom:8px">handoff ▸ 最优树全景</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <button>语义</button><button>结构</button><button>按最优树</button><button>按现状领域</button>
+          <span class="muted" style="font-size:11px;align-self:center">← 四个按钮今天塞在同一个 role="tablist" 里，且无 className（C12 真因二）</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:stretch;min-height:220px">
+          <aside style="width:200px;border-right:1px solid var(--border);padding-right:8px">
+            <div class="muted" style="font-size:11px;margin-bottom:4px">迁移清单（常驻左栏）</div>
+            <div class="mono muted" style="font-size:10px;line-height:1.5">k_agentd_fn → d_orchestration<br>k_cmd_fn → d_cli<br>k_store_Store → d_orchestration<br>k_prochost_fn → d_execution<br>…（原型里本应收起成一个带徽标的按钮）</div>
+          </aside>
+          <div style="flex:1;display:flex;align-items:center;justify-content:center" class="muted">最优树全景（子系统卡 + 债务色边）</div>
+          <aside style="width:220px;border-left:1px solid var(--border);padding-left:8px" class="muted">详情栏</aside>
+        </div>
+      </div>
+    </main>
+  </div>
+</div></body></html>

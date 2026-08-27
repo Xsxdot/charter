@@ -1,0 +1,403 @@
+import { fireEvent, render } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import type { ScopePageModel } from './scopepage'
+import { ScopeCanvas } from './ScopeCanvas'
+import { CARD_H, CARD_W, scopeEdgeAnchors, scopeEdgePath } from './scopelayout'
+
+// 夹具纪律：直接构造 ScopePageModel 字面量（DOM 契约缝单元面）；期望硬编码。
+function q<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
+  const el = root.querySelector(selector)
+  if (!el) throw new Error(`element not found: ${selector}`)
+  return el as T
+}
+
+function node(id: string, overrides: Partial<ScopePageModel['nodes'][number]> = {}): ScopePageModel['nodes'][number] {
+  return {
+    id,
+    kind: 'domain',
+    label: id,
+    type: 'logic',
+    isolated: false,
+    childCount: 0,
+    containerCount: 0,
+    symbolCount: 0,
+    fileCount: 0,
+    oversized: false,
+    dir: '',
+    ports: [],
+    entries: [],
+    responsibility: { state: 'undeclared' },
+    entryDispersion: null,
+    invariants: { state: 'no-decl' },
+    debt: null,
+    ...overrides,
+  }
+}
+
+function modelFixture(overrides: Partial<ScopePageModel> = {}): ScopePageModel {
+  return {
+    scopeId: null,
+    organization: 'best',
+    organizationAvailable: true,
+    nodes: [
+      node('topA', { label: '甲系统', childCount: 2, entryDispersion: { domainId: 'topA', entries: 4, files: 1, concentrated: true } }),
+      node('leafB', { label: '乙叶子' }),
+      node('isoC', { label: '孤岛丙', isolated: true }),
+      node('c_big', {
+        kind: 'container', label: '杂活', type: '函数组', symbolCount: 45, fileCount: 5, dir: 'b/u', oversized: true, invariants: null,
+      }),
+    ],
+    edges: [
+      { key: 'topA->leafB', from: 'topA', to: 'leafB', weight: 3, kind: 'call' },
+      { key: 'isoC<->topA:twin', from: 'isoC', to: 'topA', weight: 1, kind: 'projection', projectionType: 'twin' },
+    ],
+    inboundSeams: [],
+    externalOut: [],
+    empty: { noDeclaration: false, noEntities: false, noInboundSeams: false },
+    ...overrides,
+  }
+}
+
+function renderCanvas(model = modelFixture(), selectedNodeId = '') {
+  const onSelect = vi.fn()
+  const onOpenScope = vi.fn()
+  const view = render(
+    <ScopeCanvas
+      model={model}
+      edgeStatus={{ 'topA->leafB': 'over-budget' }}
+      selectedNodeId={selectedNodeId}
+      onSelect={onSelect}
+      onOpenScope={onOpenScope}
+    />,
+  )
+  return { ...view, onSelect, onOpenScope }
+}
+
+describe('C12.4 画布：卡片投影（§2.3-24/-27、§2.5-39）', () => {
+  it('每张卡带 data-node/kind/isolated/nested 标记；ext 卡标记退役', () => {
+    renderCanvas()
+    expect(q('[data-node="topA"]').getAttribute('data-node-kind')).toBe('domain')
+    expect(q('[data-node="topA"]').getAttribute('data-nested')).toBe('true')
+    expect(q('[data-node="topA"]').className).toContain('border-dashed')
+    expect(q('[data-node="leafB"]').getAttribute('data-nested')).toBeNull()
+    expect(document.querySelector('[data-external]')).toBeNull()
+    expect(q('[data-node="isoC"]').getAttribute('data-isolated')).toBe('true')
+    expect(q('[data-entry-badge]').textContent).toBe('▣ 4 入口 · 集中')
+    expect(q('[data-entry-badge]').getAttribute('data-entry-badge-concentrated')).toBe('true')
+  })
+
+  it('大容器卡正面显示符号数/文件数与债务色标记，且无折叠控件（§2.3-24 反面）', () => {
+    renderCanvas()
+    const card = q('[data-node="c_big"]')
+    expect(card.getAttribute('data-oversized')).toBe('true')
+    expect(q('[data-debt-mark]').textContent).toContain('45 符号 / 5 文件')
+    expect(card.querySelector('button')).toBeNull()
+  })
+
+  it('孤立子系统旁的原因标注存在且区分两种原因（§2.3-27）', () => {
+    const first = renderCanvas()
+    expect(q('[data-isolated-reason]').textContent).toContain('跨语言投影关联')
+    expect(q('[data-isolated-reason]').textContent).toContain('不是调用边')
+    first.unmount()
+
+    renderCanvas(modelFixture({
+      edges: [{ key: 'topA->leafB', from: 'topA', to: 'leafB', weight: 1, kind: 'call' }],
+    }))
+    expect(q('[data-isolated-reason]').textContent).toContain('无跨域调用入边')
+    expect(q('[data-isolated-reason]').textContent).not.toContain('投影')
+  })
+
+  it('连线投影：call 边带方向状态与箭头；projection 边带类型标记与虚线样式属性', () => {
+    renderCanvas()
+    const callEdge = q('[data-edge-key="topA->leafB"]')
+    expect(callEdge.getAttribute('data-edge-kind')).toBe('call')
+    expect(callEdge.getAttribute('data-direction-status')).toBe('over-budget')
+    expect(callEdge.getAttribute('marker-end')).toContain('cg-arrow')
+    const projEdge = q('[data-edge-key="isoC<->topA:twin"]')
+    expect(projEdge.getAttribute('data-projection-type')).toBe('twin')
+    expect(projEdge.getAttribute('stroke-dasharray')).toBe('6 4')
+  })
+
+  it('正向边端点贴在源卡下沿与目标卡上沿，不落卡心', () => {
+    renderCanvas()
+    const from = q('[data-node="topA"]') as HTMLElement
+    const to = q('[data-node="leafB"]') as HTMLElement
+    const fromRect = { x: parseFloat(from.style.left), y: parseFloat(from.style.top), w: CARD_W, h: CARD_H }
+    const toRect = { x: parseFloat(to.style.left), y: parseFloat(to.style.top), w: CARD_W, h: CARD_H }
+    const anchors = scopeEdgeAnchors(fromRect, toRect, 'forward')
+    expect(anchors.y1).toBe(fromRect.y + CARD_H)
+    expect(anchors.y2).toBe(toRect.y)
+    expect(anchors.y1).not.toBe(fromRect.y + CARD_H / 2)
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('d')).toBe(
+      scopeEdgePath(anchors.x1, anchors.y1, anchors.x2, anchors.y2, 'forward'),
+    )
+  })
+
+  it('四档债务色板图例区块存在，词表四值各一枚；「不是调用边」与嵌套图例文案在场（§2.5-39②③）', () => {
+    renderCanvas()
+    for (const status of ['declared', 'over-budget', 'dead-contract', 'new-direction']) {
+      expect(document.querySelector(`[data-status-chip="${status}"]`)).toBeTruthy()
+    }
+    expect(q('[data-projection-legend]').textContent).toContain('不是调用边')
+    expect(q('[data-nested-legend]').textContent).toContain('虚线框')
+  })
+
+  it('容器层包群组 frame 存在（嵌套层虚线 frame 标记，§2.5-39④的画布半边）', () => {
+    renderCanvas()
+    expect(q('[data-package-frame="b/u"]')).toBeTruthy()
+  })
+})
+
+describe('C14 画布：职责、入口徽标与拓扑形态', () => {
+  it('容器卡三态职责直接显示在卡面，声明正文截断样式存在', () => {
+    const noSubject = renderCanvas(modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'no-subject' as const } }
+        : item),
+    }), 'c_big')
+    expect(q('[data-duty]').textContent).toContain('无职责主体（函数组）')
+    expect(q('[data-duty]').className).toBeTruthy()
+    noSubject.unmount()
+
+    const declared = modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'declared' as const, text: '职责正文很长但卡面需要保留两行截断样式' } }
+        : item),
+    })
+    renderCanvas(declared, 'c_big')
+    expect(q('[data-duty]').textContent).toContain('职责正文很长')
+    expect(q('[data-duty]').className).toContain('line-clamp-2')
+    document.body.innerHTML = ''
+
+    const undeclared = modelFixture({
+      nodes: modelFixture().nodes.map((item) => item.id === 'c_big'
+        ? { ...item, responsibility: { state: 'undeclared' as const } }
+        : item),
+    })
+    renderCanvas(undeclared, 'c_big')
+    expect(q('[data-duty]').textContent).toBe('未声明职责')
+  })
+
+  it('入口徽标只在根层领域卡显示；0 入口领域不伪造徽标', () => {
+    const root = renderCanvas(modelFixture(), '')
+    expect(q('[data-entry-badge]').textContent).toContain('▣ 4 入口')
+    root.unmount()
+
+    renderCanvas(modelFixture({
+      scopeId: 'topA',
+      nodes: modelFixture().nodes.map((item) => item.id === 'topA'
+        ? { ...item, entryDispersion: { domainId: 'topA', entries: 4, files: 1, concentrated: true } }
+        : item),
+    }))
+    expect(document.querySelector('[data-entry-badge]')).toBeNull()
+    expect(document.querySelector('[data-node="leafB"] [data-entry-badge]')).toBeNull()
+  })
+
+  it('分层、回边、环徽章与孤立区均有 data-* 形态', () => {
+    const chain = modelFixture({
+      nodes: [node('a'), node('b'), node('c'), node('iso', { isolated: true })],
+      edges: [
+        { key: 'a->b', from: 'a', to: 'b', weight: 1, kind: 'call' },
+        { key: 'b->c', from: 'b', to: 'c', weight: 1, kind: 'call' },
+      ],
+    })
+    const first = renderCanvas(chain)
+    expect(q('[data-layer-label="L0"]')).toBeTruthy()
+    expect(q('[data-layer-label="L1"]')).toBeTruthy()
+    expect(q('[data-layer-label="L2"]')).toBeTruthy()
+    expect(q('[data-isolated-row]').textContent).toContain('孤立节点')
+    expect(q('[data-node="iso"]').getAttribute('data-isolated')).toBe('true')
+    expect(q('[data-node="iso"]').className).toContain('pointer-events-auto')
+    first.unmount()
+
+    const cycle = modelFixture({
+      nodes: [node('x'), node('y')],
+      edges: [
+        { key: 'x->y', from: 'x', to: 'y', weight: 1, kind: 'call' },
+        { key: 'y->x', from: 'y', to: 'x', weight: 1, kind: 'call' },
+      ],
+    })
+    renderCanvas(cycle)
+    expect(q('[data-cyclic="true"]').textContent).toContain('⟲')
+    const back = q('[data-edge-key="x->y"]')
+    expect(back.tagName.toLowerCase()).toBe('path')
+    expect(back.getAttribute('data-back-edge')).toBe('true')
+    expect(back.getAttribute('stroke-dasharray')).toBeTruthy()
+  })
+
+  it('externalOut 图例按邻居显示并可跳转；根层无该行', () => {
+    const { onOpenScope } = renderCanvas(modelFixture({
+      scopeId: 'leaf_b',
+      externalOut: [
+        { neighborId: 'd_far', label: '远域', weight: 2 },
+        { neighborId: 'd_next', label: '次域', weight: 1 },
+      ],
+    }))
+    expect(q('[data-external-out]').textContent).toContain('调出到本层之外：远域 2 · 次域 1')
+    fireEvent.click(q('[data-external-out-item="d_far"]'))
+    expect(onOpenScope).toHaveBeenCalledWith('d_far', '远域')
+  })
+})
+
+describe('C12.4 画布：单击选中态（验收 9——高亮与压暗必须同时断言）', () => {
+  it('空选中默认全不透明；单击后选中/相连高亮/无关压暗三者同屏；再点已选中卡清空', () => {
+    const view = renderCanvas(modelFixture(), '')
+    expect(q('[data-node="topA"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="leafB"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="topA"]').className).not.toContain('opacity-50')
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBeNull()
+
+    fireEvent.click(q('[data-node="topA"]'))
+    expect(view.onSelect).toHaveBeenCalledTimes(1)
+    expect(view.onSelect).toHaveBeenCalledWith('topA')
+
+    // 直接以受控 selectedNodeId 重渲染（组件是纯投影），三态同时断言：
+    view.rerender(
+      <ScopeCanvas
+        model={modelFixture()}
+        edgeStatus={{}}
+        selectedNodeId="topA"
+        onSelect={view.onSelect}
+        onOpenScope={view.onOpenScope}
+      />,
+    )
+    expect(q('[data-node="topA"]').getAttribute('data-selected')).toBe('true')
+    expect(q('[data-node="leafB"]').getAttribute('data-highlight')).toBe('true')
+    expect(q('[data-node="leafB"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBe('true')
+    expect(q('[data-node="c_big"]').getAttribute('data-highlight')).toBeNull()
+    expect(q('[data-node="c_big"]').className).toContain('opacity-50')
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-edge-key="isoC<->topA:twin"]').getAttribute('data-dimmed')).toBeNull()
+
+    fireEvent.click(q('[data-node="topA"]'))
+    expect(view.onSelect).toHaveBeenLastCalledWith('')
+
+    view.rerender(
+      <ScopeCanvas
+        model={modelFixture()}
+        edgeStatus={{}}
+        selectedNodeId=""
+        onSelect={view.onSelect}
+        onOpenScope={view.onOpenScope}
+      />,
+    )
+    expect(q('[data-node="topA"]').getAttribute('data-selected')).toBeNull()
+    expect(q('[data-node="leafB"]').getAttribute('data-highlight')).toBeNull()
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-node="topA"]').className).not.toContain('opacity-50')
+  })
+
+  it('projection 邻居也算相连（高亮侧）；无任何边的孤卡被压暗', () => {
+    const view = renderCanvas(modelFixture(), '')
+    view.rerender(
+      <ScopeCanvas
+        model={modelFixture()}
+        edgeStatus={{}}
+        selectedNodeId="isoC"
+        onSelect={view.onSelect}
+        onOpenScope={view.onOpenScope}
+      />,
+    )
+    expect(q('[data-node="isoC"]').getAttribute('data-selected')).toBe('true')
+    expect(q('[data-node="topA"]').getAttribute('data-highlight')).toBe('true')
+    expect(q('[data-node="c_big"]').getAttribute('data-dimmed')).toBe('true')
+    expect(q('[data-edge-key="isoC<->topA:twin"]').getAttribute('data-dimmed')).toBeNull()
+    expect(q('[data-edge-key="topA->leafB"]').getAttribute('data-dimmed')).toBe('true')
+  })
+})
+
+describe('C12.4 画布：双击语义（§2.3-20 容器原子 + 下钻）', () => {
+  it('双击领域卡：onOpenScope 携带领域 id 与 label', () => {
+    const { onOpenScope } = renderCanvas()
+    fireEvent.doubleClick(q('[data-node="topA"]'))
+    expect(onOpenScope).toHaveBeenCalledTimes(1)
+    expect(onOpenScope).toHaveBeenCalledWith('topA', '甲系统')
+  })
+
+  it('双击容器卡：不触发 onOpenScope，出现「容器没有下一层」说明（DOM 断言非弹窗猜测）', () => {
+    const { onOpenScope } = renderCanvas()
+    fireEvent.doubleClick(q('[data-node="c_big"]'))
+    expect(onOpenScope).not.toHaveBeenCalled()
+    expect(q('[data-atomic-note]').textContent).toContain('容器没有下一层')
+    // 说明随下一次选择语境变化收起
+    fireEvent.click(q('[data-node="topA"]'))
+    expect(document.querySelector('[data-atomic-note]')).toBeNull()
+  })
+
+  it('双击空白复位平移缩放（spec 布局判据：双击空白复位）', () => {
+    const { container } = renderCanvas()
+    const canvas = q('[data-scope-canvas]', container)
+    const fitZoom = canvas.getAttribute('data-zoom')
+    const fitTransform = canvas.getAttribute('data-transform')
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -240 })
+    expect(canvas.getAttribute('data-zoom')).not.toBe('1')
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 })
+    fireEvent.mouseMove(window, { clientX: 60, clientY: 30 })
+    fireEvent.mouseUp(window)
+    expect(canvas.getAttribute('data-transform')).not.toBe(fitTransform)
+    fireEvent.doubleClick(canvas)
+    expect(canvas.getAttribute('data-zoom')).toBe(fitZoom)
+    expect(canvas.getAttribute('data-transform')).toBe(fitTransform)
+  })
+
+  it('首次 fit 使用已知 bounds；scope 切换后重新 fit 到新 bounds', () => {
+    const view = renderCanvas()
+    const canvas = q('[data-scope-canvas]', view.container)
+    expect(canvas.getAttribute('data-zoom')).toBe('0.7126436781609196')
+    expect(canvas.getAttribute('data-transform')).toBe('translate(334.183908045977,0)')
+
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -240 })
+    expect(canvas.getAttribute('data-zoom')).not.toBe('0.7126436781609196')
+
+    const scoped = modelFixture({
+      scopeId: 'topA',
+      nodes: [node('childOnly', { label: '子域' })],
+      edges: [],
+    })
+    view.rerender(
+      <ScopeCanvas
+        model={scoped}
+        edgeStatus={{}}
+        selectedNodeId=""
+        onSelect={view.onSelect}
+        onOpenScope={view.onOpenScope}
+      />,
+    )
+    expect(canvas.getAttribute('data-zoom')).toBe('1')
+    expect(canvas.getAttribute('data-transform')).toBe('translate(227,239)')
+  })
+})
+
+describe('C12.4 画布：平移缩放与组织降级（真机清单 1 的机内侧）', () => {
+  it('Ctrl+滚轮改变 zoom 状态并夹取；普通滚轮不动 zoom', () => {
+    const { container } = renderCanvas()
+    const canvas = q('[data-scope-canvas]', container)
+    const z0 = canvas.getAttribute('data-zoom')
+    fireEvent.wheel(canvas, { deltaY: 120 })
+    expect(canvas.getAttribute('data-zoom')).toBe(z0)
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -120 })
+    expect(Number(canvas.getAttribute('data-zoom'))).toBeGreaterThan(Number(z0))
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -100000 })
+    expect(Number(canvas.getAttribute('data-zoom'))).toBeLessThanOrEqual(2.5)
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: 100000 })
+    expect(Number(canvas.getAttribute('data-zoom'))).toBeGreaterThanOrEqual(0.4)
+  })
+
+  it('空白拖动更新 data-transform；按在卡上不触发平移', () => {
+    const { container } = renderCanvas()
+    const canvas = q('[data-scope-canvas]', container)
+    const fitTransform = canvas.getAttribute('data-transform')
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 })
+    fireEvent.mouseMove(window, { clientX: 35, clientY: -15 })
+    fireEvent.mouseUp(window)
+    expect(canvas.getAttribute('data-transform')).not.toBe(fitTransform)
+  })
+
+  it('organizationAvailable=false 显式不可用提示，绝不拿空图冒充有数据页（§2.3-19/-25）', () => {
+    renderCanvas(modelFixture({ organizationAvailable: false, nodes: [], edges: [] }))
+    expect(q('[data-org-unavailable]').textContent).toContain('best.json')
+    expect(q('[data-org-unavailable]').textContent).toContain('按现状领域')
+  })
+})

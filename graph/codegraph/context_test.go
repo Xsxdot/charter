@@ -184,7 +184,7 @@ func TestAssembleContextActualReportsRealMisplacement(t *testing.T) {
 func TestAssembleContextBestParentSubtree(t *testing.T) {
 	best := &Best{
 		Domains: map[string]BestDomain{
-			"d_top":  {Label: "顶", Responsibility: "父域"},
+			"d_top":  {Label: "顶"},
 			"d_leaf": {Label: "叶", Parent: "d_top"},
 			"d_out":  {Label: "外"},
 		},
@@ -217,6 +217,34 @@ func TestAssembleContextBestParentSubtree(t *testing.T) {
 	}
 	if len(out.Interfaces) != 1 || out.Interfaces[0].ID != "n_in" {
 		t.Fatalf("跨域入边应落在子树边界上: %+v", out.Interfaces)
+	}
+}
+
+// P4-A 裁决：agent 取数路径的领域摘要不随字段删除而消失，改由 decl 文件供正文；
+// 无声明的领域摘要如实为空（omitempty 后键省略），不得回退到 best 树上找补。
+// 断言值特意取 decl 正文全文（"命令入口与调度"），与旧 best 来源（"命令入口"）可区分。
+func TestAssembleContextSummaryComesFromDecls(t *testing.T) {
+	g, err := LoadGraph("testdata/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := Merge(g, nil)
+	best := loadFixtureBest(t)
+
+	declared, err := AssembleContext(v, g, best, "testdata/repo", "d_cmd", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if declared.Domain.Summary != "命令入口与调度" {
+		t.Fatalf("Summary 必须等于 decl 正文，got %q", declared.Domain.Summary)
+	}
+
+	undeclared, err := AssembleContext(v, g, best, "testdata/repo", "d_svc", QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undeclared.Domain.Summary != "" {
+		t.Fatalf("无声明时 Summary 必须为空串，got %q", undeclared.Domain.Summary)
 	}
 }
 

@@ -79,6 +79,9 @@ type Node struct {
 	// 空 = 未分种（存量数据的默认），**不是**「未知实体」——消费侧统计实体数
 	// 时不得把空值计入，否则 707 个 model 又会原样淹没实体表（契约 §2-1）。
 	ModelKind string `json:"modelKind,omitempty"`
+	// Channel 是 entry 节点的对外通道（cli/http/ws/web），additive-only 新键（C12）；
+	// 只对 kind=="entry" 有意义。
+	Channel string `json:"channel,omitempty"`
 }
 
 // model 的三种子分类。判定序与判据表在扫描配方里，此处只钉取值。
@@ -87,6 +90,47 @@ const (
 	ModelKindDTO    = "dto"    // 传输结构、wire 类型；兜底档
 	ModelKindConfig = "config" // 构造后只读、从配置或 env 装载
 )
+
+// 流程步骤 kind 受控词表（C12，docs/specs/2026-08-25-codegraph-scan-schema-draft.md §2）。
+const (
+	FlowStepCall   = "call"
+	FlowStepBranch = "branch"
+	FlowStepLoop   = "loop"
+	FlowStepReturn = "return"
+)
+
+// 入口 channel 受控词表（C12 schema 草案 §8.5）：entry 节点的对外通道，
+// 不靠 id 前缀或名字形状猜。
+const (
+	ChannelCLI  = "cli"
+	ChannelHTTP = "http"
+	ChannelWS   = "ws"
+	ChannelWeb  = "web"
+)
+
+// FlowStep 是 flows 段里的一步：承重函数内可排序的一步调用/控制流。
+// 字段必填性（call 必有 to、branch/loop 必有 cond 与子步骤列）由扫描侧保证；
+// 引用完整性的 Validate 执法随 flows 真数据同批开启（C12 Out of Scope 1）。
+type FlowStep struct {
+	ID    string   `json:"id"`
+	Order int      `json:"order"`
+	Kind  string   `json:"kind"`
+	To    string   `json:"to,omitempty"`
+	Cond  string   `json:"cond,omitempty"`
+	Line  int      `json:"line"`
+	Then  []string `json:"then,omitempty"`
+	Else  []string `json:"else,omitempty"`
+	Body  []string `json:"body,omitempty"`
+	// Iface 为真表示 To 是接口方法、本调用点是动态分派；实现清单从既有 implements
+	// 段 join 出来，不在 flows 里复制（schema 草案 §2b）。
+	Iface bool `json:"iface,omitempty"`
+}
+
+// Flow 是一条承重函数的步骤序列。flows 只覆盖承重函数（跨域入缝符号、入口
+// handler、编排单元），不要求全节点覆盖。
+type Flow struct {
+	Steps []FlowStep `json:"steps"`
+}
 
 // Edge 是一条调用关系 [caller, callee]。
 type Edge [2]string
@@ -117,6 +161,9 @@ type Graph struct {
 	// 旧消费方安全忽略。悬空键（目录不属于图中任何节点）由 Validate 判硬红——
 	// 那是自相矛盾；「有目录没条目」不执法，补齐靠扫描配方自检（防拐杖，见 roadmap 9①先例）。
 	Packages map[string]Package `json:"packages,omitempty"`
+	// Flows 是流程段（承重函数 id → 步骤序列），additive-only 新键（C12）：
+	// 旧消费方安全忽略；缺席即查看器降级形态，不当作传输失败。
+	Flows map[string]Flow `json:"flows,omitempty"`
 }
 
 // Diff 是 codegraph/diffs/<view>.json：某分支/plan 相对基准的差异声明。

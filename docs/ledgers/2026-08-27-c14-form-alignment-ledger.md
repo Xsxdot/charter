@@ -1,0 +1,105 @@
+# C14 查看器形态对齐台账
+
+职责：记录 C14 节点对查看器形态对齐实现的事实、命令输出、判断与未完成事项。
+边界：只记录本节点实际执行结果；不修改 `prototypes/codegraph-two-axis/` 临时携带目录。
+
+## 2026-08-27
+
+- 事实：当前分支为 `cards/C14-charter`，初始工作树干净；HEAD 为 `bc241bae7743fd9d878291ba477d0880a52eee19`。
+- 命令：`git status --short --branch`；原始输出：`## cards/C14-charter`。
+- 事实：计划声明的附件在当前工作树不存在：`docs/specs/2026-08-27-codegraph-viewer-form-alignment-spec.md`、`docs/superpowers/plans/c14-plan.md`、`prototypes/codegraph-two-axis/`。
+- 命令：`sed -n '1,280p' docs/specs/2026-08-27-codegraph-viewer-form-alignment-spec.md`；原始输出：`sed: can't read docs/specs/2026-08-27-codegraph-viewer-form-alignment-spec.md: No such file or directory`。
+- 命令：`sed -n '1,360p' docs/superpowers/plans/c14-plan.md`；原始输出：`sed: can't read docs/superpowers/plans/c14-plan.md: No such file or directory`。
+- 命令：`rg --files ...`；原始输出：结果中无 C14 计划、2026-08-27 spec 或 `prototypes/` 路径。
+- 命令：`git cat-file -t d267310bc`；原始输出：`fatal: Not a valid object name d267310bc`。
+- 命令：`git show --stat --oneline d267310bc`；原始输出：`fatal: ambiguous argument 'd267310bc': unknown revision or path not in the working tree.`
+- 判断：缺少 spec、plan 与原型代码，无法建立法定接缝、编写失败测试或按验收判据实现；未进行生产代码修改，未运行测试。
+- 待处理：请协调者将上述附件/原型提交或合并到当前分支后再继续；不得自行假定 `main` 或其他基线。
+- 事实：协调者已确认附件补齐，当前分支推进到 base HEAD `d267310bc3553709ef8adf78b54143c56212c30b`；确认存在 C14 spec、plan 与 `prototypes/codegraph-two-axis/` 全目录 10 文件。
+- 判断：按协调者确认继续执行计划 T1→T4；base 使用当前 HEAD，不切换分支，不修改原型目录。
+- 命令：`npx vitest run src/app/codegraph/scopepage.test.ts`（T1 首红）；原始输出：`npm error code EROFS`、`npm error syscall open`、`npm error path /root/.npm/_cacache/tmp/***`、`npm error errno -30`、`npm error rofs Invalid response body while trying to fetch https://registry.npmjs.org/vitest: EROFS: read-only file system, open '/root/.npm/_cacache/tmp/***'`。
+- 判断：该次未启动 Vitest，尚未取得功能断言红；需先排除 npm 缓存路径问题后重跑。
+- 命令：`npm_config_cache=/root/.handoff/tmp/111772bf/npm-cache npm ci`；原始输出：`added 168 packages, and audited 169 packages in 4s`、`found 0 vulnerabilities`；退出码：0。
+- 判断：仓内依赖已安装，后续测试可使用本地 `node_modules/.bin/vitest`，避免再次触发只读 npm 缓存。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（职责首红）；原始输出：`Test Files 1 failed (1)`、`Tests 2 failed | 26 passed (28)`；两支均收到 `{ state: 'undeclared' }`，期望带包前缀职责正文。
+- 判断：首红原因为生产匹配条件未剥离 label 包前缀；随后修复为最后类型段匹配。
+- 命令：同一测试在修复后首次运行；原始输出：`Test Files 1 failed (1)`、`Tests 2 failed | 26 passed (28)`；收到既有 `甲侧存储注释` 而非新夹具期望，确认是夹具同目录候选触发既有 id tiebreak。
+- 判断：将前缀夹具成员/模型移至唯一目录 `pkga/prefix`，未改变生产逻辑。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（职责修复后）；原始输出：`Test Files 1 passed (1)`、`Tests 28 passed (28)`；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（entryDispersion 首红）；原始输出：`Test Files 1 failed (1)`、`Tests 1 failed | 28 passed (29)`；实际值为 `undefined`，期望 `{ domainId: 'r', entries: 4, files: 1, concentrated: true }`。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（entryDispersion 最小实现后）；原始输出：`Test Files 1 failed (1)`、`Tests 1 failed | 28 passed (29)`；既有键集缺少 `entryDispersion`，收到字段值 `null`。
+- 判断：更新键集断言纳入 `entryDispersion`，保留 `external` 直到 ext 退役步骤。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（入口散度）；原始输出：`Test Files 1 passed (1)`、`Tests 29 passed (29)`；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（ext/isolated 首红）；原始输出：`Test Files 1 failed (1)`、`Tests 5 failed | 24 passed (29)`；失败断言覆盖纯调用方孤立、ext 节点残留、键集、叶子层、圈外 invariants。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`（T1 实现后）；原始输出：`Test Files 1 passed (1)`、`Tests 29 passed (29)`；退出码：0。
+- 命令：`npm run typecheck`（T1 收尾）；原始输出：`src/app/codegraph/RightPanel.test.tsx(47,9): error TS2353 ... 'external' does not exist in type 'ScopeNode'`、`src/app/codegraph/RightPanel.tsx(83,16): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.test.tsx(37,3): error TS2322 ... 'externalOut' ... undefined`、`src/app/codegraph/ScopeCanvas.tsx(41,12): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/scopelayout.test.ts(12,5): error TS2353 ... 'external' does not exist in type 'ScopeNode'`、`src/app/codegraph/scopelayout.ts(25,12): error TS2339: Property 'external' does not exist on type 'ScopeNode'`；退出码：2。
+- 判断：T1 模型改形已真实生效，类型检查失败来自计划中尚未执行的 T2/T3 消费面迁移；未将其记为通过，待 T3 收口后重跑。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`（T2 分层首红）；原始输出：`Test Files 1 failed (1)`、`Tests 3 failed | 6 passed (9)`；三支新增断言收到 `layout.layers === undefined`。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`（T2 混合夹具调整后）；原始输出：`Test Files 1 failed (1)`、`Tests 2 failed | 7 passed (9)`；包框坐标与混合输入矩形不重叠断言失败。
+- 判断：将混合输入拆成领域/容器布局并把容器区下移；全容器布局仍独立执行包群组装箱。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`（T2 基础布局）；原始输出：`Test Files 1 passed (1)`、`Tests 9 passed (9)`；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`（容器/删除项/path 断言）；原始输出：`Test Files 1 failed (1)`、`Tests 1 failed | 11 passed (12)`；唯一失败为 sibling path 期望 `C10,33 30,33`，实现按原型公式返回 `C10,43 30,43`。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`（T2 局部完成）；原始输出：`Test Files 1 passed (1)`、`Tests 12 passed (12)`；退出码：0。
+- 命令：`npm run typecheck`（T2 收尾）；原始输出：`src/app/codegraph/RightPanel.test.tsx(47,9): error TS2353: Object literal may only specify known properties, and 'external' does not exist in type 'ScopeNode'.`、`src/app/codegraph/RightPanel.test.tsx(72,91): error TS2353 ... 'external' does not exist in type 'ScopeNode'`、`src/app/codegraph/RightPanel.tsx(83,16): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/RightPanel.tsx(229,29): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.test.tsx(19,5): error TS2353 ... 'external' does not exist in type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.test.tsx(37,3): error TS2322: Type ... 'externalOut' ... undefined is not assignable`、`src/app/codegraph/ScopeCanvas.test.tsx(45,40): error TS2353 ... 'external' does not exist in type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.tsx(14,39): error TS2305: Module './scopelayout' has no exported member 'EXT_H'.`、`src/app/codegraph/ScopeCanvas.tsx(14,46): error TS2305: Module './scopelayout' has no exported member 'EXT_W'.`、`src/app/codegraph/ScopeCanvas.tsx(41,12): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.tsx(116,27): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/ScopeCanvas.tsx(216,25): error TS2339: Property 'external' does not exist on type 'ScopeNode'`、`src/app/codegraph/scopelayout.ts(203,82): error TS6133: 'width' is declared but its value is never read`、`src/app/codegraph/scopelayout.ts(216,13): error TS6133: 'total' is declared but its value is never read`；退出码：2。
+- 判断：T2 类型检查失败由尚未执行的 T3 消费面迁移与布局清理造成；随后按 T3 计划迁移，未将该次记为通过。
+- 命令：删除项扫描；`rg -n "ringOuter|EXT_W|EXT_H|function separate|ITER|GRAVITY" graph/webui/src/app/codegraph/scopelayout.ts`；原始输出：无；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/RightPanel.test.tsx`（T3 红）；原始输出：`Test Files 2 failed (2)`、`Tests 5 failed | 36 passed (41)`；失败断言为入口徽标缺失、职责文案缺失、层标签缺失、外部引用列表缺失。
+- 判断：T3 首红均为新形态行为断言失败，未因拼写或编译缺席；随后实现卡片职责、入口徽标、分层/边样式、孤立行与 externalOut 展示，并移除 ext 卡片消费。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/RightPanel.test.tsx`（T3 初次实现后）；原始输出：`Test Files 2 failed (2)`、`Tests 4 failed | 37 passed (41)`；失败为职责夹具默认状态、externalOut 排序期望及既有 fit/drag 交互期望。
+- 判断：修订测试夹具使职责状态显式；externalOut 按 neighborId 断言；交互测试改为验证初始 fit 后的相对变化与空白双击恢复。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/RightPanel.test.tsx`（T3 完成）；原始输出：`Test Files 2 passed (2)`、`Tests 41 passed (41)`；退出码：0。
+- 命令：`rg -n "\bexternal\b|ext:" graph/webui/src/app/codegraph/ScopeCanvas.tsx graph/webui/src/app/codegraph/RightPanel.tsx`；原始输出：仅 `ScopeCanvas.tsx:337` 的 `data-external-out` 与 `ScopeCanvas.tsx:341` 的 `data-external-out-item`；退出码：0。
+- 命令：`npm run typecheck`（T3 收尾）；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：变异前唯一命中检查 `rg -n -F "concentrated: files.size === 1 && domainEntries.length > 3," src/app/codegraph/scopepage.ts && rg -F -c ...`；原始输出：`517: concentrated: files.size === 1 && domainEntries.length > 3,`、`1`；退出码：0。
+- 判断：变异命中唯一；将集中注册边界从 `> 3` 改为 `>= 3`，保持语义代码可编译。
+- 命令：变异后 `npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：变异后行为断言 `node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts -t "根层领域卡报告入口数/文件数/集中注册边界"`；原始输出：`Tests 1 failed | 28 skipped (29)`；3 入口断言实际 `concentrated: true`，期望 `false`。
+- 命令：变异后目标全量测试 `node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`；原始输出：`Tests 1 failed | 28 passed (29)`；退出码：1。
+- 判断：变异真实命中且被唯一边界测试拦截；恢复 `> 3` 后继续收口。
+- 命令：恢复后 `node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts`；原始输出：`Test Files 1 passed (1)`、`Tests 29 passed (29)`；退出码：0。
+- 命令：`git status --short --branch`、`git diff --check`、`git diff --name-only`、`git diff -- prototypes/codegraph-two-axis/`；原始输出：仅列出 8 个计划源/测试文件与本台账为变更，`git diff --check` 无输出，原型目录 diff 无输出；均退出码 0。
+- 命令：`npm run typecheck`（T4）；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：`npm test`（T4 集成）；原始输出：`Test Files 16 passed (16)`、`Tests 216 passed (216)`；退出码：0。
+- 命令：`npm run build`（T4 生产构建）；原始输出：`tsc -b && vite build`、`vite v6.4.3 building for production...`、`✓ 42 modules transformed.`、`✓ built in 659ms`；产物 `dist/index.html 0.45 kB`、`dist/assets/index-hYWDW2Jb.css 21.89 kB`、`dist/assets/index-ZvIevklE.js 267.93 kB`；退出码：0。
+- 命令：构建前后 CSS 字节数 `git show HEAD:graph/webui/dist/assets/index-nxCY1s5t.css | wc -c` 与 `wc -c graph/webui/dist/assets/index-hYWDW2Jb.css`；原始输出：HEAD `25874`，工作树 `21893`；实测差值 `-3981` 字节。
+- 命令：新增孤立卡可交互断言后 `node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx -t "分层、回边、环徽章与孤立区均有 data-* 形态"`（补充行为首红）；原始输出：`Tests 1 failed | 17 skipped (18)`；收到的孤立卡 class 缺少 `pointer-events-auto`。
+- 判断：孤立区父层为 `pointer-events-none`，卡片必须显式恢复事件命中；随后给卡面加 `pointer-events-auto`，并修正孤立口径注释中的旧「仅入边」表述。
+- 命令：同一孤立交互用例在修复后运行；原始输出：`Test Files 1 passed (1)`、`Tests 1 passed | 17 skipped (18)`；退出码：0。
+- 命令：源码微调后的 `npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：源码微调后的 `node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/RightPanel.test.tsx`；原始输出：`Test Files 2 passed (2)`、`Tests 41 passed (41)`；退出码：0。
+- 命令：源码微调后的 `npm test`；原始输出：`Test Files 16 passed (16)`、`Tests 216 passed (216)`；退出码：0。
+- 命令：源码微调后的 `npm run build`；原始输出：`✓ 42 modules transformed.`、`✓ built in 674ms`；产物 `dist/index-CxuVGYd8.css 21.40 kB`、`dist/index-B71o7a8z.js 267.95 kB`；退出码：0。
+- 命令：最终构建 CSS 字节数 `wc -c graph/webui/dist/assets/index-CxuVGYd8.css` 与 `git show HEAD:graph/webui/dist/assets/index-nxCY1s5t.css | wc -c`；原始输出：`21397`、`25874`；实测差值 `-4477` 字节。
+- 命令：`git add docs/ledgers/2026-08-27-c14-form-alignment-ledger.md graph/webui/dist graph/webui/src/app/codegraph/...`；原始输出：退出码 0，暂存范围为本台账、dist 及 8 个计划源/测试文件，无原型目录。
+- 命令：`git diff --cached --check`、`git diff --cached --stat`、`git diff --cached --name-only`；原始输出：检查无输出；14 个文件、1048 insertions(+)、378 deletions(-)，文件清单无 `prototypes/codegraph-two-axis/`；退出码均为 0。
+- 命令：`git commit -m "feat(C14): 查看器形态对齐 fork 原型"`；原始输出：`[cards/C14-charter 4925686] feat(C14): 查看器形态对齐 fork 原型`、`14 files changed, 1048 insertions(+), 378 deletions(-)`；退出码：0。
+- 命令：提交后 `git status --short --branch`、`git diff HEAD^ -- prototypes/codegraph-two-axis/`；原始输出：`## cards/C14-charter`，原型 diff 无输出；退出码均为 0。
+- 命令：`git rev-parse --abbrev-ref HEAD && git rev-parse HEAD`；原始输出：`cards/C14-charter`、`49256862860ed3ef63d6f555e0f1855220d494e0`；退出码：0。
+- 事实：本次 review 打回轮工作树实际分支为 `cards/C14-charter-2`，当前 HEAD 为 `223a0de`（完整 hash `223a0de05b04b558f9822bcbfe0988c03254e574`）；上一轮台账末尾的分支与提交记录属于旧执行上下文。
+- 命令：`git rev-parse --abbrev-ref HEAD && git rev-parse HEAD`；原始输出：`cards/C14-charter-2`、`223a0de05b04b558f9822bcbfe0988c03254e574`；退出码：0。
+- 判断：本轮不改生产逻辑行为，只补 review 指定的布局 cost、scope 切换 fit、externalOut 升序断言与原型差异注释。
+- 授权清单外测试改写记录：`scopepage.test.ts:295` 叶子层键集断言、`scopepage.test.ts:584` invariants 投影断言均属上一轮已授权的改写，本轮仅补录，不扩大范围。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`/bin/bash: line 1: node_modules/.bin/vitest: No such file or directory`；退出码：127。
+- 命令：`npm_config_cache=/root/.handoff/tmp/b012e701/npm-cache npm ci`；原始输出：`added 168 packages, and audited 169 packages in 5s`、`found 0 vulnerabilities`；退出码：0。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`Test Files 3 passed (3)`、`Tests 59 passed (59)`；退出码：0。
+- 变更：`scopelayout.test.ts` 新增四包交叉夹具，测试内按 `Σ weight×Math.hypot(群组中心差)` 复算 arranged cost 与初始字典序 cost，并断言 arranged ≤ initial。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts`；原始输出：`Test Files 1 passed (1)`、`Tests 13 passed (13)`；退出码：0。
+- 变更：`ScopeCanvas.test.tsx` 新增已知夹具 bounds 的硬编码 fit 值，并在 scope 切换后断言重新 fit 到 `zoom=1`、`translate(227,239)`。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/ScopeCanvas.test.tsx -t "首次 fit 使用已知 bounds"`；原始输出：`Test Files 1 passed (1)`、`Tests 1 passed | 18 skipped (19)`；退出码：0。
+- 变更：`scopepage.test.ts` 新增多邻居 externalOut 夹具；首次期望漏列 isoWorld 既有 `ss_b`，原始失败显示收到 `ss_b`，遂修正为完整 `ss_b < ss_d < ss_e` 升序期望。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts -t "externalOut 多邻居"`（夹具首红）；原始输出：`AssertionError: expected [ { neighborId: 'ss_b', …(2) }, …(2) ] to deeply equal [ { neighborId: 'ss_d', …(2) }, …(1) ]`；退出码：1。
+- 命令：`node_modules/.bin/vitest run src/app/codegraph/scopepage.test.ts -t "externalOut 多邻居"`（修正完整期望后）；原始输出：`Test Files 1 passed (1)`、`Tests 1 passed | 29 skipped (30)`；退出码：0。
+- 变异前唯一命中检查：`rg -n -F "if (candidate < bestCost) bestCost = candidate" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`338: if (candidate < bestCost) bestCost = candidate`、`1`；判断：选择比较符取反作为可编译语义变异，命中唯一。
+- 变异尝试：将唯一命中的 `if (candidate < bestCost)` 改为 `>`；`npm run typecheck` 原始输出为 `> codegraph-webui@0.0.0 typecheck`、`> tsc -b`，退出码 0；行为断言原始输出为 `Test Files 1 passed (1)`、`Tests 1 passed | 12 skipped (13)`，说明该变异未改变此夹具行为，不计入存活结论，已恢复原代码。
+- 变异前唯一命中检查（重选群组排序语义）：`rg -n -F "return (weightB - weightA) || a.localeCompare(b)" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`278: return (weightB - weightA) || a.localeCompare(b)`、`1`；判断：改为反向比较以打中初始序 cost 守卫。
+- 变异重试：将四包 cost 夹具改为 `a->b`、`a->c`，恢复正确 comparator 后行为断言原始输出为 `Test Files 1 passed (1)`、`Tests 1 passed | 12 skipped (13)`；该夹具能区分初始序与错误排序。
+- 变异重试唯一命中检查：`rg -n -F "if (candidate < bestCost) bestCost = candidate" src/app/codegraph/scopelayout.ts && rg -F -c ...`；原始输出：`338: if (candidate < bestCost) bestCost = candidate`、`1`；判断：比较符取反仍为可编译语义变异且命中唯一。
+- 命令：变异后 `npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：变异后 `node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts -t "相邻交换后的群组 cost"`；原始输出：`AssertionError: expected 702.0459156782531 to be less than or equal to 550`、`Test Files 1 failed (1)`；退出码：1。
+- 判断：本次变异编译通过、行为断言先变红且明确命中 cost 守卫；恢复 `candidate < bestCost`，该变异不存活。
+- 命令：恢复实现后 `node_modules/.bin/vitest run src/app/codegraph/scopelayout.test.ts src/app/codegraph/ScopeCanvas.test.tsx src/app/codegraph/scopepage.test.ts`；原始输出：`Test Files 3 passed (3)`、`Tests 62 passed (62)`；退出码：0。
+- 命令：`npm run typecheck`；原始输出：`> codegraph-webui@0.0.0 typecheck`、`> tsc -b`；退出码：0。
+- 命令：`npm test`；原始输出：`Test Files 16 passed (16)`、`Tests 219 passed (219)`；退出码：0。
+- 命令：`npm run build`；原始输出：`vite v6.4.3 building for production...`、`✓ 42 modules transformed.`、`dist/index.html 0.45 kB`、`dist/assets/index-CxuVGYd8.css 21.40 kB`、`dist/assets/index-A5rNppjj.js 267.99 kB`、`✓ built in 665ms`；退出码：0。
+- 命令：构建后 `git status --short --branch`、`git diff --check`、`find graph/webui/dist/assets -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort`；原始输出：当前变更含本台账、3 个源码/测试补丁及 `dist/index.html`、旧 `index-B71o7a8z.js` 删除、新 `index-A5rNppjj.js`；`git diff --check` 无输出；产物为 `index-A5rNppjj.js 267985 bytes`、`index-CxuVGYd8.css 21397 bytes`；退出码均为 0。
+- 判断：构建仅因本轮源码注释改变 JS hash，未改生产逻辑；按计划将 dist 新旧 hash 与源码同批提交。

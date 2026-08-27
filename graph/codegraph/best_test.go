@@ -18,7 +18,7 @@ func TestBestJSONGolden(t *testing.T) {
 	best := Best{
 		Meta: BestMeta{Version: 1, Project: "handoff"},
 		Domains: map[string]BestDomain{
-			"d_coordination": {Label: "协作控制", Responsibility: "编排任务生命周期", Type: "logic"},
+			"d_coordination": {Label: "协作控制", Type: "logic"},
 		},
 		Containers: map[string]string{"c_cli": "d_coordination"},
 	}
@@ -27,7 +27,7 @@ func TestBestJSONGolden(t *testing.T) {
 		t.Fatalf("编码最优图样本: %v", err)
 	}
 	want := `{"meta":{"version":1,"project":"handoff"},` +
-		`"domains":{"d_coordination":{"label":"协作控制","responsibility":"编排任务生命周期","type":"logic"}},` +
+		`"domains":{"d_coordination":{"label":"协作控制","type":"logic"}},` +
 		`"containers":{"c_cli":"d_coordination"}}`
 	if string(raw) != want {
 		t.Fatalf("最优图 JSON 金样本漂移:\n got %s\nwant %s", raw, want)
@@ -42,27 +42,28 @@ func TestBestJSONGolden(t *testing.T) {
 	}
 }
 
-// TestBestDomainOmitempty 单独钉 parent/type 的 omitempty，以及 label/
-// responsibility **不带** omitempty（契约 §6 条 3）。
-//
-// 分开成一支的理由：金样本里顶层领域必然带 type、必然不带 parent，
-// 单靠它无法区分「叶子领域省略了 parent」和「叶子领域根本没有 parent 字段」。
-func TestBestDomainOmitempty(t *testing.T) {
-	leaf, err := json.Marshal(BestDomain{Parent: "d_coordination", Label: "", Responsibility: ""})
+// TestBestDomainWireShape 钉死删除职责正文后的 BestDomain wire 形状
+// （C12 契约 §2.2-8/-9）：parent/type 保持 omitempty，label 保持必出；
+// 序列化输出不得再出现 responsibility 键——这是跨仓手写文件格式契约，
+// 键一旦回流，handoff 侧会把 best 再度读成双写正文。
+func TestBestDomainWireShape(t *testing.T) {
+	leaf, err := json.Marshal(BestDomain{Parent: "d_coordination"})
 	if err != nil {
 		t.Fatalf("编码叶子领域: %v", err)
 	}
-	// label/responsibility 无 omitempty，空值也要出现——它们是必填项，
-	// 省略会让「作者忘了写」和「作者写了空串」在文件里不可区分。
-	if want := `{"label":"","responsibility":"","parent":"d_coordination"}`; string(leaf) != want {
+	if want := `{"label":"","parent":"d_coordination"}`; string(leaf) != want {
 		t.Fatalf("叶子领域编码漂移:\n got %s\nwant %s", leaf, want)
 	}
-	top, err := json.Marshal(BestDomain{Label: "L", Responsibility: "R", Type: "boundary"})
+	top, err := json.Marshal(BestDomain{Label: "L", Type: "boundary"})
 	if err != nil {
 		t.Fatalf("编码顶层领域: %v", err)
 	}
-	if want := `{"label":"L","responsibility":"R","type":"boundary"}`; string(top) != want {
+	if want := `{"label":"L","type":"boundary"}`; string(top) != want {
 		t.Fatalf("顶层领域编码漂移:\n got %s\nwant %s", top, want)
+	}
+	empty, err := json.Marshal(BestDomain{})
+	if err != nil || strings.Contains(string(empty), "responsibility") {
+		t.Fatalf("零值编码不得再含 responsibility 键: raw=%s err=%v", empty, err)
 	}
 }
 
@@ -98,6 +99,32 @@ func TestLoadBest(t *testing.T) {
 	}
 }
 
+// 旧版 best.json 含 responsibility 键（C12 刀前的手写文件）：encoding/json
+// 默认忽略未知键（c12-contract §3-1），加载必须成功且结构字段无损——
+// 存量项目在重扫前仍是旧形状，这是过渡期的真实输入而非脏数据。
+func TestLoadBestToleratesLegacyResponsibilityKey(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "codegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"meta":{"version":1,"project":"legacy"},` +
+		`"domains":{"d_x":{"label":"X","responsibility":"旧正文","type":"logic"}},` +
+		`"containers":{}}`
+	if err := os.WriteFile(filepath.Join(root, "codegraph", "best.json"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	best, err := LoadBest(root)
+	if err != nil || best == nil {
+		t.Fatalf("旧形状 best 必须照常加载: best=%#v err=%v", best, err)
+	}
+	if best.Domains["d_x"].Label != "X" || best.Domains["d_x"].Type != "logic" {
+		t.Fatalf("未知键不得影响结构解析: %+v", best.Domains["d_x"])
+	}
+	if issues := ValidateBest(best); len(issues) != 0 {
+		t.Fatalf("旧形状文件在新校验器下必须合法: %v", issues)
+	}
+}
+
 func TestValidateBestRules(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -105,14 +132,13 @@ func TestValidateBestRules(t *testing.T) {
 		want   string
 	}{
 		{name: "project required", mutate: func(b *Best) { b.Meta.Project = " \t" }, want: "meta.project"},
-		{name: "parent exists", mutate: func(b *Best) { b.Domains["d_leaf"] = BestDomain{Label: "leaf", Responsibility: "r", Parent: "d_ghost"} }, want: "d_ghost"},
+		{name: "parent exists", mutate: func(b *Best) { b.Domains["d_leaf"] = BestDomain{Label: "leaf", Parent: "d_ghost"} }, want: "d_ghost"},
 		{name: "parent cycle", mutate: func(b *Best) {
-			b.Domains["d_root"] = BestDomain{Label: "root", Responsibility: "r", Parent: "d_leaf"}
-			b.Domains["d_leaf"] = BestDomain{Label: "leaf", Responsibility: "r", Parent: "d_root"}
+			b.Domains["d_root"] = BestDomain{Label: "root", Parent: "d_leaf"}
+			b.Domains["d_leaf"] = BestDomain{Label: "leaf", Parent: "d_root"}
 		}, want: "parent 链存在环"},
 		{name: "top level type", mutate: func(b *Best) { d := b.Domains["d_root"]; d.Type = "x"; b.Domains["d_root"] = d }, want: "d_root"},
 		{name: "nested type empty", mutate: func(b *Best) { d := b.Domains["d_leaf"]; d.Type = "logic"; b.Domains["d_leaf"] = d }, want: "非顶层领域"},
-		{name: "responsibility required", mutate: func(b *Best) { d := b.Domains["d_leaf"]; d.Responsibility = "\n"; b.Domains["d_leaf"] = d }, want: "d_leaf"},
 		{name: "container domain exists", mutate: func(b *Best) { b.Containers["c"] = "d_ghost" }, want: "d_ghost"},
 		{name: "container points to leaf", mutate: func(b *Best) { b.Containers["c"] = "d_root" }, want: "非叶子"},
 	}
@@ -125,6 +151,23 @@ func TestValidateBestRules(t *testing.T) {
 				t.Fatalf("ValidateBest 未报告 %q，issues=%v", tc.want, issues)
 			}
 		})
+	}
+}
+
+func TestValidateBestStopsEnforcingResponsibility(t *testing.T) {
+	b := &Best{
+		Meta:       BestMeta{Version: 1, Project: "test"},
+		Domains:    map[string]BestDomain{"d_leaf": {Label: "leaf", Parent: "d_ghost"}},
+		Containers: map[string]string{},
+	}
+	issues := ValidateBest(b)
+	if !containsIssue(issues, "d_ghost") {
+		t.Fatalf("无关规则不得被顺手弱化，issues=%v", issues)
+	}
+	for _, issue := range issues {
+		if strings.Contains(issue, "responsibility") {
+			t.Fatalf("职责正文已归 decl 所有，校验器不得再报 %q", issue)
+		}
 	}
 }
 
@@ -181,10 +224,9 @@ func TestBestJSONRoundTripProperty(t *testing.T) {
 		for i := 0; i < rng.Intn(8); i++ {
 			id := "d_" + randomString(rng)
 			want.Domains[id] = BestDomain{
-				Label:          randomString(rng),
-				Responsibility: randomString(rng),
-				Parent:         randomString(rng),
-				Type:           randomString(rng),
+				Label:  randomString(rng),
+				Parent: randomString(rng),
+				Type:   randomString(rng),
 			}
 		}
 		for i := 0; i < rng.Intn(8); i++ {
@@ -209,8 +251,8 @@ func validBest() Best {
 	return Best{
 		Meta: BestMeta{Version: 1, Project: "test"},
 		Domains: map[string]BestDomain{
-			"d_root": {Label: "root", Responsibility: "owns root", Type: "logic"},
-			"d_leaf": {Label: "leaf", Responsibility: "owns leaf", Parent: "d_root"},
+			"d_root": {Label: "root", Type: "logic"},
+			"d_leaf": {Label: "leaf", Parent: "d_root"},
 		},
 		Containers: map[string]string{"c": "d_leaf"},
 	}

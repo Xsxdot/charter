@@ -3,12 +3,13 @@
 // 职责：只读 best/target/report，投影出查看器所需的稳定读数。
 // 边界：不读 DOM、不发请求、不写入数据；组件只负责渲染和交互。
 //       唯一读 baseline 节点的地方是 containerFacts——它只取文件目录与节点计数这两个事实。
-import type { CgBest, CgBestDomain, CgCheckReport, CgFinding, CgGraph, CgTarget } from '../../api/types'
+import type { CgBest, CgBestDomain, CgCheckReport, CgDomainDecls, CgFinding, CgGraph, CgTarget } from '../../api/types'
 
 export interface BestSubsystem {
   id: string
   label: string
-  responsibility: string
+  /** decls 有非空正文时存在；undefined 即无声明文件（§2.2-11）。 */
+  responsibility?: string
   type: string
   childIds: string[]
   descendantIds: string[]
@@ -17,7 +18,8 @@ export interface BestSubsystem {
 export interface BestCardReadout {
   id: string
   label: string
-  responsibility: string
+  /** decls 有非空正文时存在；undefined 即无声明文件（§2.2-11）。 */
+  responsibility?: string
   type: string
   containerCount: number
   misplacedCount: number
@@ -80,7 +82,8 @@ export interface BestDirectionDetail {
 export interface BestScopeCard {
   id: string
   label: string
-  responsibility: string
+  /** decls 有非空正文时存在；undefined 即无声明文件（§2.2-11）。 */
+  responsibility?: string
   type: string
   external: boolean
   containerCount: number
@@ -166,15 +169,22 @@ function descendantDomainIds(best: CgBest, parentId: string): string[] {
   return result.sort()
 }
 
+/** 职责正文唯一读取点：来源 decls，绝不回退 best 结构。声明缺席或正文为空
+ *  都归一成 undefined，调用方据此渲染「未声明」态（§2.2-11 禁兜底）。 */
+function declaredResponsibilityOf(decls: CgDomainDecls | undefined, domainId: string): string | undefined {
+  const text = decls?.[domainId]?.responsibility
+  return text || undefined
+}
+
 /** 枚举顶层子系统及其嵌套领域，供卡片和详情共用。 */
-export function bestSubsystems(best: CgBest): BestSubsystem[] {
+export function bestSubsystems(best: CgBest, decls?: CgDomainDecls): BestSubsystem[] {
   return topLevelSubsystemIds(best).map((id) => {
     const domain = best.domains[id]
     const descendants = descendantDomainIds(best, id)
     return {
       id,
       label: domain.label,
-      responsibility: domain.responsibility,
+      responsibility: declaredResponsibilityOf(decls, id),
       type: domain.type ?? '',
       childIds: childBestDomainIds(best, id),
       descendantIds: descendants,
@@ -183,7 +193,7 @@ export function bestSubsystems(best: CgBest): BestSubsystem[] {
 }
 
 /** 按最佳归属侧聚合卡片读数；每个 misplaced finding 算一次命中。 */
-export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record<string, BestCardReadout> {
+export function aggregateBestCards(best: CgBest, report?: CgCheckReport, decls?: CgDomainDecls): Record<string, BestCardReadout> {
   const byContainer = containerSubsystems(best)
   const misplacedBySubsystem: Record<string, number> = {}
   for (const finding of report?.warns ?? []) {
@@ -193,7 +203,7 @@ export function aggregateBestCards(best: CgBest, report?: CgCheckReport): Record
   }
 
   const result: Record<string, BestCardReadout> = {}
-  for (const subsystem of bestSubsystems(best)) {
+  for (const subsystem of bestSubsystems(best, decls)) {
     const containerCount = Object.values(byContainer).filter((id) => id === subsystem.id).length
     result[subsystem.id] = {
       id: subsystem.id,
@@ -563,7 +573,7 @@ function subtreeDomainIds(best: CgBest, rootId: string): Set<string> {
   return result
 }
 
-function scopeCard(best: CgBest, report: CgCheckReport | undefined, domainId: string, external: boolean): BestScopeCard {
+function scopeCard(best: CgBest, report: CgCheckReport | undefined, domainId: string, external: boolean, decls?: CgDomainDecls): BestScopeCard {
   const domainIds = subtreeDomainIds(best, domainId)
   const containerCount = Object.values(best.containers).filter((assignedDomainId) => domainIds.has(assignedDomainId)).length
   const misplacedCount = (report?.warns ?? []).filter(
@@ -573,7 +583,7 @@ function scopeCard(best: CgBest, report: CgCheckReport | undefined, domainId: st
   return {
     id: external ? `ext:${domainId}` : domainId,
     label: domain?.label ?? domainId,
-    responsibility: domain?.responsibility ?? '',
+    responsibility: declaredResponsibilityOf(decls, domainId),
     type: domain?.type ?? '',
     external,
     containerCount,
@@ -619,6 +629,7 @@ export function bestScopeGraph(
   target: CgTarget | undefined,
   report: CgCheckReport | undefined,
   scopeId: string | null,
+  decls?: CgDomainDecls,
 ): BestScopeGraph {
   if (scopeId !== null && !best.domains[scopeId]) {
     return { scopeId, cards: [], edges: [], leaf: false }
@@ -640,7 +651,7 @@ export function bestScopeGraph(
   }
 
   const cards = [...cardDomains]
-    .map((domainId) => scopeCard(best, report, domainId, !visibleIds.includes(domainId)))
+    .map((domainId) => scopeCard(best, report, domainId, !visibleIds.includes(domainId), decls))
     .sort((a, b) => a.id.localeCompare(b.id))
   return {
     scopeId,
