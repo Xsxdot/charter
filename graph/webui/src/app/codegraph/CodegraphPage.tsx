@@ -2,7 +2,7 @@
 //
 // 职责：从 iframe 自身 URL 读 ?project=，经 useCodegraph 一次取数；工具条保留
 // 视图下拉 / 失鲜徽标 / 单域提示 / 刷新；内容区在结构轴（TwoAxisPage）与行为轴
-// （FlowPageView）之间切换——点右栏「程序入口」进流程图，「返回结构轴」回结构轴。
+// （FlowPageView）之间切换——点右栏「对外入缝」方法进图，「上一层」回结构轴。
 // 一次取数两轴共用：轴间与层间的一切切换都是本地状态，不新增请求。
 // 边界：本组件不重算任何债读数（缝纪律）——结构读数在 deriveScopePage、行为读数
 // 在 deriveFlowPage；旧三态下钻世界（领域全景/子域全景/树+图）连同其派生器与
@@ -13,6 +13,7 @@
 // 换视图整页重挂——scope/组织/抽屉是上一层视图的语境，带过去只会误导。
 import { useState } from 'react'
 import { FlowPageView } from './FlowPageView'
+import type { FlowOpenRequest } from './flowpage'
 import { TwoAxisPage } from './TwoAxisPage'
 import { useCodegraph } from './useCodegraph'
 
@@ -21,7 +22,7 @@ export function CodegraphPage() {
   const { data, error, loading, reload } = useCodegraph(project)
 
   const [viewName, setViewName] = useState('baseline')
-  const [openEntry, setOpenEntry] = useState('')
+  const [openFlow, setOpenFlow] = useState<FlowOpenRequest | null>(null)
 
   // 内容区永远吃 baseline（diff 渲染未接入，见文件头）；usingDiff 只驱动提示条。
   const view = data?.baseline ?? null
@@ -31,17 +32,17 @@ export function CodegraphPage() {
   const onViewChange = (nextView: string) => {
     console.info('[codegraph] assembly view change', { from: viewName, to: nextView })
     setViewName(nextView)
-    setOpenEntry('')
+    setOpenFlow(null)
   }
 
-  const openFlowPage = (entryNodeId: string) => {
-    console.info('[codegraph] assembly open flow page', { entryNodeId, viewName })
-    setOpenEntry(entryNodeId)
+  const openFlowPage = (request: FlowOpenRequest) => {
+    console.info('[codegraph] assembly open flow page', { subjectId: request.subjectId, scopeId: request.originScopeId, viewName })
+    setOpenFlow(request)
   }
 
   const backToStructure = () => {
-    console.info('[codegraph] assembly back to structure', { entryNodeId: openEntry, viewName })
-    setOpenEntry('')
+    console.info('[codegraph] assembly back to structure', { subjectId: openFlow?.subjectId, scopeId: openFlow?.originScopeId, viewName })
+    setOpenFlow(null)
   }
 
   // 出错时**不能整页替换**：视图下拉与「刷新」都在工具条里，把工具条一起换掉，
@@ -71,24 +72,22 @@ export function CodegraphPage() {
       </div>
       {loading || error || !view ? (
         <CodegraphPlaceholder loading={loading} error={error} project={project} onRetry={reload} />
-      ) : openEntry ? (
-        <div data-flow-shell className="relative flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b px-3 py-1.5 text-sm">
-            <button type="button" data-back-to-structure onClick={backToStructure}
-              className="rounded border px-2 py-0.5 text-xs hover:bg-muted">
-              ← 返回结构轴
-            </button>
-            <span className="text-xs text-muted-foreground">
-              正在看程序入口 <code className="font-mono">{openEntry}</code> 的流程图
-            </span>
-          </div>
-          {/* 行为轴与结构轴吃同一份 baseline；轴间切换是纯本地状态 */}
-          <FlowPageView baseline={view} entryNodeId={openEntry} />
-        </div>
       ) : (
-        /* key=viewName：换视图即重挂——scope/组织/抽屉是上一层视图的语境，不作跨视图保留 */
-        <TwoAxisPage key={viewName} baseline={view} best={data?.best} decls={data?.decls}
-          target={data?.target} report={data?.report} onOpenEntry={openFlowPage} />
+        <>
+          {/* 结构轴保持挂载，行为轴返回时恢复原 scope/组织上下文；换视图 key 仍会重置结构语境。 */}
+          <div className={openFlow ? 'hidden' : 'contents'}>
+            <TwoAxisPage key={viewName} baseline={view} best={data?.best} decls={data?.decls}
+              target={data?.target} report={data?.report} onOpenSubject={openFlowPage} />
+          </div>
+          {openFlow && (
+            <div data-flow-shell className="relative flex min-h-0 flex-1 flex-col">
+              <div className="border-b px-3 py-1.5 text-xs text-muted-foreground">
+                正在看方法主语 <code className="font-mono">{openFlow.subjectId}</code>
+              </div>
+              <FlowPageView baseline={view} initial={openFlow} onBackToStructure={backToStructure} />
+            </div>
+          )}
+        </>
       )}
       {usingDiff && (
         <div data-compare-fallback role="status" className="pointer-events-none absolute bottom-3 left-3.5 z-30 rounded border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm">

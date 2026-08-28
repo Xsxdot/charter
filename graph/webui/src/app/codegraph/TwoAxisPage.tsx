@@ -7,7 +7,7 @@
 // 边界：结构读数唯一数据源是 ScopePageModel——本组件不重算任何债读数/折叠判据；
 // 组织切换控件不进任何 tablist（§2.3-21，机械消解 BestDomainPage.tsx:172 缺陷）；
 // 本卡不发起网络请求，取数由 K6 装配层经 props 注入。行为轴入口只回调
-// onOpenEntry（K5/K6 接线）。
+// onOpenSubject（K5/K6 接线）。
 import { useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import type { CgBest, CgCheckReport, CgDomainDecls, CgGraph, CgTarget } from '../../api/types'
@@ -17,6 +17,7 @@ import { MigrationDrawer } from './MigrationDrawer'
 import { RightPanel } from './RightPanel'
 import type { EdgeStatusMap } from './ScopeCanvas'
 import { ScopeCanvas } from './ScopeCanvas'
+import type { FlowOpenRequest } from './flowpage'
 import { deriveScopePage, type ScopeOrganization } from './scopepage'
 
 export interface TwoAxisPageProps {
@@ -25,8 +26,8 @@ export interface TwoAxisPageProps {
   decls?: CgDomainDecls
   target?: CgTarget
   report?: CgCheckReport
-  /** 点程序入口进入行为轴流程图（K5/K6 接线）；未接线时点击仍记录日志并给按钮反馈。 */
-  onOpenEntry?: (entryNodeId: string) => void
+  /** 点未折叠对外入缝方法进入行为轴，并携带当前结构轴来源。 */
+  onOpenSubject?: (request: FlowOpenRequest) => void
 }
 
 interface TrailEntry {
@@ -34,7 +35,8 @@ interface TrailEntry {
   label: string
 }
 
-export function TwoAxisPage({ baseline, best, decls, target, report, onOpenEntry }: TwoAxisPageProps): JSX.Element {
+/** 渲染结构轴并把未折叠对外入缝装配为行为轴打开请求。 */
+export function TwoAxisPage({ baseline, best, decls, target, report, onOpenSubject }: TwoAxisPageProps): JSX.Element {
   const [organization, setOrganization] = useState<ScopeOrganization>(best ? 'best' : 'current')
   const [scopeId, setScopeId] = useState<string | null>(null)
   // 面包屑走导航栈：label 取下钻时那张卡的模型字段，不在装配层重算祖先链
@@ -106,9 +108,17 @@ export function TwoAxisPage({ baseline, best, decls, target, report, onOpenEntry
     setMigrationSelectedContainer(item.containerId)
   }
 
-  const handleOpenEntry = (entryNodeId: string) => {
-    console.info('[codegraph] entry open', { entryNodeId, scopeId, wired: onOpenEntry !== undefined })
-    onOpenEntry?.(entryNodeId)
+  const scopeLabel = scopeId === null
+    ? '子系统连线图'
+    : organization === 'best'
+      ? best?.domains[scopeId]?.label ?? scopeId
+      : baseline.domains?.[scopeId]?.label ?? scopeId
+
+  const handleOpenSubject = (subjectId: string) => {
+    const originOpenableSubjectIds = model.inboundSeams.filter((seam) => !seam.folded).map((seam) => seam.nodeId)
+    const request: FlowOpenRequest = { subjectId, originScopeId: scopeId, originScopeLabel: scopeLabel, originOpenableSubjectIds }
+    console.info('[codegraph] scope subject open', { subjectId, scopeId, originSeams: originOpenableSubjectIds.length, wired: onOpenSubject !== undefined })
+    onOpenSubject?.(request)
   }
 
   return (
@@ -200,7 +210,7 @@ export function TwoAxisPage({ baseline, best, decls, target, report, onOpenEntry
           }}
           onOpenScope={openScope}
         />
-        <RightPanel model={model} selectedNodeId={selectedNodeId} onOpenEntry={handleOpenEntry} />
+        <RightPanel model={model} selectedNodeId={selectedNodeId} onOpenSubject={handleOpenSubject} />
       </div>
     </section>
   )

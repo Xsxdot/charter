@@ -5,7 +5,7 @@
 //   - 导出唯一构造函数 New：graph/cmd/codegraph（canonical 二进制）与
 //     handoff 的 graph 别名共同挂载同一棵树——「别名行为一致」由构造保证
 //   - validate/check/absorb/views/chain/who-calls/context/domains/sym/entity/
-//     resolve/contract set/summary/version/migrate 共 15 个子命令
+//     resolve/contract set/summary/version/migrate/flow/tree 共 17 个子命令
 //
 // 边界：
 //   - 只读 --repo 指向的本地文件，不发任何网络请求、不依赖 agentd 存活
@@ -55,6 +55,10 @@ var (
 	graphContractEntries    []string
 	graphContractInterfaces []string
 	graphContractBudget     int
+	treeUp                  bool
+	treeThrough             string
+	treeFrom                string
+	treeOnce                bool
 )
 
 var graphCmd = &cobra.Command{
@@ -119,6 +123,10 @@ func graphResetState() {
 	graphContractEntries = nil
 	graphContractInterfaces = nil
 	graphContractBudget = 0
+	treeUp = false
+	treeThrough = ""
+	treeFrom = ""
+	treeOnce = false
 }
 
 var graphValidateCmd = &cobra.Command{
@@ -563,6 +571,102 @@ var graphWhoCallsCmd = &cobra.Command{
 	RunE:  graphQueryRunE(false, true),
 }
 
+func graphUniqueID(v *codegraph.View, arg string) (string, error) {
+	r, err := codegraph.SymLookup(v, graphRepo, arg)
+	if err != nil {
+		return "", err
+	}
+	if len(r.Matches) != 1 {
+		ids := make([]string, 0, len(r.Matches))
+		for _, m := range r.Matches {
+			ids = append(ids, m.ID+"("+m.Name+")")
+		}
+		sort.Strings(ids)
+		return "", fmt.Errorf("名字 %q 多义，请用节点 id: %s", arg, strings.Join(ids, ", "))
+	}
+	return r.Matches[0].ID, nil
+}
+
+var graphFlowCmd = &cobra.Command{
+	Use:   "flow <节点 id 或名字>",
+	Short: "一个方法怎么走——控制流步骤树，不是 chain 的调用图切片",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		defer graphResetState()
+		slog.Default().Info("graph flow started", "arg", args[0])
+		v, g, err := graphLoadView()
+		if err != nil {
+			slog.Default().Error("graph flow load failed", "error", err)
+			return err
+		}
+		id, err := graphUniqueID(v, args[0])
+		if err != nil {
+			slog.Default().Error("graph flow resolve failed", "arg", args[0], "error", err)
+			return err
+		}
+		out, err := codegraph.LookupFlow(v, g, graphRepo, args[0], id)
+		if err != nil {
+			slog.Default().Error("graph flow lookup failed", "id", id, "error", err)
+			return err
+		}
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph flow print failed", "query", args[0], "id", id, "view", out.View, "error", err)
+			return err
+		}
+		slog.Default().Info("graph flow completed", "command", cmd.Name(), "query", args[0], "id", id, "view", out.View, "degraded", out.Degraded, "steps", len(out.Steps), "callers", len(out.Callers), "implementations", len(out.Implementations), "channels", len(out.Channels), "result", "flow")
+		return nil
+	},
+}
+
+var graphTreeCmd = &cobra.Command{
+	Use:   "tree <节点 id 或名字>",
+	Short: "调用树（缺省向下；--up 向上，--through/--from 卡住走廊）",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		defer graphResetState()
+		slog.Default().Info("graph tree started", "arg", args[0], "up", treeUp, "through", treeThrough, "from", treeFrom, "once", treeOnce, "depth", graphDepth)
+		v, _, err := graphLoadView()
+		if err != nil {
+			slog.Default().Error("graph tree load failed", "error", err)
+			return err
+		}
+		id, err := graphUniqueID(v, args[0])
+		if err != nil {
+			slog.Default().Error("graph tree resolve failed", "arg", args[0], "error", err)
+			return err
+		}
+		opts := codegraph.TreeOptions{Focus: id, Up: treeUp, Once: treeOnce, Depth: graphDepth}
+		if graphDepth == 0 {
+			opts.Depth = -1
+		}
+		if treeThrough != "" {
+			opts.Through, err = graphUniqueID(v, treeThrough)
+			if err != nil {
+				slog.Default().Error("graph tree through resolve failed", "through", treeThrough, "error", err)
+				return err
+			}
+		}
+		if treeFrom != "" {
+			opts.From, err = graphUniqueID(v, treeFrom)
+			if err != nil {
+				slog.Default().Error("graph tree from resolve failed", "from", treeFrom, "error", err)
+				return err
+			}
+		}
+		out, err := codegraph.BuildCallTree(v, opts)
+		if err != nil {
+			slog.Default().Error("graph tree failed", "id", id, "error", err)
+			return err
+		}
+		if err := graphPrintJSON(cmd, out); err != nil {
+			slog.Default().Error("graph tree print failed", "query", args[0], "id", id, "view", out.View, "error", err)
+			return err
+		}
+		slog.Default().Info("graph tree completed", "command", cmd.Name(), "query", args[0], "id", id, "view", out.View, "up", opts.Up, "result", "tree")
+		return nil
+	},
+}
+
 func bindQueryFlags(cmd *cobra.Command, source *bool, withDepth bool) {
 	if withDepth {
 		cmd.Flags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
@@ -799,7 +903,7 @@ var graphSummaryCmd = &cobra.Command{
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(),
-			"本仓库有代码图：%d 节点 / %d 边 / %d 领域（codegraph/）。探索已有代码先查图：codegraph sym <符号>（定位+签名+字段，行号已再锚定）、who-calls <符号>（上游影响面）、chain <符号>（下游链）、domains（领域树）；图未命中再 grep，并把未命中符号记入产出物的「图覆盖债」小节。\n",
+			"本仓库有代码图：%d 节点 / %d 边 / %d 领域（codegraph/）。探索已有代码先查图：codegraph sym <符号>（定位+签名+字段，行号已再锚定）、flow <符号>（这个方法怎么走）、tree <符号>（调用树，--up --through --from 卡住向上走廊）、who-calls <符号>（上游影响面）、chain <符号>（下游切片）、domains（领域树）；图未命中再 grep，并把未命中符号记入产出物的「图覆盖债」小节。\n",
 			len(g.Nodes), len(g.Edges), len(g.Domains))
 		return nil
 	},
@@ -849,6 +953,7 @@ func init() {
 	graphCmd.PersistentFlags().BoolVar(&graphStale, "stale", false, "附带保鲜检测结果")
 	bindQueryFlags(graphChainCmd, &graphWithSource, true)
 	bindQueryFlags(graphWhoCallsCmd, &graphWithSource, true)
+	graphTreeCmd.Flags().IntVar(&graphDepth, "depth", 2, "查询深度（0 = 不限）")
 	bindQueryFlags(graphContextCmd, &graphContextWithSource, false)
 	graphDomainsCmd.Flags().BoolVar(&graphEdges, "edges", false, "输出跨领域边矩阵")
 	graphAbsorbCmd.Flags().StringVar(&absorbCommit, "commit", "", "写入基线 meta 的提交号（缺省从 git HEAD 读取）")
@@ -860,5 +965,9 @@ func init() {
 	graphContractSetCmd.Flags().StringSliceVar(&graphContractInterfaces, "interfaces", nil, "允许的跨域接口清单")
 	graphContractSetCmd.Flags().IntVar(&graphContractBudget, "budget", 0, "存量直调预算")
 	graphContractCmd.AddCommand(graphContractSetCmd)
-	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphContextCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd)
+	graphTreeCmd.Flags().BoolVar(&treeUp, "up", false, "向上展开（被谁调用）")
+	graphTreeCmd.Flags().StringVar(&treeThrough, "through", "", "上面那层方法（向上走廊）")
+	graphTreeCmd.Flags().StringVar(&treeFrom, "from", "", "调用上面那层的方法（向上走廊，必须搭配 --through）")
+	graphTreeCmd.Flags().BoolVar(&treeOnce, "once", false, "同一节点只展开第一次（防指数爆炸，形状接近 chain）")
+	graphCmd.AddCommand(graphValidateCmd, graphCheckCmd, graphAbsorbCmd, graphViewsCmd, graphChainCmd, graphWhoCallsCmd, graphContextCmd, graphDomainsCmd, graphSymCmd, graphEntityCmd, graphResolveCmd, graphContractCmd, graphSummaryCmd, graphVersionCmd, graphMigrateCmd, graphFlowCmd, graphTreeCmd)
 }

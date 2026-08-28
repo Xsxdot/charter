@@ -1,7 +1,7 @@
 // RightPanel —— 结构轴右栏：基本信息 / 对外面 / 状态机 三 tab + 可拖宽分隔条。
 //
 // 职责：把 ScopePageModel 已算定的读数映射为可测试的 DOM（data-* 契约）；
-// tab 切换、噪声折叠展开、程序入口点击、拖宽都是组件本地状态。
+// tab 切换、噪声折叠展开、程序入口高亮、拖宽都是组件本地状态。
 // 边界：只消费模型——禁止在 JSX 里重算任何债读数/折叠判据（缝纪律，breakdown
 // K4 序列化边界族）。不变式按协调者修订 R3 从模型真渲染（三态互斥：present/
 // unwritten/no-decl，text 与 testRef 逐字透传）；状态机仍是模型未投影的声明正文，
@@ -74,8 +74,10 @@ function writeStoredWidth(width: number): void {
 export interface RightPanelProps {
   model: ScopePageModel
   selectedNodeId: string
-  /** 点程序入口进入行为轴流程图（K5/K6 接线）；本卡只回调。 */
-  onOpenEntry?: (entryNodeId: string) => void
+  /** 点对外入缝方法进入行为轴；程序入口不会走此回调。 */
+  onOpenSubject?: (subjectId: string) => void
+  /** 点程序入口只高亮当前结构卡/通道，不打开行为轴。 */
+  onHighlightEntry?: (entryNodeId: string) => void
 }
 
 function declFileId(node: ScopeNode | null, model: ScopePageModel): string {
@@ -139,7 +141,8 @@ function InvariantsBlock({ node, model }: { node: ScopeNode; model: ScopePageMod
   )
 }
 
-export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelProps): JSX.Element {
+/** 渲染结构轴右栏；入缝方法可打开，程序入口只高亮且不进入行为轴。 */
+export function RightPanel({ model, selectedNodeId, onOpenSubject, onHighlightEntry }: RightPanelProps): JSX.Element {
   const [tab, setTab] = useState<ScopeTabId>('info')
   const [width, setWidth] = useState(readStoredWidth)
   const [foldedOpen, setFoldedOpen] = useState(false)
@@ -169,10 +172,15 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
     event.preventDefault()
   }
 
-  const openEntry = (entry: ScopeEntryRef) => {
-    console.info('[codegraph] scope entry open', { entryId: entry.id, wired: onOpenEntry !== undefined })
+  const highlightEntry = (entry: ScopeEntryRef) => {
+    console.info('[codegraph] scope entry highlight', { entryId: entry.id, wired: onHighlightEntry !== undefined })
     setActiveEntry(entry.id)
-    onOpenEntry?.(entry.id)
+    onHighlightEntry?.(entry.id)
+  }
+
+  const openSubject = (subjectId: string, seam: { containerId: string; folded: boolean }) => {
+    console.info('[codegraph] scope subject open', { subjectId, scopeId: model.scopeId, containerId: seam.containerId, folded: seam.folded, wired: onOpenSubject !== undefined })
+    onOpenSubject?.(subjectId)
   }
 
   const seams = model.inboundSeams
@@ -290,7 +298,7 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
                               type="button"
                               data-entry={entry.id}
                               data-entry-active={activeEntry === entry.id ? 'true' : undefined}
-                              onClick={() => openEntry(entry)}
+                            onClick={() => highlightEntry(entry)}
                               className={'block w-full truncate rounded px-2 py-0.5 text-left font-mono text-xs hover:bg-muted '
                                 + (activeEntry === entry.id ? 'bg-muted outline outline-1 outline-primary' : '')}
                             >
@@ -318,7 +326,7 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
       {tab === 'seams' && (
         <div role="tabpanel" data-tab-body="seams" className="space-y-2">
           <p data-seams-disclaimer className="rounded bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
-            这里列的是对外入缝（被调进来的契约面），不是程序入口——程序入口在基本信息 tab 底部，点它进流程图
+            这里列的是对外入缝（被调进来的契约面），不是到达通道；程序入口在基本信息 tab 底部，只读并可高亮
           </p>
           {model.empty.noInboundSeams && (
             <p data-empty="no-inbound-seams" className="rounded border bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
@@ -326,10 +334,12 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
             </p>
           )}
           {shownSeams.map((seam) => (
-            <div
+            <button
+              type="button"
               key={seam.nodeId}
               data-inbound-seam={seam.nodeId}
               data-kind-class={seam.kindClass}
+              onClick={() => openSubject(seam.nodeId, seam)}
               className="rounded border px-2 py-1.5 text-xs"
             >
               <div className="font-mono">{seam.name}</div>
@@ -340,7 +350,7 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
               {seam.callerDomains.length > 0 && (
                 <div className="text-[11px] text-muted-foreground">来自 {seam.callerDomains.join('、')}</div>
               )}
-            </div>
+            </button>
           ))}
           {foldedSeams.length > 0 && (
             <div data-folded-block>
@@ -354,15 +364,17 @@ export function RightPanel({ model, selectedNodeId, onOpenEntry }: RightPanelPro
                 已折叠 {foldedSeams.length} 条噪声（兜底桶 ∧ 复用≥10，不占名额）{foldedOpen ? '▲ 收起' : '▼ 展开'}
               </button>
               {foldedOpen && foldedSeams.map((seam) => (
-                <div
+                <button
+                  type="button"
                   key={seam.nodeId}
                   data-inbound-seam={seam.nodeId}
                   data-folded="true"
+                  onClick={() => openSubject(seam.nodeId, seam)}
                   data-kind-class={seam.kindClass}
                   className="mt-1 rounded border border-dashed px-2 py-1.5 text-xs text-muted-foreground"
                 >
                   <span className="font-mono">{seam.name}</span> · {seam.containerLabel} · 复用 {seam.reuse}
-                </div>
+                </button>
               ))}
             </div>
           )}
