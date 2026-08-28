@@ -152,5 +152,5 @@
 56. **C17 `handoff graph` 别名尚未挂 `flow`/`tree`**：本机 `handoff graph --help` 子命令表无 flow/tree；`handoff graph summary` 菜单仍是 `sym/who-calls/chain/domains`。同机 canonical `graph/cmd/codegraph` 已挂二者，且 summary 文案含 `flow`/`tree`。等 handoff 升 charter graph 版本并重建别名（与第 1i、第 6 条同族）。来源：C17 plan §8.2-9、breakdown 真机 7。
 57. **C17 原型 fork 文案仍写「入口流程图」**：gitignored `prototypes/codegraph-two-axis/pages/behav-flow.html` 标题/导航仍是 C12「入口」词汇；产品 UI 已改为「正在看方法主语」。对拍差异已记录，不在本卡改 gitignore 副本。`prototypes/base/README.md` 行为轴行已按 C17 主语纠正。来源：C17 plan §8.2-3、finish 文档对齐。
 58. **C17 真机观察：菱形左缘被 overflow 裁切**：acceptance 截图 `03-flow-run.png` 中 `err` 菱形左侧文字被流程图滚动容器切掉；蛇形折列与卫语句侧甩本身通过。布局质量项，不阻塞。来源：C17 acceptance 2026-08-28。
-59. **C16 查图纪律生效检查（观察项）**：跑过 3 张有图项目的 L2/L3 卡或下次 skills 对齐审计（先到为准）后复核。生效判据：spec/plan 产出用 `flow` 写方法怎么走，不用 chain 邻居列表当流程图；对通道名（如 `GET /console`）跑 `flow` 的次数为 0。负优化信号：无 flows 时仍把 chain 当流程图退路。来源：C16 2026-08-28 修订。全局 `AGENTS.md` 旧菜单（`sym / who-calls / chain / entity / domains`）仍在仓外，协调者开局可能绕过 `flow`。
+59. **C16 查图纪律生效检查（观察项）**：跑过 3 张有图项目的 L2/L3 卡或下次 skills 对齐审计（先到为准）后复核。生效判据：spec/plan 产出用 `flow` 写方法怎么走，不用 chain 邻居列表当流程图；对通道名（如 `GET /console`）跑 `flow` 的次数为 0。负优化信号：无 flows 时仍把 chain 当流程图退路。来源：C16 2026-08-28 修订。全局路由层（`~/.grok/AGENTS.md`、`~/.claude/CLAUDE.md`、`~/.config/opencode/AGENTS.md`）已于 2026-08-28 改成 `context`/`sym`/`flow`/`tree`/`chain` 指针。
 
