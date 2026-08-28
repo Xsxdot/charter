@@ -1,0 +1,24 @@
+# C11 plan 台账
+
+- 2026-08-28：当前工作树分支为 `cards/C11-charter`，HEAD 为 `4250d1b docs(C11): spec r1 — provision 纪律块改对账本`；工作树初始干净。只在当前分支工作，不切换分支、不 push。
+- 2026-08-28：法定输入 `docs/superpowers/specs/c11.md` 已读完；状态为已批准、级别 L2，法定产出为 `docs/superpowers/plans/c11-plan.md`，spec 台账为 `docs/ledgers/2026-08-28-c11-spec-ledger.md`。
+- 2026-08-28：仓内不存在项目级 `codegraph/` 目录；spec §备注明确 `scripts/` 不在 charter `graph/` 扫描范围内，因此本卡不调用 codegraph，图覆盖债记为不适用。
+- 2026-08-28：计划节点已完整读取 `skills/plan/SKILL.md` 与 `skills/defect-families/SKILL.md`；本节点只写计划和台账，不实现 `scripts/` 代码、不派发、不调用 handoff CLI。
+- 2026-08-28：基线验收命令 `python3 -m unittest discover -s scripts -p 'test_*.py'` 退出码 1；原始摘要为 `.....F..............`、`Ran 20 tests in 0.015s`、`FAILED (failures=1)`，唯一失败 `test_check_never_writes_ledger`：`AssertionError: 1 != 0 : 与账本一致时应报 0`。该红因当前 helper 只模拟 workflow/template，而 check 第三段仍读本地 `OUT`，正是本卡待修假绿缝的基线证据。
+- 2026-08-28：基线 `python3 -m py_compile scripts/charter_provision.py scripts/regen_discipline.py scripts/test_charter_provision.py` 退出码 0，原始输出为空。
+- 2026-08-28：基线 `git diff --check` 退出码 0，原始输出为空；`git status --short --branch` 输出 `## cards/C11-charter` 与未跟踪的本节点台账。
+- 2026-08-28：基线 JSON 探针读取 `flows/charter.workflow.json` 输出顶层键 `['nodes']`；读取 `flows/charter-default.template.json` 输出 `['executor', 'target', 'purpose', 'branch_prefix', 'prompt', 'discipline']`。
+- 2026-08-28：未直接运行 `handoff` CLI；平台不变量禁止本节点调用 handoff CLI。纪律 get/put 的 stdout、argv、缺块文案、版本递增和库限制均只引用已冻结输入 `docs/superpowers/specs/c11.md:35-49,73-81`、契约 `docs/contracts/2026-08-24-charter-provisioning-contract.md:378-400` 及其注明的对侧源码出处，真机行为列为协调者 acceptance 未验证项。
+- 2026-08-28：计划自检 fence 统计命令失败；原始报错为 `awk: cmd. line:1: NR%2==1{open++} NR%2==0{close++} END{print "fence_open=" open, "fence_close=" close}`、`awk: cmd. line:1: ^ syntax error`。原因是把 awk 内置函数名 `close` 当变量名；该命令不用于验收，随后改用不冲突变量名重跑。
+- 2026-08-28：法定计划 `docs/superpowers/plans/c11-plan.md` 已落盘，当前 `wc -l -c` 为 `1037 59414`；包含 T1/T2 精确接口与完整代码块、T3 C-7/C-9/R-4/R-5/roadmap 回写块、T4 变异与协调者真机清单，以及五项自审。
+- 2026-08-28：计划占位符扫描 `if rg -n -i 'TBD|TODO|同 Task|适当的错误处理|待定|placeholder' docs/superpowers/plans/c11-plan.md; then exit 1; else echo PLACEHOLDER_SCAN_OK; fi` 退出码 0，原始输出 `PLACEHOLDER_SCAN_OK`。
+- 2026-08-28：计划 fence 扫描 `awk '/^~~~/{n++} END{print "fence_markers=" n; if (n % 2 != 0) exit 1}' docs/superpowers/plans/c11-plan.md` 退出码 0，原始输出 `fence_markers=50`。
+- 2026-08-28：计划与台账 `git diff --check -- docs/superpowers/plans/c11-plan.md docs/ledgers/2026-08-28-c11-plan-ledger.md` 退出码 0、原始输出为空；当前变更只含本计划和本台账，尚未提交。
+- 2026-08-28：完整读取 `skills/implement/SKILL.md`；其日志纪律要求结构化 logger、禁止 print，并要求编译全量/测试局部/集成全量和变异先编译后行为。`rg -n 'logging|getLogger|structlog|logger' scripts --glob '*.py'` 无输出，故计划选用 Python 标准 logging 的 `Logger` + `extra` 结构化字段，并保留既有 print 仅作为稳定 CLI 用户界面。
+- 2026-08-28：占位符形态复核发现计划 T3 prose 中有 `<tmpfile>`/`<file>` 两个伪变量；已改为 `temp_file_path`/`file_path`，保留协议中的 `<DataDir>`/`<name>` 术语，不把随机临时路径写成可执行命令。
+- 2026-08-28：最终计划自检 `if rg -n -i 'TBD|TODO|同 Task|适当的错误处理|待定|placeholder|<tmpfile>|<file>' docs/superpowers/plans/c11-plan.md; then exit 1; else echo PLAN_PLACEHOLDER_SCAN_OK; fi` 退出码 0，原始输出 `PLAN_PLACEHOLDER_SCAN_OK`。
+- 2026-08-28：最终 fence 自检 `awk '/^~~~/{n++} END{print "fence_markers=" n; if (n % 2 != 0) exit 1}' docs/superpowers/plans/c11-plan.md` 退出码 0，原始输出 `fence_markers=50`；尾空格扫描退出码 0，原始输出 `TRAILING_WHITESPACE_SCAN_OK`。
+- 2026-08-28：发现真机用户故事的“修改 `skills/plan/SKILL.md` 一行”与本卡实现范围“不改 skills/”可能歧义；已在计划第 6.4-2 明确限定为 disposable checkout 探针并恢复，不把 acceptance 改动带入提交。
+- 2026-08-28：计划复读实现代码块时发现 install 在已完成前序 put 后遇到账本不可用仍写“未做任何改动”会误导；已统一改为“未继续写入；已完成步骤保留，重跑本命令是安全的”，与半装生命周期结论一致。
+- 2026-08-28：最终复读核对：计划 `wc -l -c` 为 `1038 60007`；占位符扫描输出 `PLAN_PLACEHOLDER_SCAN_OK`；代码围栏扫描输出 `fence_markers=50`；尾空格扫描输出 `TRAILING_WHITESPACE_SCAN_OK`；章节扫描确认 T1/T2/T3/T4、C-7/C-9/R-4/R-5a、五项自审均存在。
+- 2026-08-28：提交前复核 `git status --short --branch && git diff --cached --check && git diff --cached --stat && git diff --cached --numstat` 退出码 0；原始输出显示当前分支 `cards/C11-charter`，仅暂存计划 1038 行与台账 23 行，cached diff 无空白错误。
