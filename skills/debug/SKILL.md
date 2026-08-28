@@ -28,7 +28,7 @@ description: 遇到 bug、测试失败、诡异行为时的排查纪律——先
 
 在每个组件边界加诊断日志（统一前缀如 `[DEBUG-xxxx]`，便于最后一把 grep 清干净），完整跑一遍，先定位**断在哪一层**，再进那一层查。不许在没有取证的层里凭感觉翻代码。
 
-项目有 `codegraph/` 时：影响面用 `codegraph who-calls` / `chain`；行为路径有 `baseline.flows` 再读对应入口的 steps，没有就读源码。不要把 chain 的邻居列表当成执行次序（调用链 ≠ 流程图，完整纪律在 spec/plan「有图先查图」）。
+项目有 `codegraph/` 时：影响面用 `who-calls` / `chain`；这个方法怎么走用 `flow`（`degraded` 则读源码）。不要把 chain 的邻居列表当成执行次序（调用链 ≠ 流程图，完整纪律在 spec/plan「有图先查图」）。
 
 ## 第 3 步：假设纪律
 
