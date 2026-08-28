@@ -127,8 +127,27 @@ def _ledger_stdout(def_obj):
                           "CreatedAt": "2026-08-24T00:00:00Z"}, ensure_ascii=False))
 
 
-def _run_check_with_ledger(workflow_def=None, template_def=None, calls=None):
-    """跑一次真实路径的 check：只 mock subprocess，不 mock load_ledger_def。
+def _discipline_stdout(name, body, version=7):
+    """造 handoff discipline get 的文本形状；版本头前可有日志，正文原样保留。"""
+    return ("2026/08/28 20:00:00 INFO 账本库已打开\n"
+            f"{name} v{version}\n" + body)
+
+
+def _discipline_bodies():
+    """在临时目录生成当前仓七份正文，供 mock get 回放真实 regen 结果。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        rd.regen(tmp)
+        bodies = {}
+        for name in rd.compose_map():
+            with open(os.path.join(tmp, f"charter-{name}.md"), encoding="utf-8") as f:
+                bodies[f"charter-{name}"] = f.read()
+        return bodies
+
+
+def _run_check_with_ledger(workflow_def=None, template_def=None, calls=None,
+                           discipline_bodies=None, missing_discipline=None,
+                           unavailable_discipline=None):
+    """跑真实 check 路径；workflow/template 用 JSON，discipline 用文本头+正文。
 
     mock 掉 load_ledger_def 会让「check 不写账本」这条断言变成空转——
     那样 subprocess 根本不被调用，断言在空列表上恒真（本批审查抓到过一次）。
@@ -137,12 +156,34 @@ def _run_check_with_ledger(workflow_def=None, template_def=None, calls=None):
         workflow_def = cp.load_repo_def(cp.WORKFLOW_FILE)
     if template_def is None:
         template_def = cp.load_repo_def(cp.TEMPLATE_FILE)
+    if discipline_bodies is None:
+        discipline_bodies = _discipline_bodies()
+    missing_discipline = set(missing_discipline or ())
+    unavailable_discipline = set(unavailable_discipline or ())
 
     def fake_run(cmd, *a, **kw):
         if calls is not None:
             calls.append(cmd)
-        which = workflow_def if cmd[1] == "workflow" else template_def
-        return mock.Mock(returncode=0, stdout=_ledger_stdout(which), stderr="")
+        if cmd[1] == "workflow":
+            return mock.Mock(returncode=0, stdout=_ledger_stdout(workflow_def),
+                             stderr="")
+        if cmd[1] == "template":
+            return mock.Mock(returncode=0, stdout=_ledger_stdout(template_def),
+                             stderr="")
+        if cmd[1] == "discipline" and cmd[2] == "get":
+            name = cmd[3]
+            if name in unavailable_discipline:
+                return mock.Mock(returncode=1, stdout="",
+                                 stderr="dial tcp 127.0.0.1:7777: connection refused")
+            if name in missing_discipline or name not in discipline_bodies:
+                return mock.Mock(returncode=1, stdout="",
+                                 stderr=f"Error: 纪律块 {name} v0: ledger: 记录不存在")
+            return mock.Mock(
+                returncode=0,
+                stdout=_discipline_stdout(name, discipline_bodies[name]),
+                stderr="",
+            )
+        return mock.Mock(returncode=0, stdout="", stderr="")
 
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
@@ -163,10 +204,12 @@ class TestCheckIsReadOnly(unittest.TestCase):
         # 先证明这一趟真的走到了读账本那一步，否则下面的断言是空转
         self.assertGreaterEqual(len(calls), 2,
                                 "check 没走到读账本就返回了，本断言会空转")
-        self.assertEqual([c[1] for c in calls], ["workflow", "template"])
+        self.assertEqual([c[1] for c in calls],
+                         ["workflow", "template"] + ["discipline"] * len(rd.compose_map()))
         self.assertEqual(rc, 0, "与账本一致时应报 0")
         for cmd in calls:
             self.assertNotIn("put", cmd, f"check 发出了写命令: {cmd}")
+            self.assertNotIn("list", cmd, f"check 不得用 list 判断纪律块: {cmd}")
 
 
 class TestCheckFindings(unittest.TestCase):
@@ -206,6 +249,28 @@ class TestCheckFindings(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("账本不可用", err.getvalue())
 
+    def test_discipline_block_mismatch_is_reported(self):
+        bodies = _discipline_bodies()
+        bodies["charter-plan"] = "这不是本仓正文\n"
+        rc, out = _run_check_with_ledger(discipline_bodies=bodies)
+        self.assertEqual(rc, 1)
+        self.assertIn("charter-plan", out)
+        self.assertIn("与本仓正文不一致", out)
+
+    def test_discipline_block_missing_is_drift_not_unavailable(self):
+        rc, out = _run_check_with_ledger(missing_discipline={"charter-plan"})
+        self.assertEqual(rc, 1)
+        self.assertIn("charter-plan", out)
+        self.assertIn("账本中不存在", out)
+
+    def test_discipline_get_unavailable_returns_2(self):
+        rc, out = _run_check_with_ledger(
+            unavailable_discipline={"charter-plan"}
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("账本不可用", out)
+        self.assertNotIn("discipline put", out)
+
     def test_dispatch_node_without_override_is_reported(self):
         # F-8：dispatch 节点没写 override.discipline → 必须报（它会落到模板缺省的哨兵上）
         real_load = cp.load_repo_def
@@ -222,16 +287,21 @@ class TestCheckFindings(unittest.TestCase):
         self.assertIn("新节点", out)
         self.assertIn("override.discipline", out)
 
-    def test_discipline_block_mismatch_is_reported(self):
-        # 纪律块比对：已装的块与本仓正文不一致 → 必须点名那个块
+    def test_dispatch_override_uses_ledger_not_local_directory(self):
+        """账本缺块即报错；本机 OUT 中有同名文件也不能让它通过。"""
         with tempfile.TemporaryDirectory() as fake_out:
-            for name in rd.compose_map():
-                with open(os.path.join(fake_out, f"charter-{name}.md"), "w") as f:
-                    f.write("这不是本仓正文")
+            with open(os.path.join(fake_out, "charter-plan.md"), "w",
+                      encoding="utf-8") as f:
+                f.write("本地旧文件不是账本记录\n")
             with mock.patch.object(rd, "OUT", fake_out):
-                rc, out = _run_check_with_ledger()
+                rc, out = _run_check_with_ledger(
+                    missing_discipline={"charter-plan"}
+                )
         self.assertEqual(rc, 1)
-        self.assertIn("与本仓正文不一致", out)
+        self.assertIn("节点 plan", out)
+        self.assertIn("charter-plan", out)
+        self.assertIn("账本中不存在", out)
+        self.assertNotIn(fake_out, out)
 
 
 class TestInstall(unittest.TestCase):
@@ -250,48 +320,147 @@ class TestInstall(unittest.TestCase):
             return {"nodes": [node("完全不同的节点")]} if kind == "workflow" else {"executor": "x"}
         return loader
 
-    def test_template_put_strictly_before_workflow_put(self):
-        # 判据1（承重属性）：断言实际发出的命令序列，不是断言 INSTALL_ORDER 常量。
-        cmds = []
+    def _install_discipline_get(self, bodies, calls, missing=(), unavailable=(), drift=()):
+        missing = set(missing)
+        unavailable = set(unavailable)
+        drift = set(drift)
 
         def fake_run(cmd, *a, **kw):
-            cmds.append(cmd)
-            return mock.Mock(returncode=0)
+            calls.append(cmd)
+            if cmd[1] == "discipline" and cmd[2] == "get":
+                name = cmd[3]
+                if name in unavailable:
+                    return mock.Mock(returncode=1, stdout="",
+                                     stderr="连接 handoff 失败")
+                if name in missing:
+                    return mock.Mock(returncode=1, stdout="",
+                                     stderr=f"纪律块 {name}: ledger: 记录不存在")
+                body = "旧正文\n" if name in drift else bodies[name]
+                return mock.Mock(
+                    returncode=0,
+                    stdout=_discipline_stdout(name, body, version=11),
+                    stderr="",
+                )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        return fake_run
+
+    def test_template_put_strictly_before_workflow_and_discipline_put(self):
+        # 判据1（承重属性）：断言实际发出的命令序列，不是断言 INSTALL_ORDER 常量。
+        calls = []
+
+        def fake_run(cmd, *a, **kw):
+            calls.append(cmd)
+            if cmd[1] == "discipline" and cmd[2] == "get":
+                return mock.Mock(returncode=1, stdout="",
+                                 stderr="纪律块不存在: ledger: 记录不存在")
+            return mock.Mock(returncode=0, stdout="", stderr="")
 
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=cp.NotInstalled("首装")), \
              mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
-             mock.patch.object(cp.regen_discipline, "regen", return_value={}), \
              contextlib.redirect_stdout(io.StringIO()):
             rc = cp.install()
         self.assertEqual(rc, 0)
-        puts = [c for c in cmds if "put" in c]
+        puts = [c for c in calls if "put" in c]
         kinds = [c[1] for c in puts]
-        self.assertEqual(kinds, ["template", "workflow"],
+        self.assertEqual(kinds, ["template", "workflow"] +
+                         ["discipline"] * len(rd.compose_map()),
                          f"安装顺序错，实际发出：{kinds}")
+        discipline_puts = [c for c in puts if c[1] == "discipline"]
+        self.assertTrue(discipline_puts)
+        for cmd in discipline_puts:
+            self.assertEqual(len(cmd), 5)
+            self.assertNotIn("--file", cmd)
+            self.assertTrue(cmd[4].endswith(f"/{cmd[3]}.md"), cmd)
 
-    def test_idempotent_skips_put_when_identical(self):
+    def test_idempotent_skips_put_when_identical_discipline_is_in_ledger(self):
         # 判据2：两侧一致 → 一条 put 都不发。调用链穿过 nodes_equivalent。
-        cmds = []
+        bodies = _discipline_bodies()
+        calls = []
 
         def fake_run(cmd, *a, **kw):
-            cmds.append(cmd)
-            return mock.Mock(returncode=0)
+            calls.append(cmd)
+            if cmd[1] == "discipline" and cmd[2] == "get":
+                return mock.Mock(
+                    returncode=0,
+                    stdout=_discipline_stdout(cmd[3], bodies[cmd[3]], version=11),
+                    stderr="",
+                )
+            return mock.Mock(returncode=0, stdout="", stderr="")
 
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=self._fake_ledger(same=True)), \
              mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
-             mock.patch.object(cp.regen_discipline, "regen", return_value={}), \
              contextlib.redirect_stdout(io.StringIO()):
             rc = cp.install()
         self.assertEqual(rc, 0)
-        self.assertEqual([c for c in cmds if "put" in c], [],
+        self.assertEqual([c for c in calls if "put" in c], [],
                          "两侧一致却仍然发出了 put——幂等失效，账本会长出无谓的一版")
+        self.assertEqual(
+            [c[3] for c in calls if c[1] == "discipline" and c[2] == "get"],
+            sorted(bodies),
+        )
+
+    def test_old_discipline_body_is_put_with_positional_path(self):
+        bodies = _discipline_bodies()
+        calls = []
+        fake_run = self._install_discipline_get(
+            bodies, calls, drift={"charter-plan"}
+        )
+        with mock.patch.object(cp, "load_ledger_def",
+                               side_effect=self._fake_ledger(same=True)), \
+             mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+             contextlib.redirect_stdout(io.StringIO()):
+            rc = cp.install()
+        self.assertEqual(rc, 0)
+        puts = [c for c in calls if c[1] == "discipline" and c[2] == "put"]
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(puts[0][0:4],
+                         ["handoff", "discipline", "put", "charter-plan"])
+        self.assertNotIn("--file", puts[0])
+        self.assertTrue(puts[0][4].endswith("/charter-plan.md"))
+
+    def test_missing_discipline_body_is_put(self):
+        bodies = _discipline_bodies()
+        calls = []
+        fake_run = self._install_discipline_get(
+            bodies, calls, missing={"charter-plan"}
+        )
+        with mock.patch.object(cp, "load_ledger_def",
+                               side_effect=self._fake_ledger(same=True)), \
+             mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+             contextlib.redirect_stdout(io.StringIO()):
+            rc = cp.install()
+        self.assertEqual(rc, 0)
+        puts = [c for c in calls if c[1] == "discipline" and c[2] == "put"]
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(puts[0][3], "charter-plan")
+
+    def test_discipline_ledger_unavailable_returns_2_without_put(self):
+        bodies = _discipline_bodies()
+        calls = []
+        fake_run = self._install_discipline_get(
+            bodies, calls, unavailable={"charter-plan"}
+        )
+        buf = io.StringIO()
+        with mock.patch.object(cp, "load_ledger_def",
+                               side_effect=self._fake_ledger(same=True)), \
+             mock.patch.object(cp.subprocess, "run", side_effect=fake_run), \
+             contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(buf):
+            rc = cp.install()
+        self.assertEqual(rc, 2)
+        self.assertIn("账本不可用", buf.getvalue())
+        self.assertEqual(
+            [c for c in calls if c[1] == "discipline" and c[2] == "put"], []
+        )
 
     def test_half_install_message_says_retry_is_safe(self):
         # 判据3：workflow put 失败 → 非 0，且报文说清重跑安全
         def fake_run(cmd, *a, **kw):
-            return mock.Mock(returncode=0 if cmd[1] == "template" else 3)
+            return mock.Mock(returncode=0 if cmd[1] == "template" else 3,
+                             stdout="", stderr="")
 
         buf = io.StringIO()
         with mock.patch.object(cp, "load_ledger_def",
@@ -311,7 +480,7 @@ class TestInstall(unittest.TestCase):
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=cp.NotInstalled("首装")), \
              mock.patch.object(cp.subprocess, "run",
-                               return_value=mock.Mock(returncode=0)), \
+                               return_value=mock.Mock(returncode=0, stdout="", stderr="")), \
              mock.patch.object(cp.regen_discipline, "regen",
                                side_effect=OSError("磁盘满")), \
              contextlib.redirect_stderr(buf), \
@@ -328,7 +497,7 @@ class TestInstall(unittest.TestCase):
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=cp.LedgerUnavailable("agentd 不在")), \
              mock.patch.object(cp.subprocess, "run",
-                               return_value=mock.Mock(returncode=0)), \
+                               return_value=mock.Mock(returncode=0, stdout="", stderr="")), \
              mock.patch.object(cp.regen_discipline, "regen", return_value={}), \
              contextlib.redirect_stderr(buf), \
              contextlib.redirect_stdout(io.StringIO()):
@@ -342,7 +511,7 @@ class TestInstall(unittest.TestCase):
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=self._fake_ledger(same=True)), \
              mock.patch.object(cp.subprocess, "run",
-                               return_value=mock.Mock(returncode=0)), \
+                               return_value=mock.Mock(returncode=0, stdout="", stderr="")), \
              mock.patch.object(cp.regen_discipline, "regen", return_value={}), \
              contextlib.redirect_stdout(buf):
             cp.install()

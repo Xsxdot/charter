@@ -78,7 +78,7 @@
 18b. **载体条款的机械执法**：lint 文档头部状态行格式、冻结清单条目数/原子性检查——载体法本期纯文本立法，工具化等条款跑过几张真卡再定形态。来源：C9 载体法 spec OOS-3。
 18c. **C9 载体法生效检查（观察条目）**：各条款跑过 ≥3 张真卡后或下次文档对齐审计（先到为准），按 C9 spec「生效判据与负优化信号」节逐条核——breakdown 状态行零失真、契约清单窄接缝、spec 无内部落点/读数进台账、台账有真实过程内容；命中负优化信号（移交区变第二清单、contract 频繁退 spec 索名、台账空转、判例表僵化）即回炉对应条款。检查时顺手清本文件残留的状态短语失真（C9 review Minor-1 具名 ≥4 处：第 8/9/11/12 条的 C1.1/C1.2/C1.4/C1.5 仍写「待批准」而各 spec 头部均已批准；C1.7 在 handoff 仓未核）。检查结论回写本条销账。来源：C9 载体法 spec G 条款自持 + C9 review Minor-1。
 18d. **「法条零案例」原则是否补自仓先例出口**：C9 review Minor-3——spec 定级表 L1 条引「先例：seam-budget、C9 载体法」、README 第七条引「2026-08-25 审计」，与「法条零案例……不引任何真实项目路径」存在张力。协调者裁决（2026-08-25，记 C9 台账）：charter 仓自身的修法先例是法的判例（同「判据数字即先例」），不构成违反；是否在该原则里写显式出口，留下次修法一并定。来源：C9 review Minor-3。
-18e. **provision check 测试耦合本机安装态**：`test_charter_provision.py` 的 `test_check_never_writes_ledger` 走真实 `check()`，其纪律块比对段读真实 `~/.handoff/discipline`——任何「仓已修法、线上未装」的窗口（新分支、新机器）必红（C9 finish 实测：mock 了账本读、没 mock 块目录）。宜给 check 注入 out 目录或测试内自装临时块。来源：C9 finish 第 1 步实测。
+18e. ~~provision check 测试耦合本机安装态~~ **已销账（2026-08-28，C11）**：check 的纪律段已改为经 handoff discipline get 读取账本正文并与临时 regen 结果逐字比较；测试 mock get 文本，不再读取本机 `~/.handoff/discipline`。账本真实联调仍由 C11 acceptance 真机清单负责。
 19. **`context` 的 token 预算只管主链、不管整包**（C1.5 验收实测）：`--max-tokens 30000` 圈的是主调用链，包摘要/接口清单/实体表不在预算内。实测 `context d_coordination` 主链 29438 token 撞上限并如实报 `truncated{atDepth:3,droppedNodes:16}`，但整包 119015 字节 ≈ 40k token——读数诚实，总量仍可能超出调用方预期。要么给整包加第二层预算，要么在报文里显式给出整包估算。契约本就把预算圈在主链上，故这不是缺陷，是下一期的形态问题。来源：2026-08-25 C1.5 acceptance 真机。
 20. **两条流程缺陷已立卡，见账本**：`C7`（charter 仓内真源的派发模板 `target` 为空，自举安装把可派发的 v4 覆盖成必然失败的 v5，而漂移检查报「一致」——检查的是一致不是可用）、`C8`（review 节点越轨：审阅轮改了 401 行代码并自审自批，`charter-review.md:38` 的只读纪律今天只有文字、无机械执法）。两条都是 2026-08-25 推 C1.5 时实测撞上的。来源：C1.5 推进实录。
 21. **查看器原型与源码分居两仓**：查看器源码在 charter（`graph/webui`），其形态基准原型在 handoff（`prototypes/codegraph-phase3/`）。charter 侧的 review 执行者结构上看不见原型，于是每一轮都重复报「原型副本缺失、逐屏对照未验证」——C1.10 为此白费了两轮。两条出路：把查看器原型移到 charter（形态基准跟着源码走），或把「跨仓原型对照」显式写成协调者职责并从 review 纪律里摘掉。来源：C1.10 review 第一、二轮实测。
@@ -155,6 +155,5 @@
 59. **C16 查图纪律生效检查（观察项）**：跑过 3 张有图项目的 L2/L3 卡或下次 skills 对齐审计（先到为准）后复核。生效判据：spec/plan 产出用 `flow` 写方法怎么走，不用 chain 邻居列表当流程图；对通道名（如 `GET /console`）跑 `flow` 的次数为 0。负优化信号：无 flows 时仍把 chain 当流程图退路。来源：C16 2026-08-28 修订。全局路由层（`~/.grok/AGENTS.md`、`~/.claude/CLAUDE.md`、`~/.config/opencode/AGENTS.md`）已于 2026-08-28 改成 `context`/`sym`/`flow`/`tree`/`chain` 指针。
 60. **`PutDiscipline` 库层内容幂等**（相同正文不升版）。C11 放在 provision 客户端 skip。来源：C11 spec。
 61. **roadmap 16 / 16a 在 OUT 不再是消费面之后的降级**：16a「装错 DataDir」只影响无参 regen 调试落点；16 半装仍影响无参 regen。来源：C11 spec。
-62. **18e 销账**：C11 落地后 check 纪律段不再读本机 OUT。来源：C9 finish / C11 spec。
+62. ~~**18e 销账**~~ **已落实（2026-08-28，C11）**：check 纪律段不再读取本机 OUT，而是经 handoff discipline get 对账本正文与临时 regen 结果。来源：C11 实现与测试。
 63. **装完真派一次 `--step` 冒烟**。要等 B286 CLI 首态 + 本机新 agentd。来源：C7 原 note / C11 OOS。
-

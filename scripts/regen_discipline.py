@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-*.md）。
 # 边界：只做「去 frontmatter + 附录拼接 + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
-# 注意：agentd 的 resolver 每次派发时现读盘，运行本脚本即全部生效，无需重启 agentd。
-# 回退 skill 后必须重跑本脚本，否则纪律块仍是新版正文（两个消费端会漂移）。
+# 注意：B229 起纪律块的权威副本在 handoff 账本；charter_provision 的 install
+# 通过 handoff discipline put 入账，check 通过 handoff discipline get 比对。
+# 本脚本无参运行仍可把调试正文写到 OUT，但写 OUT 不代表已安装，也不是 check 判据。
 #
 # 本文件同时是库：charter_provision 直接 import regen() 把块生成到临时目录做比对，
 # 故模块顶层不得有任何写盘副作用——import 只定义，不执行。

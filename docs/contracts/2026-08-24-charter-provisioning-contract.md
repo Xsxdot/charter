@@ -96,22 +96,21 @@ d.Gates  = gates           // 取每个 node.Gate（DeepEqual 非空者）
 9. `OnFail` 非空时 `Verdict` 必须为真（`:138`）
 10. `Next` / `OnFail` 必须指向定义内存在的节点名（`:143-149`）
 
-### C-7 安装顺序被 C-6 第 5 条**钉死**：模板必须先于工作流
+### C-7 安装顺序被 C-6 第 5 条钉死：模板必须先于工作流，纪律块随后入账本
 
 `charter.workflow.json` 的 12 个节点中有 7 个 `dispatch: true`，全部引用模板
-`charter-default`。故安装三连的顺序**不是任选**：
+`charter-default`。安装顺序固定为：
 
-```
-1. handoff template put charter-default --file flows/charter-default.template.json
-2. handoff workflow put charter        --file flows/charter.workflow.json
-3. scripts/regen_discipline.py
-```
+1. `handoff template put charter-default --file flows/charter-default.template.json`
+2. `handoff workflow put charter --file flows/charter.workflow.json`
+3. 对 `compose_map()` 的每个 `charter-{name}` 执行 `handoff discipline get charter-{name}`：
+   get 成功且正文与本次 `regen(tmp)` 完全相同则 skip；缺记录或正文不同则执行
+   `handoff discipline put charter-{name} temp_file_path`，其中 `temp_file_path` 是位置参数，
+   不是 `--file`。
 
-顺序颠倒（先 workflow）在空账本上**必然失败**，报文形如
-`节点 "contract" 引用的模板 "charter-default" 不可用`。
-
-上游 spec 写的是「workflow put + template put + regen 三连」，未定序；此处按代码事实定序。
-**这是本节点对 spec 的一处收紧，不是分歧。**
+顺序颠倒（先 workflow）在空账本上会因 dispatch 节点引用的模板尚不存在而失败。
+纪律块使用 get-before-put 保证 provision 客户端幂等；对侧 `PutDiscipline` 每次 put
+都会新增版本，本契约不改变该库语义。
 
 ### C-8 `template put` 无投影、无校验，忠实回灌
 
@@ -127,30 +126,24 @@ d.Gates  = gates           // 取每个 node.Gate（DeepEqual 非空者）
 
 ## 二、纪律块解析面
 
-### C-9 `discipline` 是**角色名**，五个内置名，解析三段式
+### C-9 discipline 的权威副本是 handoff 账本，旧本地目录三段式已退役
 
-`internal/ledger/templates.go:22-24`（`TemplateDef.Discipline`）：角色名，空 = 按 executor 兜底。
+`TemplateDef.Discipline` 仍是纪律块的账本记录名。B229 起 agentd 不再读取或写入
+`<DataDir>/discipline/<name>.md`；该目录不是 charter provision 的安装目标，也不是
+check 的比对基准。charter 的七个 `charter-*` 块必须通过 handoff CLI 进入账本。
 
-内置角色名恰好五个（`internal/discipline/discipline.go:47-51`）：
-`implement` / `review` / `spec-draft` / `plan-writing` / `finishing`。
+读取规则：`handoff discipline get <name>` 成功时 stdout 是可选日志行、随后一行
+`<name> v<N>`、再随后为正文；版本行不属于正文，版本行之后的全部文本（含尾换行）
+才是比对值。stderr 含 `记录不存在` 的非零 get 表示账本中缺块；其它非零表示账本
+不可用。check 对缺块报漂移并返回 1，install 对缺块执行 put；不可用两者均返回 2
+且不盲写。
 
-解析顺序（`internal/discipline/resolver.go:141-178`，`Resolver.ByName`）：
+写入规则：`handoff discipline put record_name file_path` 的文件路径是位置参数。install 只
+在 get 缺块或正文逐字不同的时候 put；正文相同不新增版本。put 的库层大小、空白正文
+和名字校验保持由 handoff 负责，charter 不截断正文、不复刻对侧校验器。
 
-1. `<DataDir>/discipline/<name>.md` 存在 → 用它，Source `配置:<name>`（`:158-165`）
-2. 否则 → 同名内置块 `builtinByName(name, executor)`，Source `内置:<name>`（`:172-175`）
-3. 两者都无 → **报错** `未知纪律块名字 %q：既无 %s 也无同名内置块`（`:176-177`）
-
-charter 的七个 `charter-*` 走的是第 1 段（覆盖文件，由 `scripts/regen_discipline.py`
-生成到 `~/.handoff/discipline/charter-*.md`）。
-
-**更正上游 spec 的一处事实错误**：spec 初稿断言模板缺省 `discipline: "implement"`
-「会解析到一个不存在的纪律块」。**不成立**——`implement` 是合法内置角色名
-（`internal/discipline/discipline.go:97-103`，按 `defaultTier` 落到 subagent 或
-single-context 档），解析必然成功。
-
-真实风险是**反向**的：忘写 `override.discipline` 的派发节点会**静默拿到通用内置
-implement 块**，不报错、不告警。handoff 自己在 `internal/ledger/templates.go:27-30`
-记过同形态教训（「审阅模板悄悄拿到实现块」）。spec 已按本条回写更正。
+因此旧表述“先查 `<DataDir>/discipline`，再回退内置块，最后报错”在 B229 后标记为
+已退役；本卡不让 handoff 恢复该读取路径。
 
 ### C-10 纪律块名不得含路径分隔符
 
@@ -187,13 +180,13 @@ implement 块**，不报错、不告警。handoff 自己在 `internal/ledger/tem
 
 ---
 
-## 四、Ticket 0 骨架
+## 四、Ticket 0 骨架与实现边界
 
-落码：`scripts/charter_provision.py`（空壳）、`flows/charter.workflow.json`、
+落码：`scripts/charter_provision.py`、`flows/charter.workflow.json`、
 `flows/charter-default.template.json`。
 
-- 骨架只落**签名、常量、CLI 接线**；C-11 的比对函数是本批唯一接缝，其实现留给
-  implement 按 TDD 先红后绿，本轮**不实现**（`NotImplementedError`）。
+- 原始骨架只落**签名、常量、CLI 接线**；当前实现已在 check/install 接缝上按 TDD
+  补齐 workflow/template 的 JSON 比对与 discipline 账本 get/put 链路。
 - 安装顺序 C-7 以常量 `INSTALL_ORDER` 落码，不散在函数体里。
 - 编译验证见收尾自检第 3 项。
 
@@ -344,7 +337,7 @@ spec 断言②要求「指出差异在**哪一样**、哪个字段」。核对 s
 由 `check()` 主流程的三段结构负责**；`nodes_equivalent` 只负责**单份 workflow def 内部的
 节点级 / 字段级差异清单**。两者不是同一粒度，不要求一个函数同时承担。
 
-### R-4（implement 回写）：哨兵 `charter-must-override` 的含义
+### R-4（C11 回写）：`charter-must-override` 的哨兵含义改由账本 lookup 定义
 
 **背景**：D-3 本轮决定「模板缺省 `discipline` 忠实导出、修法留给 implement」。
 breakdown 的岔口 F-6 由协调者裁为 **(c) 哨兵名**，implement 已落地为
@@ -357,10 +350,10 @@ breakdown 的岔口 F-6 由协调者裁为 **(c) 哨兵名**，implement 已落�
 新节点会安静地拿到 charter 的实现纪律，而它多半不是该节点想要的。C-9 记录的风险正是
 「静默拿到不对的块」，用另一个静默默认去治它等于没治。
 
-**它的运行期行为**（按 C-9 的解析三段式推导）：`<DataDir>/discipline/charter-must-override.md`
-**故意不存在**，也不是五个内置角色名之一，故 `Resolver.ByName` 走到第 3 段**报错**：
-`未知纪律块名字 "charter-must-override"：既无 …/charter-must-override.md 也无同名内置块`。
-名字本身就是给读到这条报文的人的指引——**该节点必须写 `override.discipline`**。
+**它的运行期行为**：该哨兵不在 `compose_map()` 的七个生成块中，也不应写入 handoff
+纪律账本。B229 后 dispatch 的纪律解析由 `ResolveDispatch` 对账本记录名做 lookup；
+lookup 失败时返回“未知纪律块名字”类错误。名字本身就是给读到这条报文的人的指引——
+**该节点必须写 `override.discipline`**。
 
 **已知代价（协调者已认）**：裸 `handoff dispatch --template charter-default`（不经工作流节点
 的直接派发）从「能跑」变成「必失败」。可接受，因为该模板的 `prompt` 通篇是卡形状的
@@ -370,7 +363,11 @@ breakdown 的岔口 F-6 由协调者裁为 **(c) 哨兵名**，implement 已落�
 **零影响的依据**：现役 7 个 dispatch 节点**全部**写了 `override.discipline`
 （`flows/charter.workflow.json` 实读：contract/breakdown/plan/implement/review/integrate/图对账
 分别指向 7 个 `charter-*` 块），故哨兵在现役流程上永不被解析到。
-`check` 的 F-8 检查**只覆盖节点 override、不覆盖模板缺省值**，正是为此。
+charter 的 check 只检查节点显式 `override.discipline`：通过 discipline get 成功或
+复用已成功读取的名字集合确认账本存在；不读取模板缺省值，不读取
+`<DataDir>/discipline`，不调用 discipline list。现役七个 dispatch 节点分别覆盖
+`charter-contract`、`charter-breakdown`、`charter-plan`、`charter-implement`、
+`charter-review`、`charter-integrate`、`charter-recon`，所以哨兵不在现役工作流中被解析。
 
 **JSON 无注释，本条即哨兵含义的唯一落点。**看到那个「坏值」的下一个人请先读本条，
 不要「顺手把它改好」。
@@ -398,3 +395,11 @@ handoff 的 `ErrNotFound` 包装。
 
 **下游注意**：新增依赖 handoff 报文文本的地方，必须保持同一失效方向（拒绝动作，
 不是盲干），并回到本条追记。
+
+### R-5a（C11 追加）：discipline get 复用“记录不存在”缺块文案
+
+`load_discipline_body` 对 `handoff discipline get <name>` 的非零结果仍以 stderr 含
+“记录不存在”判定缺块；该子串来自对侧纪律记录不存在错误（对侧 `cmd/discipline.go`
+与 `internal/ledger/disciplines.go`）。缺块在 check 中是漂移/退出 1，在 install 中是
+允许 put 的首装状态；其它非零统一归 `LedgerUnavailable`，退出 2 且不写。若对侧未来
+改变该文案，应先更新冻结依赖与真机断言，不得把所有非零 get 静默变成缺块。

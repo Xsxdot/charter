@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # 职责：把 charter 流程的三样东西从本仓装进本机 handoff 账本（install），
 #       以及回答「账本与仓漂了没有」（check）。
-# 边界：仓是唯一真源，账本是安装目标——本脚本只做 仓→账本 单向；
-#       不导出、不从账本回写仓。改流程一律改仓再装。
+# 边界：仓是流程与纪律正文的唯一真源，handoff 账本是安装目标——本脚本只做 仓→账本 单向；
+#       不导出、不从账本回写仓。纪律块经 discipline get/put 对账和安装，不读取本机 OUT。
+#       改流程一律改仓再装。
 #       不碰跨机同步（归 handoff 卡 B229）。
 # 契约：docs/contracts/2026-08-24-charter-provisioning-contract.md，条目号见各处 C-N 标注。
 #
-# Ticket 0 骨架：本文件只落签名、常量与 CLI 接线。比对函数（本批唯一接缝）
-# 的实现留给 implement 按 TDD 先红后绿，此处显式 NotImplementedError。
 import argparse
 import json
+import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ TEMPLATE_NAME = "charter-default"
 WORKFLOW_FILE = os.path.join(FLOWS, "charter.workflow.json")
 TEMPLATE_FILE = os.path.join(FLOWS, "charter-default.template.json")
 REGEN = os.path.join(REPO, "scripts", "regen_discipline.py")
+LOGGER = logging.getLogger("charter_provision")
 
 # 安装顺序由契约 C-7 钉死，不是任选：workflow 的 dispatch 节点在写入期会校验
 # 所引模板已存在（handoff internal/ledger/workflows.go:121），先装 workflow
@@ -50,37 +52,122 @@ class LedgerUnavailable(RuntimeError):
     """账本读不到（agentd 不在、handoff 不在 PATH、鉴权失败等）。"""
 
 
-def load_ledger_def(kind, name):
-    """读账本现存定义，取 .Def 子树。
+def _run_handoff(cmd):
+    """运行 handoff CLI 并记录边界信息。
 
-    契约 C-3：`handoff <kind> show` 吐的是完整对象
-    {"Name":…,"Version":…,"Def":{…},"CreatedAt":…}，put 只吃其中的 Def 内容。
-    契约 C-12：Name/Version/CreatedAt 是账本自增自填的噪声，不参与比对。
-
-    参数：kind 取 "workflow" / "template"；name 定义名。
-    返回：Def 子树（dict）。
-    抛出：NotInstalled（账本里没有）/ LedgerUnavailable（读不到）。
+    参数：cmd —— 完整 argv，首项必须是 handoff。
+    返回：subprocess.CompletedProcess；非零返回码交给调用方分诊。
+    抛出：LedgerUnavailable —— handoff 不在 PATH 或进程无法启动。
+    注意：不使用 check=True；show/get 的非零码需要区分缺记录和不可用。
     """
+    LOGGER.info("handoff 调用开始", extra={"argv": cmd})
     try:
-        proc = subprocess.run(["handoff", kind, "show", name],
-                              capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError as exc:
-        raise LedgerUnavailable(f"找不到 handoff 命令，请确认它在 PATH 中：{exc}") from exc
+        LOGGER.error("handoff 命令不存在", extra={"argv": cmd, "error": str(exc)})
+        raise LedgerUnavailable(
+            f"找不到 handoff 命令，请确认它在 PATH 中：{exc}"
+        ) from exc
+    LOGGER.info(
+        "handoff 调用结束",
+        extra={
+            "argv": cmd,
+            "returncode": proc.returncode,
+            "stdout_bytes": len((proc.stdout or "").encode("utf-8")),
+            "stderr_bytes": len((proc.stderr or "").encode("utf-8")),
+        },
+    )
+    return proc
+
+
+def load_ledger_def(kind, name):
+    """读取 workflow/template 账本定义并取 .Def 子树。
+
+    参数：kind 为 workflow 或 template；name 为账本定义名。
+    返回：Def dict，不包含 Name/Version/CreatedAt 外层噪声。
+    抛出：NotInstalled 表示 stderr 含“记录不存在”；其余读失败为 LedgerUnavailable。
+    """
+    cmd = ["handoff", kind, "show", name]
+    proc = _run_handoff(cmd)
+    stderr = proc.stderr or ""
     if proc.returncode != 0:
-        # 基线实测：不存在时退出码 1、错误走 stderr、stdout 为空。
-        # 认不出「记录不存在」时一律归为「够不着」——失败方向是拒绝动作而非误装，
-        # 这是刻意的 fail-safe：报文变了顶多多一次人工确认，误判成「没装」会白写一版。
-        if "记录不存在" in proc.stderr:
+        if "记录不存在" in stderr:
+            LOGGER.warning("账本定义不存在", extra={"kind": kind, "record_name": name})
             raise NotInstalled(f"{kind} {name} 不在账本中")
-        raise LedgerUnavailable(f"读 {kind} {name} 失败（退出码 {proc.returncode}）："
-                                f"{proc.stderr.strip()}")
-    # agentd 的 INFO 日志会混进来，取最后一行合法 JSON
-    for line in reversed(proc.stdout.strip().splitlines()):
+        LOGGER.error(
+            "账本定义读取失败",
+            extra={"kind": kind, "record_name": name, "returncode": proc.returncode,
+                   "stderr": stderr.strip()},
+        )
+        raise LedgerUnavailable(
+            f"读 {kind} {name} 失败（退出码 {proc.returncode}）：{stderr.strip()}"
+        )
+    for line in reversed((proc.stdout or "").strip().splitlines()):
         try:
-            return json.loads(line)["Def"]
+            value = json.loads(line)
+            return value["Def"]
         except (json.JSONDecodeError, KeyError):
             continue
+    LOGGER.error("账本定义没有可解析 JSON", extra={"kind": kind, "record_name": name})
     raise LedgerUnavailable(f"{kind} show {name} 没有可解析的 JSON 输出")
+
+
+def load_discipline_body(name):
+    """读取账本纪律块正文，去掉版本头后保留全部正文文本。
+
+    参数：name 为请求的裸账本记录名，例如 charter-plan。
+    返回：命中 name v数字 行之后的全部 stdout 文本，包含正文尾换行。
+    抛出：NotInstalled 表示 stderr 含“记录不存在”；其余失败为 LedgerUnavailable。
+    注意：版本头前允许日志；不解析 JSON、不 strip 正文、不读取本机纪律块目录。
+    """
+    cmd = ["handoff", "discipline", "get", name]
+    proc = _run_handoff(cmd)
+    stderr = proc.stderr or ""
+    if proc.returncode != 0:
+        if "记录不存在" in stderr:
+            LOGGER.warning("纪律块账本记录不存在", extra={"record_name": name})
+            raise NotInstalled(f"纪律块 {name} 不在账本中")
+        LOGGER.error(
+            "纪律块账本读取失败",
+            extra={"record_name": name, "returncode": proc.returncode,
+                   "stderr": stderr.strip()},
+        )
+        raise LedgerUnavailable(
+            f"读纪律块 {name} 失败（退出码 {proc.returncode}）：{stderr.strip()}"
+        )
+
+    stdout = proc.stdout or ""
+    header = re.compile(rf"(?m)^{re.escape(name)} v[0-9]+\r?\n")
+    match = header.search(stdout)
+    if match is None:
+        LOGGER.error("纪律块 stdout 缺少可解析版本头", extra={"record_name": name})
+        raise LedgerUnavailable(f"discipline get {name} 没有可解析的版本头")
+    body = stdout[match.end():]
+    LOGGER.info(
+        "纪律块读取成功",
+        extra={"record_name": name, "body_bytes": len(body.encode("utf-8"))},
+    )
+    return body
+
+
+def _put_discipline(name, path):
+    """把临时生成的纪律正文写入账本。
+
+    参数：name 为裸账本记录名；path 为 regen 生成的完整文件路径。
+    返回：handoff discipline put 的退出码。
+    注意：path 是位置参数，不得改成 --file；调用方负责处理非零码。
+    """
+    cmd = ["handoff", "discipline", "put", name, path]
+    proc = _run_handoff(cmd)
+    if proc.returncode != 0:
+        LOGGER.error(
+            "纪律块写入失败",
+            extra={"record_name": name, "path": path, "returncode": proc.returncode,
+                   "stderr": (proc.stderr or "").strip()},
+        )
+    else:
+        LOGGER.info("纪律块写入成功", extra={"record_name": name, "path": path})
+    return proc.returncode
 
 
 # JSON 侧的零值集合。剥掉它们是因为对侧 Go 结构体几乎全字段带 omitempty——
@@ -174,59 +261,128 @@ def nodes_equivalent(repo_def, ledger_def):
 
 
 def install():
-    """按 C-7 的固定顺序装三样东西。返回退出码（0=成功）。
+    """按 C-7 的 template→workflow→discipline 顺序安装并保持幂等。
 
-    幂等（拍板 F-4）：与账本一致的那一样跳过不装。理由是账本**没有 delete**，
-    每一次 put 都是永久的一版；不跳过的话反复跑 install 会把版本号变成噪声堆，
-    而且连跑两次会产生内容完全相同的两版，事后考古得翻内容才知道它们一样。
+    返回：0=全部成功；2=账本不可用；其它非零值为具体 put 失败码或生成失败。
+    注意：纪律块正文先 get 比对，只有缺块或正文不同才新增账本版本。
     """
-    print(f"仓：{REPO}")          # 从哪个 checkout 装的，事后可追（worktree 与 master 会不同）
+    LOGGER.info("charter 安装开始", extra={"repo": REPO})
+    print(f"仓：{REPO}")
     for kind, name, path in INSTALL_ORDER:
         repo_def = load_repo_def(path)
         try:
             ledger_def = load_ledger_def(kind, name)
         except NotInstalled:
             print(f"{kind} {name}: 账本中不存在，安装")
+            needs_put = True
         except LedgerUnavailable as exc:
-            # 读不到账本时**不装**：装了也无从确认装成了什么，且可能白写一版。
-            # 与 check 同口径——失败方向是拒绝动作，不是盲干。
-            print(f"账本不可用：{exc}。未做任何改动。", file=sys.stderr)
+            LOGGER.error("定义安装前账本不可用",
+                         extra={"kind": kind, "record_name": name, "error": str(exc)})
+            print(f"账本不可用：{exc}。未继续写入；已完成步骤保留，重跑本命令是安全的。",
+                  file=sys.stderr)
             return 2
         else:
             if kind == "workflow":
                 same, diffs = nodes_equivalent(repo_def, ledger_def)
             else:
-                diffs = _defs_diff(_strip_zeros(repo_def), _strip_zeros(ledger_def),
-                                   f"{kind} {name}")
+                diffs = _defs_diff(
+                    _strip_zeros(repo_def), _strip_zeros(ledger_def),
+                    f"{kind} {name}"
+                )
                 same = not diffs
+            needs_put = not same
             if same:
                 print(f"{kind} {name}: 已是最新，跳过")
                 continue
             print(f"{kind} {name}: 与账本不一致，安装（{len(diffs)} 处差异）")
-        rc = subprocess.run(["handoff", kind, "put", name, "--file", path]).returncode
-        if rc != 0:
-            print(f"{kind} {name}: 安装失败（退出码 {rc}）。"
-                  f"已完成的步骤保留在账本里；重跑本命令是安全的——"
-                  f"put 只新增版本、不改旧版，不会写坏已有定义。", file=sys.stderr)
-            return rc
+
+        try:
+            proc = _run_handoff(["handoff", kind, "put", name, "--file", path])
+        except LedgerUnavailable as exc:
+            LOGGER.error("定义写入时账本不可用",
+                         extra={"kind": kind, "record_name": name, "error": str(exc)})
+            print(f"账本不可用：{exc}。未继续写入；已完成步骤保留，重跑本命令是安全的。",
+                  file=sys.stderr)
+            return 2
+        if proc.returncode != 0:
+            print(
+                f"{kind} {name}: 安装失败（退出码 {proc.returncode}）。"
+                "已完成的步骤保留在账本里；重跑本命令是安全的——"
+                "put 只新增版本、不改旧版，不会写坏已有定义。",
+                file=sys.stderr,
+            )
+            return proc.returncode
+        LOGGER.info("定义写入成功",
+                    extra={"kind": kind, "record_name": name, "path": path,
+                           "needs_put": needs_put})
+
     try:
-        sizes = regen_discipline.regen()
+        with tempfile.TemporaryDirectory() as tmp:
+            sizes = regen_discipline.regen(tmp)
+            LOGGER.info("纪律块生成完成",
+                        extra={"count": len(sizes), "directory": tmp})
+            for name in sorted(sizes):
+                block = f"charter-{name}"
+                path = os.path.join(tmp, f"{block}.md")
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        generated = f.read()
+                except OSError as exc:
+                    LOGGER.error("纪律块生成产物读取失败",
+                                 extra={"record_name": block, "path": path,
+                                        "error": str(exc)})
+                    print(f"纪律块 {block} 生成产物读取失败：{exc}", file=sys.stderr)
+                    return 1
+                try:
+                    installed = load_discipline_body(block)
+                except NotInstalled:
+                    print(f"纪律块 {block}: 账本中不存在，安装")
+                except LedgerUnavailable as exc:
+                    LOGGER.error("纪律块安装前账本不可用",
+                                 extra={"record_name": block, "error": str(exc)})
+                    print(f"账本不可用：{exc}。未继续写入；已完成步骤保留，重跑本命令是安全的。",
+                          file=sys.stderr)
+                    return 2
+                else:
+                    if installed == generated:
+                        print(f"纪律块 {block}: 已是最新，跳过")
+                        continue
+                    print(f"纪律块 {block}: 与本仓正文不一致，安装")
+                try:
+                    rc = _put_discipline(block, path)
+                except LedgerUnavailable as exc:
+                    LOGGER.error("纪律块写入时账本不可用",
+                                 extra={"record_name": block, "error": str(exc)})
+                    print(f"账本不可用：{exc}。未继续写入；已完成步骤保留，重跑本命令是安全的。",
+                          file=sys.stderr)
+                    return 2
+                if rc != 0:
+                    print(
+                        f"纪律块 {block}: 安装失败（退出码 {rc}）。"
+                        "已完成的步骤保留在账本里；重跑本命令是安全的。",
+                        file=sys.stderr,
+                    )
+                    return rc
+                print(f"纪律块 {block}: 已入账")
     except Exception as exc:                       # 不吞：regen 失败是硬失败
-        print(f"纪律块生成失败：{exc}。前两步已完成，重跑本命令是安全的。", file=sys.stderr)
+        LOGGER.error("纪律块生成失败", extra={"repo": REPO, "error": str(exc)})
+        print(f"纪律块生成失败：{exc}。前两步已完成，重跑本命令是安全的。",
+              file=sys.stderr)
         return 1
-    print(f"纪律块：{len(sizes)} 个已刷新")
+
+    print(f"纪律块：{len(sizes)} 个已处理")
     print("提示：在途卡仍钉着旧版本号，需要时用 handoff workflow migrate 迁移。")
+    LOGGER.info("charter 安装完成",
+                extra={"repo": REPO, "discipline_count": len(sizes)})
     return 0
 
 
 def check():
-    """比对账本与仓，报告漂移。
+    """比对仓内真源与账本，返回 0=一致、1=漂移、2=未安装或账本不可用。
 
-    返回退出码：0=三段全一致 / 1=有漂移 / 2=未安装或账本不可用。
-    三值是刻意的（拍板 F-5）：「未安装」与「漂了」的处置动作完全不同，
-    压成一个码等于把判断推给读报文的人。
-    本函数**只读**——绝不发出任何 put（承重属性，由测试锁住）。
+    本函数只读：只调用 workflow/template show 与 discipline get，绝不调用任何 put/list。
     """
+    LOGGER.info("charter check 开始", extra={"repo": REPO})
     print(f"仓：{REPO}")
     findings = []
     try:
@@ -244,51 +400,94 @@ def check():
         print(f"template {TEMPLATE_NAME}: {'一致' if not tpl_diffs else '漂移'}")
         findings += tpl_diffs
     except NotInstalled as exc:
+        LOGGER.warning("check 发现定义未安装", extra={"error": str(exc)})
         print(f"未安装：{exc}。跑 `python3 scripts/charter_provision.py install`。",
               file=sys.stderr)
         return 2
     except LedgerUnavailable as exc:
+        LOGGER.error("check 发现账本不可用", extra={"error": str(exc)})
         print(f"账本不可用：{exc}", file=sys.stderr)
         return 2
 
-    # 第三段：纪律块。按当前仓正文重新生成到临时目录，与已装的逐文件比对。
     block_findings = []
+    checked_blocks = set()
+    available_blocks = set()
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            regen_discipline.regen(tmp)
-        except Exception as exc:                   # 与 install 同口径：不吞，点名
+            generated = regen_discipline.regen(tmp)
+        except Exception as exc:
+            LOGGER.error("check 纪律块生成失败",
+                         extra={"directory": tmp, "error": str(exc)})
             print(f"纪律块生成失败，本段未比对：{exc}", file=sys.stderr)
             return 2
-        for fname in sorted(os.listdir(tmp)):
-            installed = os.path.join(regen_discipline.OUT, fname)
-            if not os.path.exists(installed):
-                block_findings.append(f"纪律块 {fname}: 本机未安装")
+        LOGGER.info("check 纪律块生成完成",
+                    extra={"count": len(generated), "directory": tmp})
+        for name in sorted(generated):
+            block = f"charter-{name}"
+            path = os.path.join(tmp, f"{block}.md")
+            try:
+                with open(path, encoding="utf-8") as f:
+                    fresh = f.read()
+            except OSError as exc:
+                LOGGER.error("check 纪律块产物读取失败",
+                             extra={"record_name": block, "path": path, "error": str(exc)})
+                print(f"纪律块 {block} 生成产物读取失败：{exc}", file=sys.stderr)
+                return 2
+            checked_blocks.add(block)
+            try:
+                installed = load_discipline_body(block)
+            except NotInstalled:
+                LOGGER.warning("check 发现纪律块缺失", extra={"record_name": block})
+                block_findings.append(f"纪律块 {block}: 账本中不存在")
                 continue
-            with open(installed) as a, open(os.path.join(tmp, fname)) as b:
-                if a.read() != b.read():
-                    block_findings.append(f"纪律块 {fname}: 与本仓正文不一致")
-    total_blocks = len(regen_discipline.compose_map())
+            except LedgerUnavailable as exc:
+                LOGGER.error("check 读取纪律块时账本不可用",
+                             extra={"record_name": block, "error": str(exc)})
+                print(f"账本不可用：{exc}", file=sys.stderr)
+                return 2
+            available_blocks.add(block)
+            if installed != fresh:
+                LOGGER.warning("check 发现纪律块正文漂移", extra={"record_name": block})
+                block_findings.append(f"纪律块 {block}: 与本仓正文不一致")
+        total_blocks = len(generated)
     print(f"纪律块：{total_blocks - len(block_findings)}/{total_blocks} 一致")
     findings += block_findings
 
-    # 拍板 F-8：每个 dispatch 节点都必须点名一个存在的纪律块文件。
-    # 只看 nodes[*].override.discipline，**不看模板缺省值**——缺省值是 F-6 的哨兵，
-    # 故意没有对应文件，覆盖它等于让 check 永远报一个自己造出来的问题。
-    # 这条编码的是 charter 自己的约定（本流全部节点都用 charter-* 覆盖文件），
-    # 不是 handoff 的解析规则——故不构成 D-2 禁止的「复刻对侧逻辑」。
+    # F-8 只验证节点明确写出的 override；模板缺省 charter-must-override 是哨兵，不查它。
     for n in repo_wf.get("nodes", []):
         if not n.get("dispatch"):
             continue
         block = (n.get("override") or {}).get("discipline")
         if not block:
-            findings.append(f"节点 {n.get('name')}: dispatch 节点未写 override.discipline，"
-                            f"派发时会落到模板缺省值")
-        elif not os.path.exists(os.path.join(regen_discipline.OUT, f"{block}.md")):
-            findings.append(f"节点 {n.get('name')}: 纪律块 {block}.md 在 "
-                            f"{regen_discipline.OUT} 下不存在")
+            findings.append(
+                f"节点 {n.get('name')}: dispatch 节点未写 override.discipline，"
+                "派发时会落到模板缺省值"
+            )
+            continue
+        if block not in checked_blocks:
+            checked_blocks.add(block)
+            try:
+                load_discipline_body(block)
+            except NotInstalled:
+                LOGGER.warning("F-8 发现 override 纪律块不在账本",
+                               extra={"node": n.get("name"), "record_name": block})
+            except LedgerUnavailable as exc:
+                LOGGER.error("F-8 读取 override 纪律块时账本不可用",
+                             extra={"node": n.get("name"), "record_name": block,
+                                    "error": str(exc)})
+                print(f"账本不可用：{exc}", file=sys.stderr)
+                return 2
+            else:
+                available_blocks.add(block)
+        if block not in available_blocks:
+            findings.append(
+                f"节点 {n.get('name')}: 纪律块 {block} 不在账本中"
+            )
 
-    for f in findings:
-        print(f"  - {f}")
+    for finding in findings:
+        print(f"  - {finding}")
+    LOGGER.info("charter check 完成",
+                extra={"finding_count": len(findings)})
     return 1 if findings else 0
 
 
