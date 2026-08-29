@@ -157,3 +157,4 @@
 61. **roadmap 16 / 16a 在 OUT 不再是消费面之后的降级**：16a「装错 DataDir」只影响无参 regen 调试落点；16 半装仍影响无参 regen。来源：C11 spec。
 62. ~~**18e 销账**~~ **已落实（2026-08-28，C11）**：check 纪律段不再读取本机 OUT，而是经 handoff discipline get 对账本正文与临时 regen 结果。来源：C11 实现与测试。
 63. **装完真派一次 `--step` 冒烟**。要等 B286 CLI 首态 + 本机新 agentd。来源：C7 原 note / C11 OOS。
+64. **B296 台账自引用修法生效检查（观察项）**：下一张产出卡（plan/implement/contract/breakdown）的审查不得再因「台账 hash ≠ HEAD」fail。负优化信号：执行者开始不记提交命令原文，或审查把「没记父提交」当新 finding。来源：B296 spec。
