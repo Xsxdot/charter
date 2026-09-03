@@ -222,12 +222,12 @@ func TestGraphDomainsEdgesWireAndBestComparison(t *testing.T) {
 	if bytes.Contains([]byte(stdout), []byte(`"fails"`)) || bytes.Contains([]byte(stdout), []byte(`"warns"`)) {
 		t.Fatalf("--edges 不得混入 check 报告: %s", stdout)
 	}
-	checkOut, err := runGraph(t, "check", "--repo", fixtureRepo)
+	checkStdout, _, err := runGraphSeparate(t, "check", "--repo", fixtureRepo)
 	if err != nil {
-		t.Fatalf("check fixture 应通过: %v\n%s", err, checkOut)
+		t.Fatalf("check fixture 应通过: %v\n%s", err, checkStdout)
 	}
-	if bytes.Contains([]byte(checkOut), []byte(`"current"`)) || bytes.Contains([]byte(checkOut), []byte(`"best"`)) {
-		t.Fatalf("check 输出不得混入矩阵: %s", checkOut)
+	if bytes.Contains([]byte(checkStdout), []byte(`"current"`)) || bytes.Contains([]byte(checkStdout), []byte(`"best"`)) {
+		t.Fatalf("check 输出不得混入矩阵: %s", checkStdout)
 	}
 }
 
@@ -260,22 +260,43 @@ func TestGraphValidateDomainDeclIssuePrefix(t *testing.T) {
 }
 
 // check：fixture target 与 baseline 套合后输出 Report JSON。
+// stdout/stderr 必须分离断言：棘轮基准不可用时的跳过提示走 stderr，
+// stdout 保持纯 JSON（v0.10.0 前合并双流，CI 浅克隆下中文提示污染 JSON，release 连挂）。
 func TestGraphCheck(t *testing.T) {
-	out, err := runGraph(t, "check", "--repo", fixtureRepo)
+	stdout, stderr, err := runGraphSeparate(t, "check", "--repo", fixtureRepo)
 	if err != nil {
-		t.Fatalf("check 应通过: %v\n%s", err, out)
+		t.Fatalf("check 应通过: %v\nstdout=%s stderr=%s", err, stdout, stderr)
 	}
 	for _, want := range []string{`"fails"`, `"warns"`} {
-		if !bytes.Contains([]byte(out), []byte(want)) {
-			t.Fatalf("check 输出缺字段 %s: %s", want, out)
+		if !bytes.Contains([]byte(stdout), []byte(want)) {
+			t.Fatalf("check 输出缺字段 %s: %s", want, stdout)
 		}
 	}
 	var report codegraph.Report
-	if err := json.Unmarshal([]byte(out), &report); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
 		t.Fatalf("check 输出必须是合法 Report: %v", err)
 	}
 	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers == 0 {
 		t.Fatalf("best 存在时 check 必须输出非空归属覆盖读数: %+v", report)
+	}
+}
+
+// 锁上面的分离契约：无 git 基准时跳过提示走 stderr，stdout 仍是完整 Report。
+func TestGraphCheckStdoutStaysPureJSONWithoutGitBase(t *testing.T) {
+	repo := t.TempDir()
+	copyFixtureRepo(t, fixtureRepo, repo)
+	// 挡住 git 向上发现，模拟 CI 浅克隆下找不到远端分支。
+	t.Setenv("GIT_CEILING_DIRECTORIES", repo)
+	stdout, stderr, err := runGraphSeparate(t, "check", "--repo", repo)
+	if err != nil {
+		t.Fatalf("无 git 基准时 check 应跳过棘轮并通过: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "棘轮") {
+		t.Fatalf("应提示棘轮判据已跳过: stderr=%s", stderr)
+	}
+	report := unmarshalReport(t, stdout)
+	if report.BestCoverage == nil || report.BestCoverage.AssignedContainers == 0 {
+		t.Fatalf("stdout 必须是完整 Report: %+v", report)
 	}
 }
 
