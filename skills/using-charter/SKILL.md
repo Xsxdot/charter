@@ -5,7 +5,7 @@ description: 会话开始时建立流程纪律——任何开发任务动手前�
 
 # Using Charter
 
-你装载了 charter 套件：契约先行、分子系统并行的开发流程。流程中的每个节点是一个 skill。
+你装载了 charter 套件：以用户故事验证结果、按子系统保持代码责任、在独立协作需要时冻结接缝。流程中的每个节点是一个 skill。
 
 ## 规则
 
@@ -20,10 +20,14 @@ bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / pla
 需求/想法 → spec（收尾定级与选档）
    ├─ L1 微改（plan 增量为零 + 验收一眼可核）→ implement → review → finish（快道；spec 即 plan）
    ├─ L2 单子系统 → plan → implement → review → acceptance → finish
-   └─ L3 跨子系统 → contract → breakdown
-        ├─ 轻档：单轮 implement → review → acceptance → finish
-        └─ 重档：各子系统并行(plan→implement→review) → integrate → finish
+   └─ L3 跨子系统
+        ├─ 轻档：必要时 contract → breakdown → plan → implement → review → acceptance → finish
+        └─ 重档：必要的外部承诺先 contract → plan → implement → review → acceptance [Wave 0]
+                 → 分工草案 → 必要时 contract → breakdown
+                 → 分批子卡(plan→implement→review) → integrate → acceptance [全部故事] → finish
 ```
+
+`contract` 只在本轮新增/变更独立工作单元共同依赖的接缝或对外兼容承诺时进入；已有稳定契约从开始遵守，不重复冻结。新的外部承诺若是 Wave 0 的前提，先冻结该缝。Wave 0 是现有节点的阶段标记，其通过须同时证明用户结果与触及路径的架构边界；它不核销其余必交故事。条件跳转在现役 handoff workflow 上尚待隔离验证，不能把本图当作已安装的机器保证。
 
 横切（被各节点引用，不占流程位）：`architecture-law`（架构法·子系统与领域章）、`defect-families`（缺陷族法）、`recon`（图对账——合并前核对分支改动与视图 diff，作为卡流「图对账」列的纪律块源头，被 finish 第 4 步引用）；implement 中途撞失败 → 切入 `debug`。
 
@@ -31,8 +35,9 @@ bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / pla
 
 ## 依赖分档
 
-- **硬依赖**（缺了输出就是错的）：`contract` 与 `breakdown` 依赖项目的最优图（`codegraph/best.json`，结构树：子系统=顶层领域）、契约图（`codegraph/target.json`，依赖方向与预算）与实例化清单。**存量项目**缺图时明说缺什么、降什么档，不静默假装有；**绿地项目不降档**——建图本身就是 contract 节点的法定产出。
-- **软依赖**（缺了只是变钝）：其余节点在无图项目照常工作，对照类步骤降级为人工清单，**静默降档，不唠叨建档**。有图时的查图命令与「调用链 ≠ 流程图」见 spec/plan「有图先查图」（`context` / `sym` / `flow` / `tree` / `chain`）。
+- **硬依赖**：L3 在 spec 声明子系统职责、权威状态、允许依赖、公开面与组装关系；breakdown 须能据此圈出责任与接缝。有图项目以最优图（`codegraph/best.json`）、契约图（`codegraph/target.json`）及其实例化清单对照；无图项目用已批准的人工结构说明，不为满足节点前置条件虚构 contract。
+- **代码图的建立与更新**：绿地项目若采用代码图，Wave 0 首次实现触及的结构与边界就要入图；若 Wave 0 前必须冻结新外部承诺，可由前置 contract 同批建立相关图。无 contract 路径不等于免除图与架构对账。
+- **软依赖**：其余节点在无图项目照常工作，对照类步骤降级为人工清单。有图时的查图命令与「调用链 ≠ 流程图」见 spec/plan「有图先查图」（`context` / `sym` / `flow` / `tree` / `chain`）。
 
 ## 红旗
 
