@@ -7,7 +7,7 @@ description: 图对账——合并前核对本分支代码改动与视图 diff �
 
 **位置**：合并前最后一站（integrate/验收之后、finish 之前）。**角色**：可派执行者；absorb 与合并不归本节点——那是 finish 的活。
 
-对账兜的是「法上无人」的缝：视图 diff 的产出散在 contract（骨架符号）与 implement（实现期改动）手里，谁漏了，这里拦住；这里不拦，漏建叠着陈旧基线一路合进主线，absorb 从此对不上。
+对账兜的是「法上无人」的缝：视图 diff 的产出可能来自命中的 contract（骨架符号），也可能只来自 implement（Wave 0 与后续改动）；谁漏了，这里拦住。没有进入 contract 不构成图覆盖豁免。
 
 ## 判定顺序
 
@@ -24,6 +24,6 @@ description: 图对账——合并前核对本分支代码改动与视图 diff �
 
 ## 红线
 
-- **只动 `codegraph/diffs/<分支>.json`**：不动 `baseline.json`（absorb 归 finish）、不动 `target.json` 与 `best.json`（前者是契约冻结物、后者是应然结构树，动哪个都要重走 contract）、不动业务代码。
+- **只动 `codegraph/diffs/<分支>.json`**：不动 `baseline.json`（absorb 归 finish）、`target.json`（新增/变更的共享或外部契约须按 contract 判据处理）、`best.json`（目标结构变更须回 spec 裁定）、业务代码。它们各有责任节点，不能在图对账时顺手改。
 - 对账不是重扫：只核对本分支改动面，不做全量重扫——基准靠流程副产物保鲜。
 - 无法机械补齐的矛盾裁 fail 等下一轮或人裁，不硬编结论。
