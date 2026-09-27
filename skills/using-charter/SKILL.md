@@ -16,18 +16,19 @@ description: 会话开始时建立流程纪律——任何开发任务动手前�
 入口只有两条，网关直接分流，无分诊节点：
 
 ```
-bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / plan → implement → review → acceptance → finish
+bug/测试失败/诡异行为 → debug（根因+分流）→ 小修顺手 / plan → implement → review → 最终验收 → finish
 需求/想法 → spec（收尾定级与选档）
    ├─ L1 微改（plan 增量为零 + 验收一眼可核）→ implement → review → finish（快道；spec 即 plan）
-   ├─ L2 单子系统 → plan → implement → review → acceptance → finish
+   ├─ L2 单子系统 → plan → implement → review → 最终验收 → finish
    └─ L3 跨子系统
-        ├─ 轻档：必要时 contract → breakdown → plan → implement → review → acceptance → finish
-        └─ 重档：必要的外部承诺先 contract → plan → implement → review → acceptance [Wave 0]
+        ├─ 轻档：必要时 contract → breakdown → plan → implement → review → 最终验收 → finish
+        └─ 重档：必要的外部承诺先 contract → plan → implement → review → 阶段验收 [Wave 0]
                  → 分工草案 → 必要时 contract → breakdown
-                 → 分批子卡(plan→implement→review) → integrate → acceptance [全部故事] → finish
+                 → 待批次 [逐批计划/子卡阶段验收/实际合流/演示/回归]
+                 → integrate [全部子卡完成后仅一次终局集成] → 最终验收 [全部故事] → 图对账/finish
 ```
 
-`contract` 只在本轮新增/变更独立工作单元共同依赖的接缝或对外兼容承诺时进入；已有稳定契约从开始遵守，不重复冻结。新的外部承诺若是 Wave 0 的前提，先冻结该缝。Wave 0 是现有节点的阶段标记，其通过须同时证明用户结果与触及路径的架构边界；它不核销其余必交故事。条件跳转在现役 handoff workflow 上尚待隔离验证，不能把本图当作已安装的机器保证。
+`contract` 只在本轮新增/变更独立工作单元共同依赖的接缝或对外兼容承诺时进入；已有稳定契约从开始遵守，不重复冻结。新的外部承诺若是 Wave 0 的前提，先冻结该缝。Wave 0 是现有节点的阶段标记，其通过须同时证明用户结果与触及路径的架构边界；它不核销其余必交故事。`charter-story` 是与旧 `charter` 并存的试点流：阶段验收与最终验收是不同列，旧流与旧纪律块不被覆盖。重档父卡在 breakdown 后人工移到「待批次」，只给当前批子卡细化 plan；子卡 plan 必须挂父卡 breakdown（或适用 spec）附件才过门；每批真实合流/演示/回归记在父卡，全部子卡完结后才派一次 integrate。人工 move 可越列，`card dispatch --step` 也不校验当前列，现有 gate 更不能证明证据发生在最后集成之后；在 handoff 引擎增设入场/顺序/证据门之前，本图**不是不可跳过的机器保证**，协调者按 acceptance/finish 的证据纪律把关。
 
 横切（被各节点引用，不占流程位）：`architecture-law`（架构法·子系统与领域章）、`defect-families`（缺陷族法）、`recon`（图对账——合并前核对分支改动与视图 diff，作为卡流「图对账」列的纪律块源头，被 finish 第 4 步引用）；implement 中途撞失败 → 切入 `debug`。
 

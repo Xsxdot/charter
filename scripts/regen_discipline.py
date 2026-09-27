@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-*.md）。
+# 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-story-*.md）。
 # 边界：只做「去 frontmatter + 附录拼接 + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
 # 注意：B229 起纪律块的权威副本在 handoff 账本；charter_provision 的 install
 # 通过 handoff discipline put 入账，check 通过 handoff discipline get 比对。
@@ -13,6 +13,7 @@ import re
 
 SK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills")
 OUT = os.path.expanduser("~/.handoff/discipline")
+PREFIX = "charter-story"
 
 
 def body(name):
@@ -44,10 +45,11 @@ def compose_map():
     }
 
 
-def regen(out=OUT):
+def regen(out=OUT, prefix=PREFIX):
     """把 skills/ 正文生成为纪律块，落到 out 目录。
 
-    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。不存在则建。
+    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。不存在则建；
+    prefix —— 账本块名前缀。新试点独立于旧 charter-*，旧流不吃新正文。
     返回：{块名: 字节数}，供调用方打印或断言。
     注意：逐文件写、非原子——中途失败会留下新旧混合的半装状态（已知欠账，见 roadmap 第 16 条）。
 
@@ -58,7 +60,7 @@ def regen(out=OUT):
     os.makedirs(out, exist_ok=True)
     sizes = {}
     for name, parts in compose_map().items():
-        path = f"{out}/charter-{name}.md"
+        path = f"{out}/{prefix}-{name}.md"
         with open(path, "w") as f:
             f.write("\n---\n\n".join(parts))
         os.chmod(path, 0o600)
@@ -67,10 +69,11 @@ def regen(out=OUT):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="从 skills/ 正文重新生成 charter 纪律块")
+    p = argparse.ArgumentParser(description="从 skills/ 正文重新生成 charter-story 纪律块")
     p.add_argument("--out", default=OUT, help=f"落盘目录（缺省 {OUT}）")
+    p.add_argument("--prefix", default=PREFIX, help=f"纪律块前缀（缺省 {PREFIX}）")
     args = p.parse_args(argv)
-    for name, size in regen(args.out).items():
+    for name, size in regen(args.out, args.prefix).items():
         print(name, size)
     return 0
 

@@ -1,0 +1,75 @@
+{
+  "nodes": [
+    {"name": "待办", "next": "spec"},
+    {"name": "spec", "next": "contract"},
+    {
+      "name": "contract",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-contract"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3, "omit_acceptance": true,
+      "produces": {"kind": "contract", "path": "docs/superpowers/specs/{{CARD_LOWER}}-contract.md"},
+      "next": "breakdown", "on_fail": "spec",
+      "gate": {"require_attachment": "spec"}
+    },
+    {
+      "name": "breakdown",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-breakdown"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3, "omit_acceptance": true,
+      "produces": {"kind": "breakdown", "path": "docs/superpowers/specs/{{CARD_LOWER}}-breakdown.md"},
+      "next": "plan", "on_fail": "spec",
+      "gate": {"require_attachment": "spec"}
+    },
+    {
+      "name": "plan",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-plan"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3, "omit_acceptance": true,
+      "produces": {"kind": "plan", "path": "docs/superpowers/plans/{{CARD_LOWER}}-plan.md"},
+      "next": "implement",
+      "gate": {"require_attachment_any": ["spec", "breakdown"]}
+    },
+    {
+      "name": "implement",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-implement"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3,
+      "next": "review", "on_fail": "plan",
+      "gate": {"require_attachment_any": ["plan", "breakdown"]}
+    },
+    {
+      "name": "review",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-review", "purpose": "review"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3,
+      "next": "阶段验收", "on_fail": "implement"
+    },
+    {"name": "阶段验收", "next": "integrate"},
+    {"name": "待批次", "next": "integrate", "gate": {"require_attachment": "breakdown"}},
+    {
+      "name": "integrate",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-integrate"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 3,
+      "next": "最终验收",
+      "gate": {"require_children_done": true}
+    },
+    {"name": "最终验收", "next": "图对账", "gate": {"require_children_done": true}},
+    {
+      "name": "图对账",
+      "template": "charter-story-default",
+      "override": {"discipline": "charter-story-recon"},
+      "dispatch": true, "verdict": true, "carry_card_context": true,
+      "max_rounds": 2,
+      "next": "finish"
+    },
+    {"name": "finish", "next": "已完成"},
+    {"name": "已完成"}
+  ]
+}
