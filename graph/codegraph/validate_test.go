@@ -216,6 +216,34 @@ func TestValidateDiffStillRejectsNodeInUnknownContainer(t *testing.T) {
 	}
 }
 
+// B379 吸收防线：nodesAdded 撞基线同 id 是静默腐化（Absorb 对 NodesAdded 按 id
+// 无条件覆盖，会把基线现行条目回退成分支时态旧快照），ValidateDiff 必须显式拒绝
+// ——报文与 containersAdded 的既约（契约 §7-R1）同款句式，是它的节点版。
+func TestValidateDiffRejectsAddedNodeConflict(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{NodesAdded: map[string]Node{
+		"n_do": {Kind: "func", Container: "k_svc", File: "svc/do_old.go", Line: 99},
+	}}
+	issues := ValidateDiff(g, d)
+	joined := strings.Join(issues, "\n")
+	if len(issues) == 0 || !strings.Contains(joined, "n_do") || !strings.Contains(joined, "只接受新节点") {
+		t.Fatalf("nodesAdded 撞基线同 id 应报 n_do 与「只接受新节点」语义: %v", issues)
+	}
+}
+
+func TestValidateDiffAllowsGenuinelyNewNode(t *testing.T) {
+	// 全新 id 不触发撞基线判据——否则新节点永远进不了图
+	g := loadFixture(t)
+	d := &Diff{NodesAdded: map[string]Node{
+		"n_brand_new": {Kind: "func", Container: "k_svc", File: "svc/new.go", Line: 1},
+	}}
+	for _, is := range ValidateDiff(g, d) {
+		if strings.Contains(is, "只接受新节点") {
+			t.Fatalf("全新 id 不应触发撞基线判据: %v", is)
+		}
+	}
+}
+
 func TestValidateDiffRejectsAddedContainerConflict(t *testing.T) {
 	g := loadFixture(t)
 	d := &Diff{ContainersAdded: map[string]Container{

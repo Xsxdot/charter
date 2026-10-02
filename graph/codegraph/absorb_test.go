@@ -63,6 +63,22 @@ func TestAbsorbDoesNotMutateInput(t *testing.T) {
 	}
 }
 
+// B379 分层边界：Absorb 是纯函数，不做查重、不做拒绝——nodesAdded 撞基线同 id
+// 的拒绝单点收在 ValidateDiff（spec 决策，Absorb 保持不动）。Absorb 无 error 返回，
+// 撞 id 按 diff 覆盖是它的既有语义；若有人把守卫搬进 Absorb（跳过覆盖或拒绝），
+// 此用例先红。
+func TestAbsorbDoesNotRejectDuplicateNodes(t *testing.T) {
+	g := loadFixture(t)
+	d := &Diff{NodesAdded: map[string]Node{
+		"n_do": {Kind: "func", Container: "k_svc", File: "svc/do_old.go", Line: 99},
+	}}
+	merged := Absorb(g, d)
+	got := merged.Nodes["n_do"]
+	if got.File != "svc/do_old.go" || got.Line != 99 {
+		t.Fatalf("Absorb 不做查重，撞 id 应按 diff 覆盖（守卫单点在 ValidateDiff）: %+v", got)
+	}
+}
+
 func TestAbsorbLifecycleMergeAndPreserve(t *testing.T) {
 	g := loadFixture(t)
 	mergedEmpty := Absorb(g, &Diff{})

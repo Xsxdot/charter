@@ -217,6 +217,12 @@ func ValidateDiff(g *Graph, d *Diff) []string {
 		return ok
 	}
 	for id, n := range d.NodesAdded {
+		// B379 吸收防线：撞基线同 id 的 nodesAdded 若放行，Absorb 会按 id 无条件
+		// 覆盖基线现行条目（含锚回退），且 diff 随吸收删除、证据一并销毁。与
+		// containersAdded 的既约（契约 §7-R1）同款句式，是它的节点版。
+		if _, ok := g.Nodes[id]; ok {
+			issues = append(issues, fmt.Sprintf("新增节点 %s 已存在于基线，nodesAdded 只接受新节点", id))
+		}
 		if _, ok := g.Containers[n.Container]; !ok {
 			if _, added := d.ContainersAdded[n.Container]; added {
 				continue
