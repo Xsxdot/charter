@@ -44,6 +44,8 @@ func LoadDiff(repoRoot, view string) (*Diff, error) {
 
 // ListViews 列出 diffs 目录下的视图名（文件名去 .json，字典序）。
 // 目录不存在返回空列表——大多数仓库只有基线，这不是错误。
+// 视图命名空间是平铺的：任何子目录（含空目录）都报错而非跳过——静默跳过就是
+// B425 盲区事故的形状；空目录也拒绝，因为 git 不跟踪空目录，出现即本地残留。
 func ListViews(repoRoot string) ([]string, error) {
 	dir := filepath.Join(repoRoot, "codegraph", "diffs")
 	ents, err := os.ReadDir(dir)
@@ -55,7 +57,10 @@ func ListViews(repoRoot string) ([]string, error) {
 	}
 	var out []string
 	for _, e := range ents {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() {
+			return nil, fmt.Errorf("视图目录 %s 下发现子目录 %s：视图 diff 必须平铺在顶层（视图名取分支名时把 / 拍平为 -）", dir, e.Name())
+		}
+		if strings.HasSuffix(e.Name(), ".json") {
 			out = append(out, strings.TrimSuffix(e.Name(), ".json"))
 		}
 	}

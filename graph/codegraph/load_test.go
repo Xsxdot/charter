@@ -4,6 +4,7 @@ package codegraph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,36 @@ func TestListViewsEmptyDir(t *testing.T) {
 	views, err := ListViews(dir)
 	if err != nil || len(views) != 0 {
 		t.Fatalf("空 diffs 应返回空列表: %v %v", views, err)
+	}
+}
+
+func TestListViewsRejectsSubdir(t *testing.T) {
+	// B425：子目录视图对 views/validate 不可见是盲区事故，必须报错而不是跳过
+	dir := t.TempDir()
+	writeFixtureBaseline(t, dir)
+	diffs := filepath.Join(dir, "codegraph", "diffs")
+	if err := os.MkdirAll(filepath.Join(diffs, "cards"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(diffs, "cards", "x.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListViews(dir); err == nil {
+		t.Fatal("diffs 下有子目录应当报错——视图必须平铺顶层，静默跳过就是盲区")
+	} else if !strings.Contains(err.Error(), "cards") || !strings.Contains(err.Error(), "拍平") {
+		t.Fatalf("报文应点名目录并给扁平化指引: %v", err)
+	}
+}
+
+func TestListViewsRejectsEmptySubdir(t *testing.T) {
+	// git 不跟踪空目录：真仓出现空目录只可能是本地残留，同样拒绝
+	dir := t.TempDir()
+	writeFixtureBaseline(t, dir)
+	if err := os.MkdirAll(filepath.Join(dir, "codegraph", "diffs", "residue"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListViews(dir); err == nil {
+		t.Fatal("空子目录也应当报错")
 	}
 }
 
