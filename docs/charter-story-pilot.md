@@ -1,5 +1,7 @@
 # Charter 故事批次试点（2026-09-27）
 
+> **已转正（2026-10-17）**：本试点法已作为 `charter` 流 v13 装入共享账本（方案见 `docs/specs/2026-10-17-charter-story-shared-ledger-migration-spec.md`）。不再存在独立的 `charter-story` 工作流；仓内真源是 `flows/charter.workflow.json`，v12 旧定义快照在 `flows/charter.v12.snapshot.json`（回退源）；模板与纪律块仍叫 `charter-story-*`。mac-02 已退役。下文「双流」「显式 `--workflow charter-story`」「勿装共享账本」等驾驶规则作废，仅留作历史。
+
 本试点是**新流 `charter-story`**，不是把旧 `charter` 升版。旧流定义、旧 `charter-*` 纪律块与旧卡钉住的工作流版本不改；新流使用 `charter-story-default` 模板和 `charter-story-*` 纪律块。仓内源是 `flows/charter-story.workflow.json` 与 `skills/`。`scripts/regen_discipline.py` 默认生成新前缀；生成文件不是安装，`scripts/charter_provision.py` 的 install/check 才对账本读写新名字。试跑时用 `python3 scripts/charter_provision.py install --config <隔离配置>`，再以同一配置跑 `check`；省略 `--config` 会指向当前 handoff 配置，推广前不要在共享账本执行。
 
 **r4 补注（2026-10-17）**：spec r4 翻案台账 §4.2——首故事做父卡第一张子卡，阶段验收后 `--no-ff` 合入父卡分支即共同基线（B434 先例 `cards/B434-charter-1`）。随之：父卡不再亲自跑 Wave 0；旧流 `charter` v12 零引擎改动即可承载，父卡 integrate 只派一次，roadmap 第 67 条 ②③ 阻塞消失，「待批次」列可不建；① 跳列无机械门仍在。下文驾驶规则按 r3 书写，与 r4 冲突处（父卡 Wave 0、待批次停靠）以 r4 与 product-backlog「L3 重档：扇出子卡」为准。

@@ -2,21 +2,18 @@
   "nodes": [
     {
       "name": "待办",
-      "override": {},
-      "next": "spec",
-      "gate": {}
+      "next": "spec"
     },
     {
       "name": "spec",
-      "override": {},
-      "next": "contract",
-      "gate": {}
+      "next": "contract"
     },
     {
       "name": "contract",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-contract"
+        "discipline": "charter-story-contract",
+        "squad": "pro"
       },
       "dispatch": true,
       "verdict": true,
@@ -35,9 +32,10 @@
     },
     {
       "name": "breakdown",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-breakdown"
+        "discipline": "charter-story-breakdown",
+        "squad": "pro"
       },
       "dispatch": true,
       "verdict": true,
@@ -49,16 +47,17 @@
         "path": "docs/superpowers/specs/{{CARD_LOWER}}-breakdown.md"
       },
       "next": "plan",
-      "on_fail": "contract",
+      "on_fail": "spec",
       "gate": {
-        "require_attachment": "contract"
+        "require_attachment": "spec"
       }
     },
     {
       "name": "plan",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-plan"
+        "discipline": "charter-story-plan",
+        "squad": "pro"
       },
       "dispatch": true,
       "verdict": true,
@@ -70,16 +69,19 @@
         "path": "docs/superpowers/plans/{{CARD_LOWER}}-plan.md"
       },
       "next": "implement",
-      "on_fail": "breakdown",
       "gate": {
-        "require_attachment": "spec"
+        "require_attachment_any": [
+          "spec",
+          "breakdown"
+        ]
       }
     },
     {
       "name": "implement",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-implement"
+        "discipline": "charter-story-implement",
+        "squad": "runner"
       },
       "dispatch": true,
       "verdict": true,
@@ -96,62 +98,104 @@
     },
     {
       "name": "review",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-review",
-        "purpose": "review"
+        "discipline": "charter-story-review",
+        "purpose": "review",
+        "squad": "pro"
       },
       "dispatch": true,
       "verdict": true,
       "carry_card_context": true,
       "max_rounds": 3,
-      "next": "acceptance",
-      "on_fail": "implement",
-      "gate": {}
+      "next": "阶段验收",
+      "on_fail": "implement"
     },
     {
-      "name": "acceptance",
-      "override": {},
+      "name": "阶段验收",
+      "next": "integrate"
+    },
+    {
+      "name": "待批次",
       "next": "integrate",
-      "gate": {}
+      "gate": {
+        "require_attachment": "breakdown"
+      }
     },
     {
       "name": "integrate",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-integrate"
+        "discipline": "charter-story-integrate",
+        "squad": "runner"
       },
       "dispatch": true,
       "verdict": true,
       "carry_card_context": true,
       "max_rounds": 3,
+      "next": "最终验收",
+      "gate": {
+        "require_children_done": true
+      }
+    },
+    {
+      "name": "最终验收",
       "next": "图对账",
-      "on_fail": "acceptance",
-      "gate": {}
+      "gate": {
+        "require_children_done": true
+      }
     },
     {
       "name": "图对账",
-      "template": "charter-default",
+      "template": "charter-story-default",
       "override": {
-        "discipline": "charter-recon"
+        "discipline": "charter-story-recon",
+        "squad": "runner"
       },
       "dispatch": true,
       "verdict": true,
       "carry_card_context": true,
       "max_rounds": 2,
-      "next": "finish",
-      "gate": {}
+      "next": "finish"
     },
     {
       "name": "finish",
-      "override": {},
-      "next": "已完成",
-      "gate": {}
+      "next": "已完成"
     },
     {
-      "name": "已完成",
-      "override": {},
-      "gate": {}
+      "name": "已完成"
     }
-  ]
+  ],
+  "board": {
+    "columns": [
+      "代办",
+      "沟通中",
+      "进行中",
+      "审核中",
+      "结束"
+    ],
+    "state_to_column": {
+      "breakdown": "进行中",
+      "contract": "进行中",
+      "finish": "结束",
+      "implement": "进行中",
+      "integrate": "审核中",
+      "plan": "进行中",
+      "review": "审核中",
+      "spec": "沟通中",
+      "图对账": "审核中",
+      "已出 spec": "沟通中",
+      "已出spec": "沟通中",
+      "已完成": "结束",
+      "待办": "代办",
+      "待合并": "审核中",
+      "待审阅": "审核中",
+      "终止": "结束",
+      "进行中": "进行中",
+      "阶段验收": "审核中",
+      "待批次": "进行中",
+      "最终验收": "审核中"
+    },
+    "fallback": "进行中"
+  }
 }

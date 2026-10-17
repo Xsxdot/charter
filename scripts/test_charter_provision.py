@@ -74,6 +74,16 @@ class TestNodesEquivalent(unittest.TestCase):
         self.assertTrue(ok, f"比对越过了 nodes 子树，违反 D-2: {diffs}")
         self.assertEqual(diffs, [])
 
+    def test_board_drift_is_reported_when_repo_declares_board(self):
+        nodes = [{"name": "待办", "next": "已完成"}, {"name": "已完成"}]
+        repo = {"nodes": nodes, "board": {"columns": ["代办", "结束"], "fallback": "代办"}}
+        ledger = {"nodes": nodes, "board": {"columns": ["代办", "结束"], "fallback": "结束"}}
+        ok, diffs = cp.nodes_equivalent(repo, ledger)
+        self.assertFalse(ok)
+        self.assertTrue(any(d.startswith("board") for d in diffs), diffs)
+        ok, _ = cp.nodes_equivalent({"nodes": nodes}, ledger)
+        self.assertTrue(ok, "仓里不声明 board 时不归本脚本管")
+
 
 class TestIsolatedCLIConfig(unittest.TestCase):
     def test_install_without_isolated_config_fails_before_any_write(self):
@@ -82,8 +92,34 @@ class TestIsolatedCLIConfig(unittest.TestCase):
              contextlib.redirect_stderr(out):
             rc = cp.main(["install"])
         self.assertEqual(rc, 2)
-        self.assertIn("拒绝默认共享账本", out.getvalue())
+        self.assertIn("须显式 --shared", out.getvalue())
         run.assert_not_called()
+
+    def test_install_rejects_default_config_without_shared(self):
+        out = io.StringIO()
+        with mock.patch.object(cp.subprocess, "run") as run, \
+             contextlib.redirect_stderr(out):
+            rc = cp.main(["install", "--config", "~/.handoff/config.yaml".replace(
+                "~", os.path.expanduser("~"))])
+        self.assertEqual(rc, 2)
+        self.assertIn("请改用 --shared", out.getvalue())
+        run.assert_not_called()
+
+    def test_install_shared_and_config_are_mutually_exclusive(self):
+        out = io.StringIO()
+        with mock.patch.object(cp.subprocess, "run") as run, \
+             contextlib.redirect_stderr(out):
+            rc = cp.main(["install", "--shared", "--config", "/tmp/isolated.yaml"])
+        self.assertEqual(rc, 2)
+        self.assertIn("互斥", out.getvalue())
+        run.assert_not_called()
+
+    def test_install_shared_uses_default_config(self):
+        with mock.patch.object(cp, "install", return_value=0) as inst:
+            rc = cp.main(["install", "--shared"])
+        self.assertEqual(rc, 0)
+        inst.assert_called_once()
+        self.assertIsNone(cp.HANDOFF_CONFIG)
 
     def test_handoff_config_is_forwarded_without_changing_default(self):
         with mock.patch.object(cp, "HANDOFF_CONFIG", "/tmp/isolated-config.yaml"), \
@@ -96,11 +132,11 @@ class TestIsolatedCLIConfig(unittest.TestCase):
 
 
 class TestRepoSources(unittest.TestCase):
-    def test_story_flow_is_isolated_and_keeps_final_acceptance_after_integration(self):
+    def test_charter_v13_keeps_final_acceptance_after_integration(self):
         story = cp.load_repo_def(cp.WORKFLOW_FILE)
-        legacy = cp.load_repo_def(os.path.join(cp.FLOWS, "charter.workflow.json"))
+        legacy = cp.load_repo_def(os.path.join(cp.FLOWS, "charter.v12.snapshot.json"))
         nodes = {n["name"]: n for n in story["nodes"]}
-        self.assertEqual(cp.WORKFLOW_NAME, "charter-story")
+        self.assertEqual(cp.WORKFLOW_NAME, "charter")
         self.assertEqual(legacy["nodes"][7]["name"], "acceptance")
         self.assertEqual(nodes["review"]["next"], "阶段验收")
         self.assertEqual(nodes["integrate"]["next"], "最终验收")
@@ -114,15 +150,23 @@ class TestRepoSources(unittest.TestCase):
         self.assertEqual(nodes["待批次"]["gate"], {"require_attachment": "breakdown"})
         for n in story["nodes"]:
             if n.get("dispatch"):
+                # 纪律块保留 charter-story-* 名：派发按名取最新版，复用 charter-* 会让回退 v14 拿到新法正文
                 self.assertTrue(n["override"]["discipline"].startswith("charter-story-"))
+                # 派发路由沿用 v12 的 squad（迁移 spec r4 裁决）
+                legacy_squad = {m["name"]: m["override"].get("squad")
+                                for m in legacy["nodes"] if m.get("dispatch")}
+                self.assertEqual(n["override"].get("squad"), legacy_squad.get(n["name"]), n["name"])
+        board = story["board"]["state_to_column"]
+        for n in story["nodes"]:
+            self.assertIn(n["name"], board, f"board 未映射列 {n['name']}")
 
-    def test_workflow_source_is_nodes_only(self):
-        """D-1：真源顶层只有 nodes。存 states 是改了不报错也不生效的编辑陷阱。
+    def test_workflow_source_is_nodes_and_board_only(self):
+        """D-1：真源顶层只有 nodes（加控制台布局 board）。存 states 是改了不报错也不生效的编辑陷阱。
 
         没有这条断言，把顶层键改名成 states 全部测试照样绿——而 D-1 正是这条约定。
         """
         d = cp.load_repo_def(cp.WORKFLOW_FILE)
-        self.assertEqual(list(d.keys()), ["nodes"])
+        self.assertEqual(list(d.keys()), ["nodes", "board"])
         self.assertTrue(d["nodes"])
 
     def test_template_source_keeps_required_fields_nonempty(self):
@@ -416,7 +460,7 @@ class TestInstall(unittest.TestCase):
                          f"安装顺序错，实际发出：{kinds}")
         discipline_puts = [c for c in puts if c[1] == "discipline"]
         self.assertTrue(discipline_puts)
-        self.assertIn(["handoff", "workflow", "put", "charter-story", "--file", cp.WORKFLOW_FILE], puts)
+        self.assertIn(["handoff", "workflow", "put", "charter", "--file", cp.WORKFLOW_FILE], puts)
         for cmd in discipline_puts:
             self.assertEqual(len(cmd), 5)
             self.assertNotIn("--file", cmd)

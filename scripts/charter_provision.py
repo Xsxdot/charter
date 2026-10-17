@@ -22,9 +22,9 @@ import regen_discipline  # noqa: E402  同目录模块，安装第三步与纪�
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLOWS = os.path.join(REPO, "flows")
 
-WORKFLOW_NAME = "charter-story"
+WORKFLOW_NAME = "charter"
 TEMPLATE_NAME = "charter-story-default"
-WORKFLOW_FILE = os.path.join(FLOWS, "charter-story.workflow.json")
+WORKFLOW_FILE = os.path.join(FLOWS, "charter.workflow.json")
 TEMPLATE_FILE = os.path.join(FLOWS, "charter-story-default.template.json")
 REGEN = os.path.join(REPO, "scripts", "regen_discipline.py")
 DISCIPLINE_PREFIX = "charter-story"
@@ -239,10 +239,16 @@ def nodes_equivalent(repo_def, ledger_def):
     repo_nodes = _strip_zeros(repo_def.get("nodes", []))
     ledger_nodes = _strip_zeros(ledger_def.get("nodes", []))
 
+    diffs = []
+    # board 不是 nodes 的投影（控制台列布局，独立字段），C-11 的「nodes 充分」不覆盖它；
+    # 仓内声明了 board 才比——仓里不写 board 表示不归本脚本管。
+    if "board" in repo_def:
+        diffs.extend(_defs_diff(_strip_zeros(repo_def["board"]),
+                                _strip_zeros(ledger_def.get("board", {})), "board"))
+
     repo_names = [n.get("name") for n in repo_nodes]
     ledger_names = [n.get("name") for n in ledger_nodes]
 
-    diffs = []
     if repo_names != ledger_names:
         only_repo = [n for n in repo_names if n not in ledger_names]
         only_ledger = [n for n in ledger_names if n not in repo_names]
@@ -374,7 +380,7 @@ def install():
         return 1
 
     print(f"纪律块：{len(sizes)} 个已处理")
-    print("提示：旧 charter 卡保持原流与原版本；试点新卡须显式指定 --workflow charter-story，不批量迁移旧卡。")
+    print("提示：在飞卡钉在原版本不动；要换到新版本须逐张 workflow migrate（先于任何 split）。")
     LOGGER.info("charter 安装完成",
                 extra={"repo": REPO, "discipline_count": len(sizes)})
     return 0
@@ -499,15 +505,24 @@ def main(argv=None):
     p.add_argument("mode", choices=("install", "check"),
                    help="install=装进本机账本；check=只比对不写")
     p.add_argument("--config", help="handoff 配置文件；可用于隔离账本试跑")
+    p.add_argument("--shared", action="store_true",
+                   help="install 写默认共享账本时必须显式声明（与 --config 互斥）")
     args = p.parse_args(argv)
     if args.mode == "install":
-        if not args.config:
-            print("试点安装拒绝默认共享账本：必须显式传 --config <隔离配置>。", file=sys.stderr)
-            return 2
+        # 共享账本写入不可撤（workflow 只增版本、无删除），故默认配置必须显式 --shared 表态。
         default_config = os.path.realpath(os.path.expanduser("~/.handoff/config.yaml"))
-        if os.path.realpath(args.config) == default_config:
-            print("试点安装拒绝使用默认共享账本配置。", file=sys.stderr)
+        if args.shared and args.config:
+            print("--shared 与 --config 互斥：--shared 即指默认共享账本。", file=sys.stderr)
             return 2
+        if not args.shared:
+            if not args.config:
+                print("install 写共享账本须显式 --shared；隔离试跑传 --config <隔离配置>。",
+                      file=sys.stderr)
+                return 2
+            if os.path.realpath(args.config) == default_config:
+                print("--config 指向默认共享账本配置：确要写共享账本请改用 --shared。",
+                      file=sys.stderr)
+                return 2
     global HANDOFF_CONFIG
     HANDOFF_CONFIG = args.config
     return install() if args.mode == "install" else check()
