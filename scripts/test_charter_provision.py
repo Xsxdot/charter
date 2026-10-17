@@ -75,7 +75,47 @@ class TestNodesEquivalent(unittest.TestCase):
         self.assertEqual(diffs, [])
 
 
+class TestIsolatedCLIConfig(unittest.TestCase):
+    def test_install_without_isolated_config_fails_before_any_write(self):
+        out = io.StringIO()
+        with mock.patch.object(cp.subprocess, "run") as run, \
+             contextlib.redirect_stderr(out):
+            rc = cp.main(["install"])
+        self.assertEqual(rc, 2)
+        self.assertIn("拒绝默认共享账本", out.getvalue())
+        run.assert_not_called()
+
+    def test_handoff_config_is_forwarded_without_changing_default(self):
+        with mock.patch.object(cp, "HANDOFF_CONFIG", "/tmp/isolated-config.yaml"), \
+             mock.patch.object(cp.subprocess, "run",
+                               return_value=mock.Mock(returncode=0, stdout="", stderr="")) as run:
+            cp._run_handoff(["handoff", "workflow", "show", "charter-story"])
+        self.assertEqual(run.call_args.args[0],
+                         ["handoff", "--config", "/tmp/isolated-config.yaml",
+                          "workflow", "show", "charter-story"])
+
+
 class TestRepoSources(unittest.TestCase):
+    def test_story_flow_is_isolated_and_keeps_final_acceptance_after_integration(self):
+        story = cp.load_repo_def(cp.WORKFLOW_FILE)
+        legacy = cp.load_repo_def(os.path.join(cp.FLOWS, "charter.workflow.json"))
+        nodes = {n["name"]: n for n in story["nodes"]}
+        self.assertEqual(cp.WORKFLOW_NAME, "charter-story")
+        self.assertEqual(legacy["nodes"][7]["name"], "acceptance")
+        self.assertEqual(nodes["review"]["next"], "阶段验收")
+        self.assertEqual(nodes["integrate"]["next"], "最终验收")
+        self.assertEqual(nodes["最终验收"]["next"], "图对账")
+        self.assertEqual(nodes["图对账"]["next"], "finish")
+        self.assertNotEqual(nodes["integrate"].get("on_fail"), "阶段验收")
+        self.assertNotEqual(nodes["integrate"].get("on_fail"), "最终验收")
+        self.assertEqual(nodes["integrate"]["gate"], {"require_children_done": True})
+        self.assertEqual(nodes["breakdown"]["gate"], {"require_attachment": "spec"})
+        self.assertEqual(nodes["plan"]["gate"], {"require_attachment_any": ["spec", "breakdown"]})
+        self.assertEqual(nodes["待批次"]["gate"], {"require_attachment": "breakdown"})
+        for n in story["nodes"]:
+            if n.get("dispatch"):
+                self.assertTrue(n["override"]["discipline"].startswith("charter-story-"))
+
     def test_workflow_source_is_nodes_only(self):
         """D-1：真源顶层只有 nodes。存 states 是改了不报错也不生效的编辑陷阱。
 
@@ -114,7 +154,7 @@ class TestRegenParameterized(unittest.TestCase):
             self.assertEqual(set(sizes), {"contract", "breakdown", "plan",
                                           "implement", "review", "integrate", "recon"})
             for name in sizes:
-                self.assertTrue(os.path.exists(os.path.join(tmp, f"charter-{name}.md")))
+                self.assertTrue(os.path.exists(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md")))
         after = {f: os.path.getmtime(os.path.join(home_dir, f))
                  for f in os.listdir(home_dir) if f.endswith(".md")}
         self.assertEqual(before, after, "regen --out 污染了本机纪律块目录")
@@ -139,8 +179,8 @@ def _discipline_bodies():
         rd.regen(tmp)
         bodies = {}
         for name in rd.compose_map():
-            with open(os.path.join(tmp, f"charter-{name}.md"), encoding="utf-8") as f:
-                bodies[f"charter-{name}"] = f.read()
+            with open(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md"), encoding="utf-8") as f:
+                bodies[f"{cp.DISCIPLINE_PREFIX}-{name}"] = f.read()
         return bodies
 
 
@@ -251,21 +291,21 @@ class TestCheckFindings(unittest.TestCase):
 
     def test_discipline_block_mismatch_is_reported(self):
         bodies = _discipline_bodies()
-        bodies["charter-plan"] = "这不是本仓正文\n"
+        bodies["charter-story-plan"] = "这不是本仓正文\n"
         rc, out = _run_check_with_ledger(discipline_bodies=bodies)
         self.assertEqual(rc, 1)
-        self.assertIn("charter-plan", out)
+        self.assertIn("charter-story-plan", out)
         self.assertIn("与本仓正文不一致", out)
 
     def test_discipline_block_missing_is_drift_not_unavailable(self):
-        rc, out = _run_check_with_ledger(missing_discipline={"charter-plan"})
+        rc, out = _run_check_with_ledger(missing_discipline={"charter-story-plan"})
         self.assertEqual(rc, 1)
-        self.assertIn("charter-plan", out)
+        self.assertIn("charter-story-plan", out)
         self.assertIn("账本中不存在", out)
 
     def test_discipline_get_unavailable_returns_2(self):
         rc, out = _run_check_with_ledger(
-            unavailable_discipline={"charter-plan"}
+            unavailable_discipline={"charter-story-plan"}
         )
         self.assertEqual(rc, 2)
         self.assertIn("账本不可用", out)
@@ -290,16 +330,16 @@ class TestCheckFindings(unittest.TestCase):
     def test_dispatch_override_uses_ledger_not_local_directory(self):
         """账本缺块即报错；本机 OUT 中有同名文件也不能让它通过。"""
         with tempfile.TemporaryDirectory() as fake_out:
-            with open(os.path.join(fake_out, "charter-plan.md"), "w",
+            with open(os.path.join(fake_out, "charter-story-plan.md"), "w",
                       encoding="utf-8") as f:
                 f.write("本地旧文件不是账本记录\n")
             with mock.patch.object(rd, "OUT", fake_out):
                 rc, out = _run_check_with_ledger(
-                    missing_discipline={"charter-plan"}
+                    missing_discipline={"charter-story-plan"}
                 )
         self.assertEqual(rc, 1)
         self.assertIn("节点 plan", out)
-        self.assertIn("charter-plan", out)
+        self.assertIn("charter-story-plan", out)
         self.assertIn("账本中不存在", out)
         self.assertNotIn(fake_out, out)
 
@@ -369,9 +409,11 @@ class TestInstall(unittest.TestCase):
                          f"安装顺序错，实际发出：{kinds}")
         discipline_puts = [c for c in puts if c[1] == "discipline"]
         self.assertTrue(discipline_puts)
+        self.assertIn(["handoff", "workflow", "put", "charter-story", "--file", cp.WORKFLOW_FILE], puts)
         for cmd in discipline_puts:
             self.assertEqual(len(cmd), 5)
             self.assertNotIn("--file", cmd)
+            self.assertTrue(cmd[3].startswith("charter-story-"), cmd)
             self.assertTrue(cmd[4].endswith(f"/{cmd[3]}.md"), cmd)
 
     def test_idempotent_skips_put_when_identical_discipline_is_in_ledger(self):
@@ -406,7 +448,7 @@ class TestInstall(unittest.TestCase):
         bodies = _discipline_bodies()
         calls = []
         fake_run = self._install_discipline_get(
-            bodies, calls, drift={"charter-plan"}
+            bodies, calls, drift={"charter-story-plan"}
         )
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=self._fake_ledger(same=True)), \
@@ -417,15 +459,15 @@ class TestInstall(unittest.TestCase):
         puts = [c for c in calls if c[1] == "discipline" and c[2] == "put"]
         self.assertEqual(len(puts), 1)
         self.assertEqual(puts[0][0:4],
-                         ["handoff", "discipline", "put", "charter-plan"])
+                         ["handoff", "discipline", "put", "charter-story-plan"])
         self.assertNotIn("--file", puts[0])
-        self.assertTrue(puts[0][4].endswith("/charter-plan.md"))
+        self.assertTrue(puts[0][4].endswith("/charter-story-plan.md"))
 
     def test_missing_discipline_body_is_put(self):
         bodies = _discipline_bodies()
         calls = []
         fake_run = self._install_discipline_get(
-            bodies, calls, missing={"charter-plan"}
+            bodies, calls, missing={"charter-story-plan"}
         )
         with mock.patch.object(cp, "load_ledger_def",
                                side_effect=self._fake_ledger(same=True)), \
@@ -435,13 +477,13 @@ class TestInstall(unittest.TestCase):
         self.assertEqual(rc, 0)
         puts = [c for c in calls if c[1] == "discipline" and c[2] == "put"]
         self.assertEqual(len(puts), 1)
-        self.assertEqual(puts[0][3], "charter-plan")
+        self.assertEqual(puts[0][3], "charter-story-plan")
 
     def test_discipline_ledger_unavailable_returns_2_without_put(self):
         bodies = _discipline_bodies()
         calls = []
         fake_run = self._install_discipline_get(
-            bodies, calls, unavailable={"charter-plan"}
+            bodies, calls, unavailable={"charter-story-plan"}
         )
         buf = io.StringIO()
         with mock.patch.object(cp, "load_ledger_def",

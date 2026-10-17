@@ -22,12 +22,14 @@ import regen_discipline  # noqa: E402  同目录模块，安装第三步与纪�
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLOWS = os.path.join(REPO, "flows")
 
-WORKFLOW_NAME = "charter"
-TEMPLATE_NAME = "charter-default"
-WORKFLOW_FILE = os.path.join(FLOWS, "charter.workflow.json")
-TEMPLATE_FILE = os.path.join(FLOWS, "charter-default.template.json")
+WORKFLOW_NAME = "charter-story"
+TEMPLATE_NAME = "charter-story-default"
+WORKFLOW_FILE = os.path.join(FLOWS, "charter-story.workflow.json")
+TEMPLATE_FILE = os.path.join(FLOWS, "charter-story-default.template.json")
 REGEN = os.path.join(REPO, "scripts", "regen_discipline.py")
+DISCIPLINE_PREFIX = "charter-story"
 LOGGER = logging.getLogger("charter_provision")
+HANDOFF_CONFIG = None  # 仅 CLI 指定的隔离账本配置；缺省沿用 handoff 当前配置
 
 # 安装顺序由契约 C-7 钉死，不是任选：workflow 的 dispatch 节点在写入期会校验
 # 所引模板已存在（handoff internal/ledger/workflows.go:121），先装 workflow
@@ -60,18 +62,19 @@ def _run_handoff(cmd):
     抛出：LedgerUnavailable —— handoff 不在 PATH 或进程无法启动。
     注意：不使用 check=True；show/get 的非零码需要区分缺记录和不可用。
     """
-    LOGGER.info("handoff 调用开始", extra={"argv": cmd})
+    actual_cmd = [cmd[0], "--config", HANDOFF_CONFIG, *cmd[1:]] if HANDOFF_CONFIG else cmd
+    LOGGER.info("handoff 调用开始", extra={"argv": actual_cmd})
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(actual_cmd, capture_output=True, text=True)
     except FileNotFoundError as exc:
-        LOGGER.error("handoff 命令不存在", extra={"argv": cmd, "error": str(exc)})
+        LOGGER.error("handoff 命令不存在", extra={"argv": actual_cmd, "error": str(exc)})
         raise LedgerUnavailable(
             f"找不到 handoff 命令，请确认它在 PATH 中：{exc}"
         ) from exc
     LOGGER.info(
         "handoff 调用结束",
         extra={
-            "argv": cmd,
+            "argv": actual_cmd,
             "returncode": proc.returncode,
             "stdout_bytes": len((proc.stdout or "").encode("utf-8")),
             "stderr_bytes": len((proc.stderr or "").encode("utf-8")),
@@ -322,7 +325,7 @@ def install():
             LOGGER.info("纪律块生成完成",
                         extra={"count": len(sizes), "directory": tmp})
             for name in sorted(sizes):
-                block = f"charter-{name}"
+                block = f"{DISCIPLINE_PREFIX}-{name}"
                 path = os.path.join(tmp, f"{block}.md")
                 try:
                     with open(path, encoding="utf-8") as f:
@@ -371,7 +374,7 @@ def install():
         return 1
 
     print(f"纪律块：{len(sizes)} 个已处理")
-    print("提示：在途卡仍钉着旧版本号，需要时用 handoff workflow migrate 迁移。")
+    print("提示：旧 charter 卡保持原流与原版本；试点新卡须显式指定 --workflow charter-story，不批量迁移旧卡。")
     LOGGER.info("charter 安装完成",
                 extra={"repo": REPO, "discipline_count": len(sizes)})
     return 0
@@ -423,7 +426,7 @@ def check():
         LOGGER.info("check 纪律块生成完成",
                     extra={"count": len(generated), "directory": tmp})
         for name in sorted(generated):
-            block = f"charter-{name}"
+            block = f"{DISCIPLINE_PREFIX}-{name}"
             path = os.path.join(tmp, f"{block}.md")
             try:
                 with open(path, encoding="utf-8") as f:
@@ -495,7 +498,18 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="charter 流程安装与漂移比对（仓→账本单向）")
     p.add_argument("mode", choices=("install", "check"),
                    help="install=装进本机账本；check=只比对不写")
+    p.add_argument("--config", help="handoff 配置文件；可用于隔离账本试跑")
     args = p.parse_args(argv)
+    if args.mode == "install":
+        if not args.config:
+            print("试点安装拒绝默认共享账本：必须显式传 --config <隔离配置>。", file=sys.stderr)
+            return 2
+        default_config = os.path.realpath(os.path.expanduser("~/.handoff/config.yaml"))
+        if os.path.realpath(args.config) == default_config:
+            print("试点安装拒绝使用默认共享账本配置。", file=sys.stderr)
+            return 2
+    global HANDOFF_CONFIG
+    HANDOFF_CONFIG = args.config
     return install() if args.mode == "install" else check()
 
 
