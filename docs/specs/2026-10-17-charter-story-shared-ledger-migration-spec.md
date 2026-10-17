@@ -1,6 +1,6 @@
 # 新法入共享账本：charter 原名升版 v13
 
-- **状态**：草案 r3，待用户批准（2026-10-17）。用户已裁决走方案 B：新法写成 `charter` v13，E2 组 migrate 到 v13。批准前不动共享账本，不改驾驶手册。
+- **状态**：草案 r4，待用户批准（2026-10-17）。用户已裁决走方案 B：新法写成 `charter` v13，E2 组 migrate 到 v13。批准前不动共享账本，不改驾驶手册。
 - **级别与档位**：L3 轻档。跨三处：charter 仓（流定义、安装脚本）、驾驶手册（`product-backlog`、`handoff` skill、全局 CLAUDE.md 的一条指针）、共享账本状态。不新增接缝（workflow def 格式与 `workflow migrate` 都是 handoff 既有公开面），**不进 contract**。
 - **台账**：`docs/ledgers/2026-10-17-charter-story-shared-ledger-migration-ledger.md`
 - **上游**：`docs/specs/2026-09-22-charter-story-spine-and-staged-contract-spec.md`（r3 批准，r4 翻案 §4.2）、`docs/charter-story-pilot.md`、roadmap 第 66、67 条。
@@ -23,11 +23,11 @@
 
 ### 采用：B. 新法写成 `charter` 的 v13
 
-- **仓**：`flows/charter.workflow.json` 的内容换成新法定义，即现 `flows/charter-story.workflow.json` 的列与门，外加第四节的对齐项。旧定义留在 git 历史与账本 v12 里。
+- **仓**：`flows/charter.workflow.json` 的内容换成新法定义，即现 `flows/charter-story.workflow.json` 的列与门，外加第四节的对齐项。旧定义以账本 v12 为准：仓里历史版本缺 v12 的 `squad`，与 v12 不等价，所以第 3 步之前先把 `handoff workflow show charter --version 12` 的 Def 只读导出，入仓为 `flows/charter.v12.snapshot.json`，作为回退 v14 的唯一来源。
 - **账本**：`workflow put charter` 得到 v13，新卡自动落到 v13。
-- **E2 组**：6 张卡逐张 `workflow migrate --workflow charter --column 待办` 到 v13。必须在**任何一张 E2 卡 split 或推进之前**做完，原因在下一条。
+- **E2 组**：E2.1–E2.3 已实现并合入 main，且各有 `acceptance_recorded`（E2 评论 seq 23692），但仍停在「待办」。推荐在 v12 上先把这三张 move 到「已完成」（第九节第 2 问），然后只把 E2、E2.4、E2.5 三张逐张 `workflow migrate --workflow charter --column 待办` 到 v13。migrate 必须在**任何一张 E2 卡 split 或推进之前**做完，原因在下一条。
 - **为什么要 migrate**：`SplitCard` 只传流名，取的是最新版（`merge.go:118`，`prepareCard` 调 `GetWorkflow(name, 0)`）。v12 父卡在升版后 split 出来的子卡是 v13，同一棵树就会混两套列。隔离账本已复现：v1 父卡升版后 split，得到 `workflow_version:2` 的子卡。
-- **纪律块与模板沿用 `charter-story-*` 名字**，只有流名用 `charter`。理由：派发时纪律块按名字取**最新版**，不跟工作流版本钉住（handoff `internal/discipline/dispatch.go:80` 的 `lookup(ref.Name)`）。新法若复用 `charter-*` 名字写新版本，旧法正文就被覆盖成历史版。将来回退到「内容等于 v12」的 v14 时，派发拿到的仍会是新法正文，回退不干净。沿用 `charter-story-*`，v14 引用的 `charter-*` 仍是旧法正文，回退干净；仓里的纪律块前缀、安装脚本、测试也不用改名。
+- **纪律块与模板沿用 `charter-story-*` 名字**，只有流名用 `charter`。理由：派发时纪律块按名字取**最新版**，不跟工作流版本钉住（纪律块名取自卡钉住版本的 `node.Override.Discipline`，见 `ledgerstep/runner.go:350`；正文由 `agentd/cardstep.go:348-353` 闭包里的 `GetDiscipline(n, 0)` 取最新版，经 `discipline/dispatch.go:80` 的 `ResolveDispatch` 注入。模板同理，见 `ledgerstep/dispatch.go:236,566` 的 `GetTemplate(name, 0)`）。新法若复用 `charter-*` 名字写新版本，旧法正文就被覆盖成历史版。将来回退到「内容等于 v12」的 v14 时，派发拿到的仍会是新法正文，回退不干净。沿用 `charter-story-*`，v14 引用的 `charter-*` 仍是旧法正文，回退干净；仓里的纪律块前缀、安装脚本、测试也不用改名。
 
 ### 弃选
 
@@ -40,10 +40,10 @@
 |---|---|---|---|---|
 | S1 | 本机协调者按 `product-backlog` 建顶层新卡（不写 `--workflow`） | 卡落在 `charter` v13「待办」；手册的推进表与 v13 的列一一对应 | 落在 v12；或手册让人推往 v13 没有的列（如 `acceptance`） | 共享账本 |
 | S2 | 给 v13 卡 `card split` | 子卡也是 v13 | 子卡版本与父卡不同 | 共享账本 |
-| S3 | E2 组 6 张卡 migrate 后 | 全部为 v13、仍在「待办」；事件流、`split_from` 关系与 E2.3→E2.4→E2.5 阻塞边都保留，并多一条 `workflow_migrated` 事件 | 漏迁一张（树内混版本）；关系或阻塞边丢失 | 隔离账本先演练，再在共享账本执行并核对 |
+| S3 | E2 组处理后 | E2.1–E2.3 在 v12 上为「已完成」；E2、E2.4、E2.5 为 v13、仍在「待办」；事件流、`split_from` 关系与 E2.3→E2.4→E2.5 阻塞边都保留，迁移的卡多一条 `workflow_migrated` 事件 | 漏迁一张在飞卡（树内混版本）；关系或阻塞边丢失 | 隔离账本先演练，再在共享账本执行并核对 |
 | S4 | L3 且无新接缝的卡 | 不挂 contract 也能进 breakdown；子卡无附件进不了 plan；父卡在子卡全完结前进不了 integrate 与最终验收 | 被门误挡或误放 | 隔离账本演练；共享账本首卡 |
 | S5 | 控制台建卡对话框 | 单流，缺省即 `charter`，建出的卡为 v13 | 落在 v12 | 本机控制台 |
-| S6 | 回退 | `workflow put charter` 写入内容等于 v12 的 v14 后，新卡落 v14、走旧法列，派发取到旧法 `charter-*` 纪律正文 | 回退后派发仍拿到新法正文 | 只在隔离账本演练，不在共享账本预演 |
+| S6 | 回退 | `workflow put charter --file flows/charter.v12.snapshot.json` 写入 v14 后，新卡落 v14、走旧法列，派发取到旧法 `charter-*` 纪律正文；此时 `check` 报漂移属预期 | 回退后派发仍拿到新法正文；v14 与 v12 不等价 | 只在隔离账本演练，不在共享账本预演 |
 
 ## 四、目标架构与语义
 
@@ -51,7 +51,8 @@
 - **安装脚本**：
   - 管理的流名由 `charter-story` 改为 `charter`；模板与纪律块名不变。
   - 默认配置拒装这道闸（`scripts/charter_provision.py:502-508`）保留，加显式开关 `--shared` 表示「确知是共享账本」。
-  - `check` 对比的对象相应变成「仓里 charter 定义 ↔ 账本 charter 最新版」。
+  - 只改常量（`WORKFLOW_NAME`/`WORKFLOW_FILE`，`provision:25,27`）install 就能写出 v13：已存在但节点不同时会走 `workflow put`，而 put 只新增版本。收尾提示（`:377`「试点新卡须显式 `--workflow charter-story`」）要跟着改。
+  - `check` 对比「仓里 charter 定义 ↔ 账本 charter 最新版」。`nodes_equivalent` 只比 `nodes` 不比 `board`；带 board 时要把 board 纳入比对，否则只改 board 时 install 会跳过、check 却报一致。
 - **入账前对齐账本现实**：仓里的新法定义比账本 v12 少两样，带不带由用户裁决（第九节第 1 问），定了就回写到仓里，不在账本上手补：
   - `board`：缺了不坏，控制台回落 `DefaultBoardLayout`，新增列都归「进行中」（`workflows.go:21-35`）；
   - 各派发节点的 `override.squad`：v12 是 `pro`/`runner`，缺了 `Receiver` 为空（`runner.go:347`），路由会变。
@@ -64,7 +65,7 @@
 
 ## 五、实施顺序
 
-0. **版本下限（只读）**：本机 handoff CLI 与 agentd 须含 a91eec75（`require_children_done`）和 9c2c147e（`require_attachment_any`），否则 v13 的这两道门会被静默忽略。
+0. **v12 快照与版本下限（只读）**：导出 v12 Def 入仓为 `flows/charter.v12.snapshot.json`；本机 handoff CLI 与 agentd 须含 a91eec75（`require_children_done`）和 9c2c147e（`require_attachment_any`），否则 v13 的这两道门会被静默忽略。
 1. **仓内修正**：
    - `flows/charter.workflow.json` 换成新法定义；`flows/charter-story.workflow.json` 删除或改为指向前者的说明，避免出现两个真源。
    - 按第九节第 1 问补 `board`/`squad`。
@@ -75,11 +76,12 @@
 2. **手册改稿**：`product-backlog`、`handoff` skill、CLAUDE.md 指针。改稿先就绪但**不早于第 3 步生效**，因为手册与 v13 必须同时切换。
 3. **入账（同一时段内连续完成）**：
    - 先跑 `install --shared`：模板与 7 个纪律块已同名同文时跳过，否则写入；`charter` 写入 v13。再跑 `check` 一致。
-   - 紧接着依次 migrate E2、E2.1–E2.5 到 v13「待办」，逐张 `card show` 核版本、关系、阻塞边（S3）。
+   - install 之前，按第九节第 2 问的裁决处理 E2.1–E2.3（推荐在 v12 上 move 到「已完成」）。
+   - install 之后紧接着依次 migrate E2、E2.4、E2.5 到 v13「待办」，逐张 `card show` 核版本、关系、阻塞边（S3）。
    - 最后让第 2 步的手册改稿生效。
-4. **首卡观察**：建议从 E2 组挑一张 L3 轻档、无新接缝的卡（或新建一张）验证 S4。
+4. **首卡观察**：E2.4/E2.5 仍阻塞于外部裁决（Q02/Q12/Q19），所以新建一张 L3 轻档、无新接缝的卡来验证 S4。
 
-**回退**：`workflow put charter` 写入内容等于 v12 的 v14，手册改回，已建的 v13 卡按需 migrate 到 v14。这条路依赖第二节的纪律块分名，所以分名不能省。回退不在共享账本预演。
+**回退**：`workflow put charter --file flows/charter.v12.snapshot.json` 写入 v14，手册改回，已建的 v13 卡按需 migrate 到 v14。这条路依赖第二节的纪律块分名，所以分名不能省。回退不在共享账本预演。
 
 ## 六、实现决定
 
@@ -93,7 +95,7 @@
   - 正向路由与反向门（已有：36/37，唯一 FAIL 是预期写错）；
   - 同名升版 + 旧版卡 split 混版本（已复现）；
   - 父子卡树 migrate 保留事件、关系、阻塞边（已通过）；
-  - 回退 v14 与派发纪律名（待测，需要 agentd）。
+  - 用 v12 快照回退 v14 与派发纪律名（待测，需要 agentd）。
 - **共享账本**：只做第 3 步的写入与只读核对，加第 4 步首卡；不做探针。
 
 ## 八、Out of Scope
@@ -105,9 +107,10 @@
 | 纪律块与模板改名回 `charter-*` | 永不做（会破坏回退，见第二节） |
 | 跨机纪律块分发（B229） | 不属于本期；mac-02 已退役 |
 
-## 九、待用户裁决
+## 九、待用户裁决（按序）
 
 1. **v13 带不带 v12 的 `squad` 覆写和 `board` 布局？** 推荐都带，并回写仓。不带 squad 会改变派发路由；不过你目前用本地 subagent、不走远程派发，影响较小。
+2. **E2.1–E2.3（已合入 main、已有验收记录、仍在待办）怎么处理？** 推荐在 v12 上直接 move 到「已完成」，只迁 E2、E2.4、E2.5；否则迁到 v13 后它们要越列到 finish，E2 才能过 integrate 门。
 
 ## 修订记录
 
@@ -118,3 +121,9 @@
   - 纪律块与模板保留 `charter-story-*` 名，以保住回退；
   - 删去 A 专属的显式化、双流分节、mac-02 前置；
   - 补隔离账本对升版与 migrate 的实测。
+- r4（2026-10-17）：按第二轮独立审阅修订。
+  - 回退来源改为入仓的 v12 快照（仓里历史版本缺 squad，与 v12 不等价）；
+  - 写明 E2.1–E2.3 实况与处理，首卡改为新建；
+  - 写明安装脚本只改常量即可、需同步改的提示与 board 比对；
+  - 写明回退后 check 报漂移属预期；
+  - 修正纪律块与模板取最新版的出处。

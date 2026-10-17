@@ -56,3 +56,6 @@
   - 迁移后 E1 为 `charter 2 待办`，事件流尾部多了 `workflow_migrated`，`split_from` 关系与 `E1.1 blocks E1.2` 阻塞边都保留；
   - 迁移后 E1.1 在没有附件时 `move plan` 被拒，提示「需要 spec 或 breakdown 附件之一」，说明 v2 的门已生效。
 - 2026-10-17 读码 handoff `internal/discipline/dispatch.go:80`：`ResolveDispatch` 用 `lookup(ref.Name)` 只按名字取纪律块的最新版本，不按工作流版本钉住。由此定下：纪律块保留 `charter-story-*` 名字，以保住回退 v14 的路。
+- 2026-10-17 第二轮独立审阅（opus subagent，只读）的意见已合入 spec r4。本人复核：
+  - `card show E2.1|E2.2|E2.3` 的状态都是「待办」，事件里都有 `acceptance_recorded`；
+  - E2 评论 seq 23692 原文写「子卡 E2.1（D78）、E2.2（D79）、E2.3（D80）均已实现并合入 main …… E2.4 / E2.5 仍阻塞于平台接入方式（Q02 / Q12）与客服范围（Q19）」。
