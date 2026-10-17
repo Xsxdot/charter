@@ -1,0 +1,46 @@
+# 台账：charter-story 入共享账本迁移方案
+
+对应 spec：`docs/specs/2026-10-17-charter-story-shared-ledger-migration-spec.md`
+
+- 2026-10-17 隔离账本：配置只写 `datadir` 加 `listen: 127.0.0.1:17777`，`ledger.dsn` 留空。handoff `cmd/ledgercli.go` 的 `openLedger` 在 DSN 为空时回退到 `datadir/ledger.db`，日志显示 `账本库已打开 dialect=sqlite`。所有 `card` 子命令都直接调用 `openLedger()`，不经过 agentd。
+- 2026-10-17 `python3 scripts/charter_provision.py install --config <隔离>` 返回码 0：模板、流、7 个纪律块全部入账。`check` 输出 `workflow charter-story: 一致 / template charter-story-default: 一致 / 纪律块：7/7 一致`。
+- 2026-10-17 演练脚本（scratchpad `iso-ledger/drill.sh`，父卡 P1）：PASS=36、FAIL=1。唯一的 FAIL 是预期写错，不是流有缺陷：plan 列本身有入场门（`require_attachment_any: [spec, breakdown]`），子卡在 `待办→plan` 这一步就被挡住。实测的门如下：
+  - breakdown 要求有 spec 附件；
+  - 子卡进 plan 要求有 spec 或 breakdown 附件；
+  - 父卡进 integrate 和最终验收，都要求全部子卡完结；首故事完成后，报错里只剩 `P1.2, P1.3`；
+  - 待办可以直接跳到 finish，再到已完成，没有任何门（roadmap 67①）；
+  - 子卡阶段验收的成功边指向 integrate，r4 下要人工越列到 finish。
+- 2026-10-17 隔离账本用 `template put charter-default --file` 与 `workflow put charter --file` 装入旧流，形成双流：
+  - 不写 `--workflow` 的 `card add` 报 `建卡缺少工作流：账本中有多条工作流，请显式指定 --workflow（可选：charter、charter-story）`，返回码 1；
+  - `card add --parent P4`（P4 是 charter 流的卡）报同样的错，返回码 1，说明不继承父卡的流；
+  - `card split P4` 得到 `P4.1`，`workflow: charter`，与父卡同流。
+- 2026-10-17 共享账本只读核对：
+  - `handoff workflow list` 只有 `charter v12`；
+  - `card list --json` 中在飞卡共 29 张，分布在待办 14、spec 3、acceptance 9、finish 3；按项目是 erp 7、handoff 15、charter 2、super-dev 1、tk 4。
+- 2026-10-17 共享账本 v12 与仓内流定义对比：
+  - **和仓里旧流 `flows/charter.workflow.json` 比**：列一致；差别只是账本上派发节点的 `override` 多了 `squad`（contract、breakdown、plan、review 是 `pro`，implement、integrate、图对账是 `runner`）。这是账本被人工改过、仓里没有的漂移。
+  - **和新流 `flows/charter-story.workflow.json` 比**：
+    - breakdown 门：v12 要 `contract`，新流要 `spec`；
+    - plan 门：v12 要 `spec`，新流要 `spec|breakdown` 之一；
+    - integrate：v12 没有门，新流要求子卡全部完结；
+    - 新流有阶段验收、待批次、最终验收这三列；
+    - v12 带 `board`，新流定义里没有。
+- 2026-10-17 读码（handoff c944b6b7）：
+  - `internal/ledger/cards.go:143-163`：流名为空时按账本流的数量解析，0 条报错，1 条自动选中，多条报错；
+  - `:178 checkParentTx` 在解析之后才执行，只检查嵌套深度；
+  - `merge.go:118 SplitCard` 只传父卡的流名，不传版本；
+  - `move.go:39`、`ledgerstep/runner.go:291` 都按卡上钉住的版本取流；
+  - `web/src/app/cards/NewCardDialog.tsx:78` 缺省选 `workflows[0]`；`workflows.go:287 ListWorkflowNames` 去重后升序排列。
+- 2026-10-17 读码：在 handoff `workflow` 命令族的 `list / migrate / put / show` 中找不到删除流的命令。
+- 2026-10-17 本机 skill 中省略 `--workflow` 的建卡行：
+  - `product-backlog/SKILL.md:90`（顶层卡）、`:302`（`--parent`）、`:352`（import）；
+  - `handoff/SKILL.md:401`（import）。
+  - charter 仓 `skills/` 里没有 `card add`。
+  - 本机 `product-backlog` 与 `handoff` 两个 skill 目录都不在 git 管理下。
+- 2026-10-17 master 已推到 origin（`9ae3fb5..fe717db`），新法 skill 正文已对外可拉取。mac-02 的 charter checkout 和 skill 来源**没有核对**。
+- 2026-10-17 隔离账本：在双流状态下，`card add --project pilot --parent P4 "子卡探针"` 报多流歧义，返回码 1；`card split P4` 得到 `P4.1`，所在流为 `charter`。
+- 2026-10-17 独立审阅（opus subagent，只读）给出 10 条意见，经复核全部成立，已合入 spec r2。审阅中已复核的读数如下：
+  - `product-backlog/SKILL.md:91` 原文是「不带 `--workflow`，缺省就是 charter」；
+  - `handoff/SKILL.md:400` 的流名是可选参数，`:617` 是裸 `card add`；
+  - handoff 提交 a91eec75 是 `RequireChildrenDone`，9c2c147e 是 `RequireAttachmentAny`；
+  - `regen_discipline.py:15-16` 写的是 `OUT=~/.handoff/discipline`、`PREFIX="charter-story"`。
