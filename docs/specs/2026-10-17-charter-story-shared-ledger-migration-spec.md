@@ -1,6 +1,6 @@
 # 新法入共享账本：charter 原名升版 v13
 
-- **状态**：r4 **已批准**（用户，2026-10-17）。裁决：方案 B；v13 带上 v12 的 `squad` 与 `board`；E2.1–E2.3 在 v12 上移到「已完成」，只迁 E2、E2.4、E2.5。
+- **状态**：r4 **已批准并实施**（用户批准，2026-10-17；共享账本已为 charter v13，实施记录见台账「实施」节）。裁决：方案 B；v13 带上 v12 的 `squad` 与 `board`；E2.1–E2.3 在 v12 上移到「已完成」，只迁 E2、E2.4、E2.5。
 - **级别与档位**：L3 轻档。跨三处：charter 仓（流定义、安装脚本）、驾驶手册（`product-backlog`、`handoff` skill、全局 CLAUDE.md 的一条指针）、共享账本状态。不新增接缝（workflow def 格式与 `workflow migrate` 都是 handoff 既有公开面），**不进 contract**。
 - **台账**：`docs/ledgers/2026-10-17-charter-story-shared-ledger-migration-ledger.md`
 - **上游**：`docs/specs/2026-09-22-charter-story-spine-and-staged-contract-spec.md`（r3 批准，r4 翻案 §4.2）、`docs/charter-story-pilot.md`、roadmap 第 66、67 条。

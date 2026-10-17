@@ -59,3 +59,38 @@
 - 2026-10-17 第二轮独立审阅（opus subagent，只读）的意见已合入 spec r4。本人复核：
   - `card show E2.1|E2.2|E2.3` 的状态都是「待办」，事件里都有 `acceptance_recorded`；
   - E2 评论 seq 23692 原文写「子卡 E2.1（D78）、E2.2（D79）、E2.3（D80）均已实现并合入 main …… E2.4 / E2.5 仍阻塞于平台接入方式（Q02 / Q12）与客服范围（Q19）」。
+
+## 实施（spec r4 获批后，2026-10-17）
+
+- **前置检查**：
+  - `handoff workflow show charter --version 12` 的 Def 只读导出到 `flows/charter.v12.snapshot.json`，内含 `states`、`gates`、`nodes`、`board`；
+  - 运行中的 handoff 版本 `e3ac563b396f`（2026-10-15），用 `git merge-base --is-ancestor` 核过，a91eec75 与 9c2c147e 都在它的祖先链上。
+- **仓内改动**（提交 9ad23bf）：
+  - `flows/charter.workflow.json` 换成新法定义，带上 v12 的 squad（contract、breakdown、plan、review 用 pro；implement、integrate、图对账用 runner）和 board；board 补了三列映射：阶段验收→审核中、待批次→进行中、最终验收→审核中；
+  - 删除 `flows/charter-story.workflow.json`；
+  - provision 的流名改为 `charter`，新增 `--shared`，board 纳入比对；33 个测试全部通过。
+- **第二套隔离账本 iso2 全程复演**。先复刻共享账本现状：v12 快照、旧模板 `charter-default`、旧 `charter-*` 纪律块，正文取自共享账本，再建一棵模拟 E2 树。结果：
+  - 不带参数的 install 被拒，提示「须显式 --shared」；
+  - install 写入 `workflow charter` v2（与账本比 27 处差异）、`charter-story-default` 模板和 7 个纪律块；
+  - check 一致；再跑一次 install，全部跳过；
+  - migrate 3 张卡后，阻塞边保留；新卡落在 v2；board、squad 都在。
+- **iso2 派发**：起了隔离 agentd（端口 17777，执行器 fake），`card dispatch E2 --step plan` 返回 400「节点 plan 解析小队 "pro": scheduling: 实体不存在: pro」。隔离账本里没有登记载体和小队，**端到端派发未测**。共享账本 `squad list` 显示 pro（成员 cline）和 runner（成员 mimo，权重 10）都已登记，载体在 linux-01。测完已停掉隔离 agentd。
+- **iso2 回退**：`workflow put charter --file flows/charter.v12.snapshot.json` 返回 `{"version":3}`。之后：
+  - 新卡落在 v3，派发节点的纪律名是 `charter-contract`、`charter-breakdown`、`charter-plan` 等；
+  - `discipline get charter-plan` 仍是 v1（旧法正文）；
+  - check 报 `workflow charter: 漂移`，返回码 1，符合预期。
+- **驾驶手册**（不在 git 管理下，改前备份在 scratchpad）：
+  - `product-backlog` 推进章节改为 v13 的列与越列规则，门的说明与 L3 重档序列也按 v13 改；
+  - `handoff` skill 中的跳转示例由 `acceptance → finish` 改为 `最终验收 → finish`；
+  - `~/.claude/CLAUDE.md` 的纪律同步指针改为 `charter_provision.py install --shared` 加 `check`。
+- **共享账本操作与结果**：
+  - `card move E2.1|E2.2|E2.3 已完成` 三张都返回「已完成」（v12 上）；
+  - `charter_provision.py install --shared` 返回码 0，写入 `charter` v13、模板 `charter-story-default`、7 个 `charter-story-*` 纪律块；`check` 一致；`workflow list` 显示 `charter v13`；
+  - `workflow migrate E2|E2.4|E2.5 --workflow charter --column 待办 --yes` 都返回 `{"ok":true}`；
+  - 核对 E2、E2.4、E2.5 都是 v13 待办，事件流里有 `workflow_migrated`；E2.1–E2.3 是 v12 已完成；阻塞边 E2.3→E2.4→E2.5 保留；
+  - v13 带 board，squad 与 v12 一致；breakdown 门要 `spec`，integrate 门要求子卡全部完结；
+  - 旧纪律块 `charter-plan` 仍是 v3，没有被改动。
+- **未完成**：
+  - 首卡观察（第五节第 4 步）还没做；
+  - 用本地 agentd 加真实载体验证端到端派发，没做；
+  - 网关 `using-charter` 的节点地图仍是 r3 写法（父卡亲跑 Wave 0、待批次停靠），与 r4 不一致。它不属于本迁移 spec 的范围，单列为后续。
