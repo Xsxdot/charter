@@ -44,3 +44,15 @@
   - `handoff/SKILL.md:400` 的流名是可选参数，`:617` 是裸 `card add`；
   - handoff 提交 a91eec75 是 `RequireChildrenDone`，9c2c147e 是 `RequireAttachmentAny`；
   - `regen_discipline.py:15-16` 写的是 `OUT=~/.handoff/discipline`、`PREFIX="charter-story"`。
+- 2026-10-17 用户告知 mac-02 已退役，并按用户指示清理共享账本：
+  - `card close --reason 搁置 --yes` 共 7 张：B364、B384、B397、B430、B90、C13、C2，均返回 `{"ok":true}`；
+  - `card move <id> 已完成` 共 16 张：B407、B306、B401、E1、B385、B402、B426、B427、S1、T3、T4、T5、T6、B394、B411、B425，返回的 status 都是「已完成」；
+  - 之后的在飞卡只剩 E2、E2.1–E2.5，都在待办；`card show E2` 显示 `charter 12`。
+- 2026-10-17 用户裁决改走方案 B，即 `charter` v13。在隔离账本模拟 E2 组（父卡 E1，子卡 E1.1、E1.2，带阻塞边 E1.1→E1.2，并有一条 note）：
+  - `workflow put charter --file flows/charter-story.workflow.json` 返回 `{"name":"charter","version":2}`；
+  - 升版后新建的卡为 `workflow_version:2`；
+  - 升版后对 v1 的父卡执行 split，得到 `E1.3`，`workflow_version:2`，父子版本不一致（混版本）已复现；
+  - `workflow migrate E1|E1.1|E1.2 --workflow charter --column 待办 --yes` 三张都返回 `{"ok":true}`；
+  - 迁移后 E1 为 `charter 2 待办`，事件流尾部多了 `workflow_migrated`，`split_from` 关系与 `E1.1 blocks E1.2` 阻塞边都保留；
+  - 迁移后 E1.1 在没有附件时 `move plan` 被拒，提示「需要 spec 或 breakdown 附件之一」，说明 v2 的门已生效。
+- 2026-10-17 读码 handoff `internal/discipline/dispatch.go:80`：`ResolveDispatch` 用 `lookup(ref.Name)` 只按名字取纪律块的最新版本，不按工作流版本钉住。由此定下：纪律块保留 `charter-story-*` 名字，以保住回退 v14 的路。
