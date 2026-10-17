@@ -146,17 +146,24 @@ class TestRegenParameterized(unittest.TestCase):
             self.assertTrue(os.path.isdir(target))
 
     def test_regen_to_tmpdir_leaves_home_untouched(self):
+        # 本机目录可能不存在（B229 起权威副本在账本，新机器从未 regen 过）：
+        # 快照取「不存在」为一种状态，regen --out 之后它仍须不存在——被创建出来同样算污染。
         home_dir = rd.OUT
-        before = {f: os.path.getmtime(os.path.join(home_dir, f))
-                  for f in os.listdir(home_dir) if f.endswith(".md")}
+
+        def snapshot():
+            if not os.path.isdir(home_dir):
+                return None
+            return {f: os.path.getmtime(os.path.join(home_dir, f))
+                    for f in os.listdir(home_dir) if f.endswith(".md")}
+
+        before = snapshot()
         with tempfile.TemporaryDirectory() as tmp:
             sizes = rd.regen(tmp)
             self.assertEqual(set(sizes), {"contract", "breakdown", "plan",
                                           "implement", "review", "integrate", "recon"})
             for name in sizes:
                 self.assertTrue(os.path.exists(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md")))
-        after = {f: os.path.getmtime(os.path.join(home_dir, f))
-                 for f in os.listdir(home_dir) if f.endswith(".md")}
+        after = snapshot()
         self.assertEqual(before, after, "regen --out 污染了本机纪律块目录")
 
 
