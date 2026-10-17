@@ -2,6 +2,8 @@
 
 本试点是**新流 `charter-story`**，不是把旧 `charter` 升版。旧流定义、旧 `charter-*` 纪律块与旧卡钉住的工作流版本不改；新流使用 `charter-story-default` 模板和 `charter-story-*` 纪律块。仓内源是 `flows/charter-story.workflow.json` 与 `skills/`。`scripts/regen_discipline.py` 默认生成新前缀；生成文件不是安装，`scripts/charter_provision.py` 的 install/check 才对账本读写新名字。试跑时用 `python3 scripts/charter_provision.py install --config <隔离配置>`，再以同一配置跑 `check`；省略 `--config` 会指向当前 handoff 配置，推广前不要在共享账本执行。
 
+**r4 补注（2026-10-17）**：spec r4 翻案台账 §4.2——首故事做父卡第一张子卡，阶段验收后 `--no-ff` 合入父卡分支即共同基线（B434 先例 `cards/B434-charter-1`）。随之：父卡不再亲自跑 Wave 0；旧流 `charter` v12 零引擎改动即可承载，父卡 integrate 只派一次，roadmap 第 67 条 ②③ 阻塞消失，「待批次」列可不建；① 跳列无机械门仍在。下文驾驶规则按 r3 书写，与 r4 冲突处（父卡 Wave 0、待批次停靠）以 r4 与 product-backlog「L3 重档：扇出子卡」为准。
+
 ## 驾驶规则
 
 - 建试点卡必须显式指定 `--workflow charter-story`；旧卡仍显式 `--workflow charter`。同一账本存在两条流后，省略工作流的建卡命令会变成歧义，不能把旧驾驶手册的“默认唯一流”继续当真。不要把旧卡批量 migrate 到试点。
