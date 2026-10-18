@@ -167,3 +167,5 @@
 69a. **第三步观察判据**：十张产品卡后比对返工与 bug 是否回升；未回升则删 `flows/charter.v12.snapshot.json`。来源：同上。
 69b. **各项目仓残留的 `codegraph/` 数据目录**：cloth、handoff 仓内的 `codegraph/` 目录与 handoff 消费侧功能（卡 B436）随各仓自行删除，charter 侧不再读写。来源：2026-10-18 用户裁决「彻底删除代码图」。
 69c. **正文预算**：第二步后 spec 7.7 KB、plan 8.8 KB、review 9.7 KB、architecture-law 11 KB；「两页核心 + 按需附录」的拆法等十张产品卡后按实际被引用的段落再压。来源：同上。
+70. **项目架构文档三件套样板是否入 charter**（数据归属表 / 允许的依赖方向 / 同步/异步表）：落位三问的答案权威载体是项目仓架构文档，目前只在 spec 正文描述形态、不给模板；先看两个项目各自长出的形态再定是否作为 `docs/` 样板入仓。来源：`docs/specs/2026-10-18-architecture-law-communication-and-placement-spec.md` OOS-①。
+71. **第十二条「同步调用链跨 ≥3 子系统即重切信号」阈值回看**：判据数字沿「个位数即先例」惯例定，未经真实卡实测；等真实卡命中后回看是否改为 2 或 4。来源：同上 spec OOS-②。
