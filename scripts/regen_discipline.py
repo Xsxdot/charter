@@ -41,8 +41,8 @@ def section(name, heading):
 
 
 def compose_map():
-    """组成映射：breakdown 带缺陷族法、implement 带架构法、review 带两法；
-    产出型节点（contract/breakdown/plan/implement）附网关的台账纪律节。
+    """组成映射（2026-10-18 六列流）：implement 带架构法、review 带两法；
+    产出型节点（plan/implement）附网关的台账纪律节。
 
     返回 {块名: [正文段, ...]}。每次调用重读 skills/ 正文——调用方可能刚改完正文。
     """
@@ -50,12 +50,9 @@ def compose_map():
     defect = retitle(body("defect-families"), "缺陷族法")
     ledger = "# 附：台账纪律\n\n" + re.sub(r'^## .*\n', '', section("using-charter", "台账纪律"), count=1).strip() + "\n"
     return {
-        "contract":  [body("contract"), ledger],
-        "breakdown": [body("breakdown"), defect, ledger],
         "plan":      [body("plan"), ledger],
         "implement": [body("implement"), arch, ledger],
         "review":    [body("review"), arch, defect],
-        "integrate": [body("integrate")],
     }
 
 
