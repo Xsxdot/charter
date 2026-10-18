@@ -1,7 +1,0 @@
-{
-  "meta": { "version": 3, "project": "fixture" },
-  "assembly": ["cmd/run.go"],
-  "contracts": [
-    { "from": "d_cmd", "to": "d_svc", "entries": ["svc.Server"], "legacyBudget": 0 }
-  ]
-}

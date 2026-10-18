@@ -27,21 +27,35 @@ def retitle(text, title):
     return re.sub(r'^# .*$', f'# 附：{title}', text, count=1, flags=re.M)
 
 
+def section(name, heading):
+    """取某 skill 正文里一个二级节（含标题，到下一个二级标题或文末）。
+
+    用途：台账纪律只在网关 using-charter 写一份；产出型节点的纪律块由本函数把那一节
+    附上去，执行者侧不再各自复制一份正文（2026-10-18 去重前五处副本已漂移出差异）。
+    """
+    t = body(name)
+    m = re.search(rf'^## {re.escape(heading)}\n.*?(?=^## |\Z)', t, flags=re.S | re.M)
+    if not m:
+        raise ValueError(f"{name} 正文里没有「## {heading}」节")
+    return m.group(0).strip() + "\n"
+
+
 def compose_map():
-    """组成映射：breakdown 带缺陷族法、implement 带架构法、review 带两法，其余单体。
+    """组成映射：breakdown 带缺陷族法、implement 带架构法、review 带两法；
+    产出型节点（contract/breakdown/plan/implement）附网关的台账纪律节。
 
     返回 {块名: [正文段, ...]}。每次调用重读 skills/ 正文——调用方可能刚改完正文。
     """
     arch = retitle(body("architecture-law"), "架构法（子系统与领域章）")
     defect = retitle(body("defect-families"), "缺陷族法")
+    ledger = "# 附：台账纪律\n\n" + re.sub(r'^## .*\n', '', section("using-charter", "台账纪律"), count=1).strip() + "\n"
     return {
-        "contract":  [body("contract")],
-        "breakdown": [body("breakdown"), defect],
-        "plan":      [body("plan")],
-        "implement": [body("implement"), arch],
+        "contract":  [body("contract"), ledger],
+        "breakdown": [body("breakdown"), defect, ledger],
+        "plan":      [body("plan"), ledger],
+        "implement": [body("implement"), arch, ledger],
         "review":    [body("review"), arch, defect],
         "integrate": [body("integrate")],
-        "recon":     [body("recon")],
     }
 
 
