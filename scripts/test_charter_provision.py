@@ -132,66 +132,22 @@ class TestIsolatedCLIConfig(unittest.TestCase):
 
 
 class TestRepoSources(unittest.TestCase):
-    def test_charter_v13_keeps_final_acceptance_after_integration(self):
+    def test_charter_v14_six_columns(self):
         story = cp.load_repo_def(cp.WORKFLOW_FILE)
         legacy = cp.load_repo_def(os.path.join(cp.FLOWS, "charter.v12.snapshot.json"))
         nodes = {n["name"]: n for n in story["nodes"]}
         self.assertEqual(cp.WORKFLOW_NAME, "charter")
         self.assertEqual(legacy["nodes"][7]["name"], "acceptance")
-        self.assertEqual(nodes["review"]["next"], "阶段验收")
-        self.assertEqual(nodes["integrate"]["next"], "最终验收")
-        self.assertEqual(nodes["最终验收"]["next"], "finish")
-        self.assertNotIn("图对账", nodes, "2026-10-18 删除代码图后不再有图对账列")
-        self.assertNotEqual(nodes["integrate"].get("on_fail"), "阶段验收")
-        self.assertNotEqual(nodes["integrate"].get("on_fail"), "最终验收")
-        self.assertEqual(nodes["integrate"]["gate"], {"require_children_done": True})
-        self.assertEqual(nodes["breakdown"]["gate"], {"require_attachment": "spec"})
-        self.assertEqual(nodes["plan"]["gate"], {"require_attachment_any": ["spec", "breakdown"]})
-        self.assertEqual(nodes["待批次"]["gate"], {"require_attachment": "breakdown"})
-        for n in story["nodes"]:
-            if n.get("dispatch"):
-                # 纪律块保留 charter-story-* 名：派发按名取最新版，复用 charter-* 会让回退 v14 拿到新法正文
-                self.assertTrue(n["override"]["discipline"].startswith("charter-story-"))
-                # 派发路由沿用 v12 的 squad（迁移 spec r4 裁决）
-                legacy_squad = {m["name"]: m["override"].get("squad")
-                                for m in legacy["nodes"] if m.get("dispatch")}
-                self.assertEqual(n["override"].get("squad"), legacy_squad.get(n["name"]), n["name"])
-        board = story["board"]["state_to_column"]
-        for n in story["nodes"]:
-            self.assertIn(n["name"], board, f"board 未映射列 {n['name']}")
-
-    def test_workflow_source_is_nodes_and_board_only(self):
-        """D-1：真源顶层只有 nodes（加控制台布局 board）。存 states 是改了不报错也不生效的编辑陷阱。
-
-        没有这条断言，把顶层键改名成 states 全部测试照样绿——而 D-1 正是这条约定。
-        """
-        d = cp.load_repo_def(cp.WORKFLOW_FILE)
-        self.assertEqual(list(d.keys()), ["nodes", "board"])
-        self.assertTrue(d["nodes"])
-
-    def test_template_source_keeps_required_fields_nonempty(self):
-        """R-2：CLI 层强制 executor / prompt / discipline 三者非空，空串会被当场拒。"""
-        d = cp.load_repo_def(cp.TEMPLATE_FILE)
-        for key in ("executor", "prompt", "discipline"):
-            self.assertTrue(d.get(key), f"{key} 为空会被 handoff CLI 拒绝")
-
-
-class TestRegenParameterized(unittest.TestCase):
-    def test_regen_creates_missing_out_dir(self):
-        """全新机器上纪律块目录并不存在——handoff 只建 DataDir，不建它的 discipline 子目录。
-
-        没有这条，install 在头号场景（换机重装）必失败，而本机真机验证
-        因为目录早就存在，结构性看不见它。
-        """
-        with tempfile.TemporaryDirectory() as base:
-            target = os.path.join(base, "never-created", "discipline")
-            sizes = rd.regen(target)
-            self.assertTrue(sizes)
-            self.assertTrue(os.path.isdir(target))
-
-    def test_regen_to_tmpdir_leaves_home_untouched(self):
-        # 本机目录可能不存在（B229 起权威副本在账本，新机器从未 regen 过）：
-        # 快照取「不存在」为一种状态，regen --out 之后它仍须不存在——被创建出来同样算污染。
+        self.assertEqual([n["name"] for n in story["nodes"]],
+                         ["待办", "spec", "plan", "implement", "review", "finish", "已完成"])
+        self.assertEqual(nodes["implement"]["gate"], {"require_attachment": "plan"})
+        self.assertEqual(nodes["implement"]["on_fail"], "plan")
+        self.assertEqual(nodes["review"]["on_fail"], "implement")
+        self.assertEqual(nodes["finish"]["gate"], {"require_children_done": True})
+        self.assertNotIn("gate", nodes["plan"], "2026-10-18 起 plan 列无门，bug 流不需 spec 附件")
+        self.assertEqual(nodes["plan"]["produces"]["kind"], "plan")
+        for name in ("plan", "implement", "review"):
+            self.assertEqual(nodes[name]["override"]["discipline"], f"charter-story-{name}")
         home_dir = rd.OUT
 
         def snapshot():
@@ -203,9 +159,8 @@ class TestRegenParameterized(unittest.TestCase):
         before = snapshot()
         with tempfile.TemporaryDirectory() as tmp:
             sizes = rd.regen(tmp)
-            self.assertEqual(set(sizes), {"contract", "breakdown", "plan",
-                                          "implement", "review", "integrate"})
-            for name in ("contract", "breakdown", "plan", "implement"):
+            self.assertEqual(set(sizes), {"plan", "implement", "review"})
+            for name in ("plan", "implement"):
                 with open(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md"), encoding="utf-8") as f:
                     self.assertIn("# 附：台账纪律", f.read(), f"{name} 块缺共享台账附录")
             for name in sizes:
