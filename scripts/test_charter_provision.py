@@ -140,8 +140,8 @@ class TestRepoSources(unittest.TestCase):
         self.assertEqual(legacy["nodes"][7]["name"], "acceptance")
         self.assertEqual(nodes["review"]["next"], "阶段验收")
         self.assertEqual(nodes["integrate"]["next"], "最终验收")
-        self.assertEqual(nodes["最终验收"]["next"], "图对账")
-        self.assertEqual(nodes["图对账"]["next"], "finish")
+        self.assertEqual(nodes["最终验收"]["next"], "finish")
+        self.assertNotIn("图对账", nodes, "2026-10-18 删除代码图后不再有图对账列")
         self.assertNotEqual(nodes["integrate"].get("on_fail"), "阶段验收")
         self.assertNotEqual(nodes["integrate"].get("on_fail"), "最终验收")
         self.assertEqual(nodes["integrate"]["gate"], {"require_children_done": True})
@@ -204,7 +204,10 @@ class TestRegenParameterized(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sizes = rd.regen(tmp)
             self.assertEqual(set(sizes), {"contract", "breakdown", "plan",
-                                          "implement", "review", "integrate", "recon"})
+                                          "implement", "review", "integrate"})
+            for name in ("contract", "breakdown", "plan", "implement"):
+                with open(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md"), encoding="utf-8") as f:
+                    self.assertIn("# 附：台账纪律", f.read(), f"{name} 块缺共享台账附录")
             for name in sizes:
                 self.assertTrue(os.path.exists(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md")))
         after = snapshot()

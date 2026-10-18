@@ -140,23 +140,10 @@
     },
     {
       "name": "最终验收",
-      "next": "图对账",
+      "next": "finish",
       "gate": {
         "require_children_done": true
       }
-    },
-    {
-      "name": "图对账",
-      "template": "charter-story-default",
-      "override": {
-        "discipline": "charter-story-recon",
-        "squad": "runner"
-      },
-      "dispatch": true,
-      "verdict": true,
-      "carry_card_context": true,
-      "max_rounds": 2,
-      "next": "finish"
     },
     {
       "name": "finish",
@@ -183,7 +170,6 @@
       "plan": "进行中",
       "review": "审核中",
       "spec": "沟通中",
-      "图对账": "审核中",
       "已出 spec": "沟通中",
       "已出spec": "沟通中",
       "已完成": "结束",
