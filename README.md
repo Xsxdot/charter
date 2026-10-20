@@ -3,7 +3,7 @@
 以用户故事验证结果、按子系统保持代码责任、让 Agent 的自主决定对人可见的开发流程套件。流程中的每个节点是一个 skill，同一份正文有两个消费端：
 
 1. **本地**：Claude Code 插件——SessionStart hook 注入网关 `using-charter`，节点 skill 按需加载，subagent 跑流程时逐节点注入纪律。
-2. **handoff**：工作流节点的纪律块——plan / implement / review 三个派发节点的正文同步进 handoff 纪律块库，派发时由 agentd 注入执行者。账本是**可选**的，判据是要不要放手：想离开电脑或跨会话的活走卡（handoff 仓与扇出的 L3 一律走卡），坐在旁边做的小活可无卡直接走 skill（2026-10-18 裁决）。
+2. **handoff**：工作流节点的纪律块——plan / implement / review 三个派发节点的正文同步进 handoff 纪律块库，派发时由 agentd 注入执行者。进流程的请求**一律建卡**，L1 也不例外（2026-10-20 用户定，撤销 10-18「账本可选」）。
 
 ## 结构
 
