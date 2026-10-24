@@ -74,3 +74,11 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 - `python3 scripts/test_charter_provision.py` → Ran 29 tests OK。
 - `regen_discipline.py --out /tmp/c18-regen` → plan 5379 / implement 4793 / review 6805；`grep -c '^# 附：'` 三块均 0。
 - `grep -rn "落位三问\|行为闭环\|defect-families\|边干边落\|不留台账" skills/` → exit 1（零命中）。
+
+## S6 install --shared / check（2026-10-24，主会话亲跑，HEAD 043e8dd）
+```
+template charter-story-default: 已是最新，跳过 / workflow charter: 已是最新，跳过
+纪律块 charter-story-implement|plan|review: 与本仓正文不一致，安装 → 已入账（3 个已处理）
+check: workflow charter 一致 / template 一致 / 纪律块 3/3 一致
+```
+在飞卡钉原版本不动（预期）。
