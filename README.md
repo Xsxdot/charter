@@ -11,20 +11,21 @@
 
 ```
 skills/
-├── using-charter/     # 网关（hook 注入）：节点地图 + 台账纪律（唯一副本）+ 红旗
-├── spec/              # 需求成形：承重歧义 + 承诺清单 + 对话纪律 + 定级 + 落位三问（全级别）+ 架构形状与接缝语义（L3）
-├── plan/              # 实现计划：零上下文交接五件事 + 决策权限；L3 的拆分与接缝、需冻结的外部承诺（条件节）
-├── implement/         # 实现：测试只写竖切与核心方法、只测当前组件 + 三段律 + 日志注释 + 熔断 + 排查节（bug 入口）
-├── review/            # 审查与验收：首核「偏离与自主决定」+ 双轴 + 复跑 → 变异一次 → 真机 + 父卡最终验收
+├── using-charter/     # 网关（hook 注入）：节点地图 + 交回物纪律（唯一副本）+ 红旗
+├── spec/              # 需求成形：承重歧义 + 承诺清单 + 对话纪律 + 定级 + 边界与接缝语义三行（L3）
+├── plan/              # 实现计划：零上下文交接五件事 + 决策权限 + 真机清单（含首跑项）；L3 的拆分与接缝、需冻结的外部承诺（条件节，≤ 12 条）
+├── implement/         # 实现：测试只写竖切与核心方法、只测当前组件 + 真机前移 + 三段律 + 日志注释 + 熔断 + 排查节（bug 入口）
+├── review/            # 审查与验收：首核「偏离与自主决定」+ 双轴（含越界、缺陷族三问格）+ 复跑 → 变异一次 → 真机 + 父卡最终验收；L1 主会话单审一轮
 ├── finish/            # 收尾：核验收 + 合并归人 + 合并后全量 + 原型基准回流 + 残余落账
-├── architecture-law/  # 架构法·子系统与领域章（法条 + 判据数字，零案例；第十二条通信方式：调用还是消息）
-└── defect-families/   # 缺陷族法（通用五族 + 序列化边界 + 枚举白名单）
+└── architecture-law/  # 架构法·子系统与领域章（法条 + 判据数字，零案例）——参考法：spec / plan / review 按需查阅，不自动注入纪律块
 flows/                 # handoff 流定义真源（charter.workflow.json，六列）与 v12 回退快照
 scripts/               # regen_discipline（正文 → 纪律块）、charter_provision（install/check）
-docs/                  # specs / plans / reviews / ledgers / roadmap（残余账本）
+docs/                  # specs / plans / reviews / roadmap（残余账本）；ledgers 为历史目录，第三步起不再新建台账文件
 ```
 
 **2026-10-18 两步瘦身。**第一步删代码图：`graph/`、`recon`、「图对账」列、`prototypes/` 整体删除（删除前最后提交 `1dece20`）。第二步节点 14 → 5：contract 与 breakdown 并入 plan，debug 并入 implement，acceptance 与 integrate 并入 review，流缩为 `待办 → spec → plan → implement → review → finish → 已完成`（删除前最后一版 `d84d457`）。架构对照一律是 spec / plan / review 的人工清单。
+
+**2026-10-24 第三步（C18，spec `docs/specs/2026-10-24-charter-slim-step3-spec.md`）。**按两日实战复盘精简：删 `defect-families`、独立台账文件与 spec 落位三问，`architecture-law` 降为参考法不再注入纪律块，网关改「交回物纪律」两条；各正文设 `wc -m` 预算（using-charter 3.0k / spec 5.5k / plan 5.5k / implement 5.0k / review 6.5k / finish 2.5k）；新增真机前移与首跑项、冻结节 ≤ 12 条、L1 主会话单审一轮。流列与纪律块名不动。
 
 ## 术语（两级）
 
@@ -33,11 +34,11 @@ docs/                  # specs / plans / reviews / ledgers / roadmap（残余账
 
 ## 设计原则
 
-- **两个目标，各有唯一承载**：架构干净 → `architecture-law` + spec 的目标边界段 + review 架构轴；注意力集中 → plan 的「决策权限」+ 交回物首节「偏离与自主决定」。其余条款都为这两条服务，服务不上的删。节点只有五个，门只有两道（implement 要 plan 附件、finish 要子卡完结）。
+- **两个目标，各有唯一承载**：架构干净 → spec 的 L3 边界三行 + review「越界」格（`architecture-law` 为按需参考法）；注意力集中 → plan 的「决策权限」+ 交回物首节「偏离与自主决定」。其余条款都为这两条服务，服务不上的删。节点只有五个，门只有两道（implement 要 plan 附件、finish 要子卡完结）。
 - **规则与知识分离**：本仓库只装不变的纪律与法条；项目知识（子系统划分、契约面、缺陷史）活在各项目仓库的架构文档与领域文档里。
 - **法条零案例**：判据数字即先例（≥5 文件、≥40 文件、≥20 方法、3 级嵌套），不引任何真实项目路径。
 - **凡红线必留正当出口**：每条禁令配显式例外，防红线诱发绕过。
 - **判决一次、时刻正确**：定级不设分诊节点——在 spec 定稿、信息足够时只判一次；判错走跨流迁移，带产出走。
 - **并行是例外**：L3 先由首故事子卡串行长出共同基线，扇出只在既有边界上、一批不超过两张子卡；契约冻结是 plan 的条件节，只给跨仓/跨进程的缝写。
-- **信息归唯一载体**：判决与状态 → 产物头部状态行；残余 → `docs/roadmap.md`；读数与实验过程 → 台账；欠账 → 交棒声明；台账纪律正文只在网关一处，纪律块由 `regen_discipline` 附录注入。
+- **信息归唯一载体**：判决与状态 → 产物头部状态行；残余 → `docs/roadmap.md`；读数与证据 → 产出物末节「读数与证据」（不再建独立台账文件）；欠账 → 交棒声明；交回物纪律正文只在网关一处，纪律块只含各节点正文、不带附录。
 - **修法两件事**：每笔 `skills/` 正文变更须①授权留痕（卡/spec，或用户显式指令原话入提交说明）②重跑 `scripts/charter_provision.py install --shared` 再 `check` 同步纪律块。

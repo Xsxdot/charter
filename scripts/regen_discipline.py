@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-story-*.md）。
-# 边界：只做「去 frontmatter + 附录拼接 + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
+# 边界：只做「去 frontmatter + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
+# 2026-10-24 第三步（C18）起纪律块不再注入附录：架构法 / 缺陷族 / 台账三份附录退出，
+# 两部法（architecture-law 等）改为 spec/plan/review 按需查阅——附录曾让 implement/review 块
+# 膨胀到执行者读不完，纪律块只留本节点正文。
 # 注意：B229 起纪律块的权威副本在 handoff 账本；charter_provision 的 install
 # 通过 handoff discipline put 入账，check 通过 handoff discipline get 比对。
 # 本脚本无参运行仍可把调试正文写到 OUT，但写 OUT 不代表已安装，也不是 check 判据。
@@ -22,37 +25,18 @@ def body(name):
     return re.sub(r'^---\n.*?\n---\n', '', t, flags=re.S).strip() + "\n"
 
 
-def retitle(text, title):
-    # 附录正文的一级标题换成「# 附：…」，避免与主体标题同级混淆
-    return re.sub(r'^# .*$', f'# 附：{title}', text, count=1, flags=re.M)
-
-
-def section(name, heading):
-    """取某 skill 正文里一个二级节（含标题，到下一个二级标题或文末）。
-
-    用途：台账纪律只在网关 using-charter 写一份；产出型节点的纪律块由本函数把那一节
-    附上去，执行者侧不再各自复制一份正文（2026-10-18 去重前五处副本已漂移出差异）。
-    """
-    t = body(name)
-    m = re.search(rf'^## {re.escape(heading)}\n.*?(?=^## |\Z)', t, flags=re.S | re.M)
-    if not m:
-        raise ValueError(f"{name} 正文里没有「## {heading}」节")
-    return m.group(0).strip() + "\n"
-
-
 def compose_map():
-    """组成映射（2026-10-18 六列流）：implement 带架构法、review 带两法；
-    产出型节点（plan/implement）附网关的台账纪律节。
+    """组成映射：plan / implement / review 三块各只含本节点 skill 正文。
 
-    返回 {块名: [正文段, ...]}。每次调用重读 skills/ 正文——调用方可能刚改完正文。
+    为什么不再拼附录：2026-10-24 第三步（C18）定架构法与缺陷族法为「按需查阅」，台账纪律
+    并入各节点自己的交回物条目；在飞卡下一轮派发读到更短的块是预期行为，不是漂移。
+    返回 {块名: [正文段, ...]}——仍保留列表形状，regen 的拼接逻辑与调用方接口不变。
+    每次调用重读 skills/ 正文——调用方可能刚改完正文。
     """
-    arch = retitle(body("architecture-law"), "架构法（子系统与领域章）")
-    defect = retitle(body("defect-families"), "缺陷族法")
-    ledger = "# 附：台账纪律\n\n" + re.sub(r'^## .*\n', '', section("using-charter", "台账纪律"), count=1).strip() + "\n"
     return {
-        "plan":      [body("plan"), ledger],
-        "implement": [body("implement"), arch, ledger],
-        "review":    [body("review"), arch, defect],
+        "plan":      [body("plan")],
+        "implement": [body("implement")],
+        "review":    [body("review")],
     }
 
 

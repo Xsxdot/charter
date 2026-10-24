@@ -160,11 +160,15 @@ class TestRepoSources(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sizes = rd.regen(tmp)
             self.assertEqual(set(sizes), {"plan", "implement", "review"})
-            for name in ("plan", "implement"):
-                with open(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md"), encoding="utf-8") as f:
-                    self.assertIn("# 附：台账纪律", f.read(), f"{name} 块缺共享台账附录")
             for name in sizes:
-                self.assertTrue(os.path.exists(os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md")))
+                path = os.path.join(tmp, f"{cp.DISCIPLINE_PREFIX}-{name}.md")
+                self.assertTrue(os.path.exists(path))
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+                # 2026-10-24 第三步（C18）：纪律块只含本节点正文，架构法 / 缺陷族 / 台账三份附录
+                # 不再注入——两部法改为 spec/plan/review 按需查阅。任何「# 附：」标题都是回退。
+                appended = [ln for ln in text.splitlines() if ln.startswith("# 附：")]
+                self.assertEqual(appended, [], f"{name} 块仍带附录: {appended}")
         after = snapshot()
         self.assertEqual(before, after, "regen --out 污染了本机纪律块目录")
 
