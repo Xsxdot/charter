@@ -36,3 +36,7 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 ### 判断
 - 文字长短不是成本（1.7%），成本在台账机械、两部法零产出、冻结节膨胀、L1 全套与卡机械耦合；后者归 handoff，本卡只记指针。
 - 定级 L2：单仓、流定义与纪律块 wire 不动；八份正文各有取舍，plan 增量不为零。
+
+## spec r2（2026-10-24，主会话）
+- 用户指令原话：「默认丙，觉得丙不行再询问我」。落为 Q5 推荐 A 的内容与本卡形态（甲→丙）。
+- 丙前提核实：`git remote -v` → origin git@github.com:Xsxdot/charter.git；`git ls-remote --heads origin` rc=0。
