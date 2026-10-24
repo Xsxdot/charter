@@ -48,3 +48,6 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 ## spec r4（2026-10-24，主会话）
 - 用户问：「像现在这个这种不改代码的，还有必要出 plan 吗？你直接改不行吗」。落为：本卡跳 plan（spec 第二节改法表即 plan，双挂附件）；spec skill 定级节新增「文档/规则正文类卡不出 plan」一条（进 S2 改法表）。
 - 事实澄清：本卡仍动 `scripts/regen_discipline.py` compose_map 与测试断言，但改法在 spec 表内写死，plan 增量为零。
+
+## 批准（2026-10-24）
+- 用户原话：「批准 C18 spec r4，Q1~Q4 取推荐 A，Q5 按 r3；跳 plan，按甲直接 implement」。头部状态行已回写。
