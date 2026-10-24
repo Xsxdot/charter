@@ -51,3 +51,6 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 
 ## 批准（2026-10-24）
 - 用户原话：「批准 C18 spec r4，Q1~Q4 取推荐 A，Q5 按 r3；跳 plan，按甲直接 implement」。头部状态行已回写。
+
+## 批准（2026-10-24）
+- 用户原话：「批准 C18 spec r4，Q1~Q4 取推荐 A，Q5 按 r3；跳 plan，按甲直接 implement」。头部状态行已回写。
