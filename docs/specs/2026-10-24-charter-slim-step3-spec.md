@@ -68,7 +68,7 @@
 | ID | 谁 / 入口 | 期望观察 | 验证 |
 |---|---|---|---|
 | S1 | SessionStart hook 注入 using-charter | 正文含「交回物纪律」两条，无「台账纪律」；≤ 3.0k 字符 | `wc -m`；`grep -c 台账纪律 == 0` |
-| S2 | 读 spec / plan / implement / review / finish 正文 | 各份不超预算（5.5k / 5.5k / 5.0k / 6.5k / 2.5k），且表「保留」列的判据逐条可在正文定位 | `wc -m`；保留清单逐条 grep |
+| S2 | 读 spec / plan / implement / review / finish 正文 | 各份**不超软预算**（5.5k / 5.5k / 5.0k / 6.5k / 2.5k，超 20% 以内不算违约——用户 2026-10-24 定「没必要这么严格」：预算只防长回去，判据完整与可读性优先，不许为凑数压坏句子），且表「保留」列的判据逐条可在正文定位 | `wc -m`；保留清单逐条 grep；review 加核「压缩是否损伤可读性或判据」 |
 | S3 | `ls skills/` | 恰为 architecture-law finish implement plan review spec using-charter（无 defect-families） | `ls` |
 | S4 | `python3 scripts/regen_discipline.py --out <tmp>` | 三块只含本节点正文，无「# 附：」标题 | `grep -c '^# 附：' == 0` |
 | S5 | `python3 scripts/test_charter_provision.py` | 全绿（含更新后的组成断言） | 命令输出 |

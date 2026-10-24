@@ -166,6 +166,9 @@
 69. ~~charter 瘦身第二步：节点并五、流缩六列~~ **已完成（2026-10-18，spec `docs/specs/2026-10-18-charter-slim-step2-spec.md`）**。原文：spec / plan（吸收 breakdown 与 contract 的「需冻结的外部承诺」节）/ implement（含 debug 横切）/ review（吸收 acceptance）/ finish 五个 skill 加 architecture-law；流缩为 待办→spec→plan→implement→review→finish→已完成，L3 用父子卡表达，门只留 implement 列的 plan 附件。前置：第一步（本条上一提交）落地并跑过至少十张产品卡。来源：2026-10-18 瘦身方案（spec `docs/specs/2026-10-18-charter-slim-step1-spec.md`）。
 69a. **第三步观察判据**：十张产品卡后比对返工与 bug 是否回升；未回升则删 `flows/charter.v12.snapshot.json`。来源：同上。
 69b. **各项目仓残留的 `codegraph/` 数据目录**：cloth、handoff 仓内的 `codegraph/` 目录与 handoff 消费侧功能（卡 B436）随各仓自行删除，charter 侧不再读写。来源：2026-10-18 用户裁决「彻底删除代码图」。
-69c. **正文预算**：第二步后 spec 7.7 KB、plan 8.8 KB、review 9.7 KB、architecture-law 11 KB；「两页核心 + 按需附录」的拆法等十张产品卡后按实际被引用的段落再压。来源：同上。
+69c. **正文预算**：第二步后 spec 7.7 KB、plan 8.8 KB、review 9.7 KB、architecture-law 11 KB；「两页核心 + 按需附录」的拆法等十张产品卡后按实际被引用的段落再压。来源：同上。（2026-10-24 第三步落实为各正文字符预算，见 C18 spec S2）
 70. **项目架构文档三件套样板是否入 charter**（数据归属表 / 允许的依赖方向 / 同步/异步表）：落位三问的答案权威载体是项目仓架构文档，目前只在 spec 正文描述形态、不给模板；先看两个项目各自长出的形态再定是否作为 `docs/` 样板入仓。来源：`docs/specs/2026-10-18-architecture-law-communication-and-placement-spec.md` OOS-①。
 71. **第十二条「同步调用链跨 ≥3 子系统即重切信号」阈值回看**：判据数字沿「个位数即先例」惯例定，未经真实卡实测；等真实卡命中后回看是否改为 2 或 4。来源：同上 spec OOS-②。
+72. **流列并 finish 进 review（Q3-B）**：第三步不动六列与两道门（50 张在飞卡零迁移）；跑十张产品卡后看 finish 是否还有独立裁决，再定是否并列。来源：C18 spec OOS。
+73. **`architecture-law` 是否整部删除（Q2-B）**：第三步降为参考法、不再注入纪律块；同一十张卡观察窗内若无一次被查阅改变决定，再议整部删除。来源：C18 spec OOS。
+74. **handoff 卡机械归 handoff 仓**：轮次门 3/3 对分段派发误判、pass 不自动移列、dispatch 被拒形态、工单无人收——均为 handoff 仓的事，本仓只记此指针，不在 charter 修。来源：C18 spec OOS。
