@@ -90,3 +90,8 @@ check: workflow charter 一致 / template 一致 / 纪律块 3/3 一致
 - implement:21 去「和组装点」；implement:54「见网关」→「（网关有同文）」；spec「L3 扇出否」→「L3 是否扇出」；spec 恢复「这个名字改掉用户能察觉吗？不能的归 plan」；台账删重复「批准」节。
 ### 读数与证据
 - 修后 `wc -m`：using-charter 2988 / spec 5626 / plan 5584 / implement 5046 / review 6961 / finish 2492；tests OK；regen 三块 `# 附：` 0。
+
+## finish（2026-10-24，主会话）
+- 用户裁决：「本地 --no-ff 合并进 master，合并后跑全量，推送 origin master，卡收口」。
+- 合并提交 2b8ad29（14 文件，+408/−274）。合并后全量：29 tests OK；regen 三块 `# 附：` 0；`ls skills/` 七目录；wc -m 2988/5626/5584/5046/6961/2492；`check` workflow 一致 / template 一致 / 纪律块 3/3 一致；工作树干净。
+- 残余已落 roadmap 72~74；S7/S8 为生效观察项，下一张产品 L1/L2 卡上核。
