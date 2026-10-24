@@ -52,9 +52,6 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 ## 批准（2026-10-24）
 - 用户原话：「批准 C18 spec r4，Q1~Q4 取推荐 A，Q5 按 r3；跳 plan，按甲直接 implement」。头部状态行已回写。
 
-## 批准（2026-10-24）
-- 用户原话：「批准 C18 spec r4，Q1~Q4 取推荐 A，Q5 按 r3；跳 plan，按甲直接 implement」。头部状态行已回写。
-
 ## implement · S9 全局 CLAUDE.md §3（2026-10-24，主会话亲改，用户私有文件）
 ### 偏离与自主决定
 - 无。三形态定义表按 spec 保留原样（已是三行版，未再压）；五条判序整段换成两句规则；「两种会话形态」子弹里四处旧条号引用（按上表判 / 第 2 条 / 判为乙 / 第 4 条）改为「人点名乙 / 判甲」措辞——这是条号消失后的必然修正，不改语义。
@@ -82,3 +79,14 @@ template charter-story-default: 已是最新，跳过 / workflow charter: 已是
 check: workflow charter 一致 / template 一致 / 纪律块 3/3 一致
 ```
 在飞卡钉原版本不动（预期）。
+
+## review（2026-10-24，独立审查 subagent，单卡最终，HEAD 043e8dd/9cc792d）
+- 裁决 **PASS**：S1~S5、S9 新鲜复跑通过；变异（compose_map plan 块追加 `# 附：x`）→ `AssertionError: ['# 附：x'] != []` 红在目标断言，还原回绿 29/29；flows/hooks/charter_provision 零改动；六份正文「保留」判据逐条可定位，可读性专项无一处读不懂或含义改变。
+- Findings：Important 1——全局 CLAUDE.md §3 新「形态规则」与旧「不派发清单」「执行机不可达时降级」「形态判决走」三处自相矛盾。Minor 8——review:55 父卡第二件随 plan 删表适配未自报；finish:12 L1 句随 Q4 改语义未自报；implement:21 仍写「组装点」而 spec 三行已不产出；spec「L3 扇出否」生硬；spec 可见性测试句被删；implement「见网关」对远程执行者悬空；台账「批准」节重复；本卡仍用独立台账文件（过渡期，记一笔）。
+### 补自报（Min-1/Min-2）
+- review:55 父卡四件事第二件由「逐行核对 plan 行为闭环五格」改为直接核触发者/载体/消费者/结果——plan 删表后的必然适配。finish:12 L1 句改为「核单审的复跑/变异/真机证据」——跟随 Q4，语义变更在批准范围内。
+### 修复（主会话，同批提交）
+- CLAUDE.md §3：L45「形态判决」→「形态规则」；「不派发清单」改为「命中即先问人，由人改甲或乙」；「执行机不可达时降级」改为「卡上的活先问人；不进 charter 流的熟练工零散活可回落本地 subagent」。
+- implement:21 去「和组装点」；implement:54「见网关」→「（网关有同文）」；spec「L3 扇出否」→「L3 是否扇出」；spec 恢复「这个名字改掉用户能察觉吗？不能的归 plan」；台账删重复「批准」节。
+### 读数与证据
+- 修后 `wc -m`：using-charter 2988 / spec 5626 / plan 5584 / implement 5046 / review 6961 / finish 2492；tests OK；regen 三块 `# 附：` 0。
