@@ -40,3 +40,7 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 ## spec r2（2026-10-24，主会话）
 - 用户指令原话：「默认丙，觉得丙不行再询问我」。落为 Q5 推荐 A 的内容与本卡形态（甲→丙）。
 - 丙前提核实：`git remote -v` → origin git@github.com:Xsxdot/charter.git；`git ls-remote --heads origin` rc=0。
+
+## spec r3（2026-10-24，主会话）
+- 用户指令原话：「本卡不按丙，像这种影响重大的，比如改整体的工作流的，或者算法、架构复杂的，按照甲，其他的按照丙。」
+- 落为：Q5 规则「重大按甲、其余默认丙、判丙不行先问人、乙仅点名」；本卡形态丙→甲。「乙仅点名」是本会话对「其他的按照丙」的推论，用户未单独裁决，可一句话回退。
