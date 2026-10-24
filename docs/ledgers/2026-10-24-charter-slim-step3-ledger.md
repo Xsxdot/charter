@@ -63,3 +63,14 @@ $ handoff card add "charter 瘦身第三步：…" --project charter --priority 
 
 ## implement 中途修订（2026-10-24，主会话）
 - 用户：「没必要这么严格吧。会不会影响效果？」——执行者把六份正文压到距预算 3~17 字符，有为凑数压坏句子的风险。S2 预算改为软预算（超 20% 内不违约，判据完整与可读性优先）；review 增核一条「压缩是否损伤可读性或判据」。
+
+## implement（2026-10-24，本会话两 subagent + 主会话拍板）
+### 偏离与自主决定（汇总两执行者交回物 + 主会话裁决）
+- 脚本执行者：删 `retitle`/`section`（grep 零调用方）；compose_map 保持列表形状；测试断言改为「三块不含任何 `# 附：` 行」。均在授权内。先红后绿：新断言 + 旧 compose_map → `AssertionError: ['# 附：台账纪律'] != []`；改后 29 tests OK。
+- 正文执行者：`wc -m` 在本机按字节计（LANG 空），基线与预算同口径；为凑硬预算多删 12 处既不在保留列也不在点名删列的内容并自报。**主会话拍板**：恢复 5 处有判断含量的——review 红旗表三行、review「原型冲突由协调者核批准意图，改用户结果才交用户」、plan「局部可逆选择不必逐项请用户拍板」、implement「宁可诚实未验证不交编造的绿」、spec「经什么关系或通道」与「不拿用户当搜索引擎」；其余 7 处（示例、轶事、理由句、重复段）删除成立。
+- 主会话：roadmap 72~74 三条在 S2 软预算提交（92c974c）里被 `git add docs` 顺带带入，不是漏记；spec 第四节预算口径补注「字节计」。
+### 读数与证据
+- 恢复后 `wc -m`：using-charter 2988 / spec 5555 / plan 5584 / implement 5046 / review 6961 / finish 2492（软预算 3600 / 6600 / 6600 / 6000 / 7800 / 3000 内）。
+- `python3 scripts/test_charter_provision.py` → Ran 29 tests OK。
+- `regen_discipline.py --out /tmp/c18-regen` → plan 5379 / implement 4793 / review 6805；`grep -c '^# 附：'` 三块均 0。
+- `grep -rn "落位三问\|行为闭环\|defect-families\|边干边落\|不留台账" skills/` → exit 1（零命中）。

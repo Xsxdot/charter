@@ -84,7 +84,7 @@ S7 / S8 是生效观察项，不阻塞本卡 finish，落 roadmap。
 - 改动只在 `skills/*/SKILL.md`、`scripts/regen_discipline.py`、`scripts/test_charter_provision.py`、`README.md`、`docs/roadmap.md`；`flows/` 与 `hooks/` 不动。
 - 删 `defect-families` 目录即删 skill；plugin 清单若有列举需同步（现状读数：`hooks/hooks.json` 只注册 SessionStart，无 skill 清单）。
 - 纪律块名仍为 `charter-story-*`（改名破坏回退，第二步已裁）。
-- 正文预算以 `wc -m` 字符数为判据（roadmap 69c 的「两页核心」在此落实）。
+- 正文预算以 `wc -m` 为判据（本机 LANG 为空、按字节计；基线读数与预算同口径，UTF-8 字符数约为其 40%），roadmap 69c 的「两页核心」在此落实。
 - 现状读数（执行节点复核）：落位三问 `skills/spec/SKILL.md:62`；行为闭环与缺陷族表 `skills/plan/SKILL.md:36-41`；附录组成 `scripts/regen_discipline.py:49-56`；附录断言 `scripts/test_charter_provision.py:150-165`。
 
 ## 五、测试决定
