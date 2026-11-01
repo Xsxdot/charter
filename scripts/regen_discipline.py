@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-# 职责：从 skills/ 各节点正文重新生成 handoff 纪律块（charter-story-*.md）。
+# 职责：从 skills/ 各节点正文重新生成节点纪律正文（charter-story-<节点>.md），供外部种子脚本消费。
 # 边界：只做「去 frontmatter + 0600 落盘」，不校验正文内容；组成映射改动在本文件里改。
-# 2026-10-24 第三步（C18）起纪律块不再注入附录：架构法 / 缺陷族 / 台账三份附录退出，
-# 两部法（architecture-law 等）改为 spec/plan/review 按需查阅——附录曾让 implement/review 块
-# 膨胀到执行者读不完，纪律块只留本节点正文。
-# 注意：B229 起纪律块的权威副本在 handoff 账本；charter_provision 的 install
-# 通过 handoff discipline put 入账，check 通过 handoff discipline get 比对。
-# 本脚本无参运行仍可把调试正文写到 OUT，但写 OUT 不代表已安装，也不是 check 判据。
+# 2026-10-24 第三步（C18）起不再拼附录：架构法等改为 spec/plan/review 按需查阅——附录曾让
+# implement/review 块膨胀到执行者读不完，每块只留本节点正文。
+# 2026-11-01 第四步起本脚本不再有缺省输出目录：--out 必填，写到哪由调用方决定。
 #
-# 本文件同时是库：charter_provision 直接 import regen() 把块生成到临时目录做比对，
-# 故模块顶层不得有任何写盘副作用——import 只定义，不执行。
+# 本文件同时是库：外部种子脚本 import 后调 regen(outDir) 把正文生成到临时目录再读文件，
+# 故模块顶层不得有任何写盘副作用——import 只定义，不执行；regen 的签名与输出文件名是对外契约。
 import argparse
 import os
 import re
 
 SK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills")
-OUT = os.path.expanduser("~/.handoff/discipline")
 PREFIX = "charter-story"
+NODES = ("spec", "plan", "implement", "review", "finish")
 
 
 def body(name):
@@ -26,31 +23,21 @@ def body(name):
 
 
 def compose_map():
-    """组成映射：plan / implement / review 三块各只含本节点 skill 正文。
+    """组成映射：五个节点各只含本节点 skill 正文。
 
-    为什么不再拼附录：2026-10-24 第三步（C18）定架构法与缺陷族法为「按需查阅」，台账纪律
-    并入各节点自己的交回物条目；在飞卡下一轮派发读到更短的块是预期行为，不是漂移。
-    返回 {块名: [正文段, ...]}——仍保留列表形状，regen 的拼接逻辑与调用方接口不变。
+    返回 {块名: [正文段, ...]}——保留列表形状，regen 的拼接逻辑与调用方接口不变。
     每次调用重读 skills/ 正文——调用方可能刚改完正文。
     """
-    return {
-        "plan":      [body("plan")],
-        "implement": [body("implement")],
-        "review":    [body("review")],
-    }
+    return {name: [body(name)] for name in NODES}
 
 
-def regen(out=OUT, prefix=PREFIX):
-    """把 skills/ 正文生成为纪律块，落到 out 目录。
+def regen(out, prefix=PREFIX):
+    """把 skills/ 正文生成为节点纪律正文，落到 out 目录。
 
-    参数：out —— 落盘目录，缺省为本机 handoff 纪律块目录。不存在则建；
-    prefix —— 账本块名前缀。新试点独立于旧 charter-*，旧流不吃新正文。
-    返回：{块名: 字节数}，供调用方打印或断言。
+    参数：out —— 落盘目录，必填，不存在则建；
+    prefix —— 文件名前缀，输出文件为 <out>/<prefix>-<节点>.md。
+    返回：{块名: 字节数}，供调用方打印或断言；正文只在文件里。
     注意：逐文件写、非原子——中途失败会留下新旧混合的半装状态（已知欠账，见 roadmap 第 16 条）。
-
-    为什么要自己建目录：handoff 只建 DataDir，它的 discipline 子目录是「谁先写谁建」，
-    而 agentd 只在自己写块时才建。全新机器上装 charter 时它并不存在——不建就是
-    换机重装（本方案的头号场景）必失败，且本机验证因目录早已存在而看不见。
     """
     os.makedirs(out, exist_ok=True)
     sizes = {}
@@ -64,9 +51,9 @@ def regen(out=OUT, prefix=PREFIX):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="从 skills/ 正文重新生成 charter-story 纪律块")
-    p.add_argument("--out", default=OUT, help=f"落盘目录（缺省 {OUT}）")
-    p.add_argument("--prefix", default=PREFIX, help=f"纪律块前缀（缺省 {PREFIX}）")
+    p = argparse.ArgumentParser(description="从 skills/ 正文重新生成 charter-story 节点纪律正文")
+    p.add_argument("--out", required=True, help="落盘目录（必填）")
+    p.add_argument("--prefix", default=PREFIX, help=f"文件名前缀（缺省 {PREFIX}）")
     args = p.parse_args(argv)
     for name, size in regen(args.out, args.prefix).items():
         print(name, size)

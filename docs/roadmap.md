@@ -164,11 +164,15 @@
 68. **交回物首节「偏离与自主决定」生效检查（观察项，2026-10-18）**：来源 `docs/specs/2026-10-18-handback-deviation-section-spec.md`。累计三张走过 implement→review 的卡或下次修法审计时复核（先到为准）。生效判据：每份 implement 台账 / integrate 报告 / 验收记录第一节即该节，无偏离写「无」；review 裁决表首行是该维度，漏报案例直接 fail 而非进两轴。负优化信号：该节沦为模板空话（永远写「无」而 diff 里有 plan 未写的改动）；或执行者把所有实现细节都塞进该节，使真正的越权被噪音淹没——出现后者则需收窄「自主决定」定义到决策权限节列出的四类。
 
 69. ~~charter 瘦身第二步：节点并五、流缩六列~~ **已完成（2026-10-18，spec `docs/specs/2026-10-18-charter-slim-step2-spec.md`）**。原文：spec / plan（吸收 breakdown 与 contract 的「需冻结的外部承诺」节）/ implement（含 debug 横切）/ review（吸收 acceptance）/ finish 五个 skill 加 architecture-law；流缩为 待办→spec→plan→implement→review→finish→已完成，L3 用父子卡表达，门只留 implement 列的 plan 附件。前置：第一步（本条上一提交）落地并跑过至少十张产品卡。来源：2026-10-18 瘦身方案（spec `docs/specs/2026-10-18-charter-slim-step1-spec.md`）。
-69a. **第三步观察判据**：十张产品卡后比对返工与 bug 是否回升；未回升则删 `flows/charter.v12.snapshot.json`。来源：同上。
+69a. ~~**第三步观察判据**：十张产品卡后比对返工与 bug 是否回升；未回升则删 `flows/charter.v12.snapshot.json`。来源：同上。~~ **已关闭（2026-11-01，第四步）**：`flows/` 整目录随 handoff 退役删除，v12 快照一并删；返工/bug 回升观察由 S9~S11 接续。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 2.7。
 69b. **各项目仓残留的 `codegraph/` 数据目录**：cloth、handoff 仓内的 `codegraph/` 目录与 handoff 消费侧功能（卡 B436）随各仓自行删除，charter 侧不再读写。来源：2026-10-18 用户裁决「彻底删除代码图」。
 69c. **正文预算**：第二步后 spec 7.7 KB、plan 8.8 KB、review 9.7 KB、architecture-law 11 KB；「两页核心 + 按需附录」的拆法等十张产品卡后按实际被引用的段落再压。来源：同上。（2026-10-24 第三步落实为各正文字符预算，见 C18 spec S2）
 70. **项目架构文档三件套样板是否入 charter**（数据归属表 / 允许的依赖方向 / 同步/异步表）：落位三问的答案权威载体是项目仓架构文档，目前只在 spec 正文描述形态、不给模板；先看两个项目各自长出的形态再定是否作为 `docs/` 样板入仓。来源：`docs/specs/2026-10-18-architecture-law-communication-and-placement-spec.md` OOS-①。
 71. **第十二条「同步调用链跨 ≥3 子系统即重切信号」阈值回看**：判据数字沿「个位数即先例」惯例定，未经真实卡实测；等真实卡命中后回看是否改为 2 或 4。来源：同上 spec OOS-②。
 72. **流列并 finish 进 review（Q3-B）**：第三步不动六列与两道门（50 张在飞卡零迁移）；跑十张产品卡后看 finish 是否还有独立裁决，再定是否并列。来源：C18 spec OOS。
 73. **`architecture-law` 是否整部删除（Q2-B）**：第三步降为参考法、不再注入纪律块；同一十张卡观察窗内若无一次被查阅改变决定，再议整部删除。来源：C18 spec OOS。
-74. **handoff 卡机械归 handoff 仓**：轮次门 3/3 对分段派发误判、pass 不自动移列、dispatch 被拒形态、工单无人收——均为 handoff 仓的事，本仓只记此指针，不在 charter 修。来源：C18 spec OOS。
+74. ~~**handoff 卡机械归 handoff 仓**：轮次门 3/3 对分段派发误判、pass 不自动移列、dispatch 被拒形态、工单无人收——均为 handoff 仓的事，本仓只记此指针，不在 charter 修。来源：C18 spec OOS。~~ **已关闭（2026-11-01）**：handoff 已退役，指针无对象。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 2.7。
+75. **第四步观察项 S9——定级只认契约面**：下一张跨子系统各改内部的产品卡被定为多张 L2 挂集成父卡，不走拆分与接缝；证据看该卡 spec 头部。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S9。
+76. **第四步观察项 S10——plan 三件产出**：下一张 L3 产品卡的 plan 产出含层表 + 可编译骨架 + 楼层图，拍板者审图而非审文，子卡不等首故事；证据看该卡 plan 产出与卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S10。
+77. **第四步观察项 S11——批级 finish**：下一批（≥ 2 张卡）的 finish 全量只在集成分支跑一次、main 以 ff-only 合入、有整体走查记录；证据看 git log 与父卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S11。
+78. **第四步 OOS 后续**：pejam 作为账本与执行器接入全局规则（用户：「加 pejam 等我再看看」）；流列是否随两级 finish 调整（finish 列要不要拆「集成」列，先跑一批看人工关口够不够）；既有 PJ 卡（含 PJ28/PJ41）从退役账本迁出，账本工具定了再做；定级表「对接既有 wire 契约本侧零修改也算 L3」是否过严，等真卡命中再看。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 六。
