@@ -21,7 +21,7 @@ bug/测试失败/诡异行为 → implement（排查节：无根因不许修）�
       ├─ 未扇出：同 L2
       └─ 扇出：骨架合入集成分支后子卡按依赖图分批
          → 父卡 review（全部故事终验）→ 父卡 finish
-集成父卡 → 批级 finish（集成分支一次全量 + 整体走查 → main ff-only）
+集成父卡 → 父卡 review（批级验收：集成分支一次全量 + 整体走查 + 回旋镖对账）→ 批级 finish（main ff-only）
 ```
 
 `architecture-law` 是参考法：spec / plan / review 按需查阅，不自动注入。契约冻结是 plan 的条件节，只为新增/变更的共同依赖接缝或对外承诺写。扇出是例外：骨架合入集成分支后才扇出。人工 move 不校验列，本图**非机器保证**，靠 review/finish 证据纪律把关。

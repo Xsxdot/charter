@@ -175,4 +175,4 @@
 75. **第四步观察项 S9——定级只认契约面**：下一张跨子系统各改内部的产品卡被定为多张 L2 挂集成父卡，不走拆分与接缝；证据看该卡 spec 头部。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S9。
 76. **第四步观察项 S10——plan 三件产出**：下一张 L3 产品卡的 plan 产出含层表 + 可编译骨架 + 楼层图，拍板者审图而非审文，子卡不等首故事；证据看该卡 plan 产出与卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S10。
 77. **第四步观察项 S11——批级 finish**：下一批（≥ 2 张卡）的 finish 全量只在集成分支跑一次、main 以 ff-only 合入、有整体走查记录；证据看 git log 与父卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S11。
-78. **第四步 OOS 后续**：pejam 作为账本与执行器接入全局规则（用户：「加 pejam 等我再看看」）；流列是否随两级 finish 调整（finish 列要不要拆「集成」列，先跑一批看人工关口够不够）；既有 PJ 卡（含 PJ28/PJ41）从退役账本迁出，账本工具定了再做；定级表「对接既有 wire 契约本侧零修改也算 L3」是否过严，等真卡命中再看。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 六。
+78. **第四步 OOS 后续**：pejam 作为账本与执行器接入全局规则（用户：「加 pejam 等我再看看」）；流列是否随两级 finish 调整（finish 列要不要拆「集成」列，先跑一批看人工关口够不够）；既有 PJ 卡（含 PJ28/PJ41）从退役账本迁出，账本工具定了再做；定级表「对接既有 wire 契约本侧零修改也算 L3」是否过严，等真卡命中再看。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 六。 另两项同窗观察：「一个仓一个活跃集成分支」与「热修另拉集成父卡」在批进行中互斥，靠 finish 第 3 步 ff 失败回退兜底（review M5）；plan「能算金样本的写测试」与「骨架是唯一代码产出」的张力（review M6）。
