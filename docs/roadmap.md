@@ -170,9 +170,25 @@
 70. **项目架构文档三件套样板是否入 charter**（数据归属表 / 允许的依赖方向 / 同步/异步表）：落位三问的答案权威载体是项目仓架构文档，目前只在 spec 正文描述形态、不给模板；先看两个项目各自长出的形态再定是否作为 `docs/` 样板入仓。来源：`docs/specs/2026-10-18-architecture-law-communication-and-placement-spec.md` OOS-①。
 71. **第十二条「同步调用链跨 ≥3 子系统即重切信号」阈值回看**：判据数字沿「个位数即先例」惯例定，未经真实卡实测；等真实卡命中后回看是否改为 2 或 4。来源：同上 spec OOS-②。
 72. **流列并 finish 进 review（Q3-B）**：第三步不动六列与两道门（50 张在飞卡零迁移）；跑十张产品卡后看 finish 是否还有独立裁决，再定是否并列。来源：C18 spec OOS。
-73. **`architecture-law` 是否整部删除（Q2-B）**：第三步降为参考法、不再注入纪律块；同一十张卡观察窗内若无一次被查阅改变决定，再议整部删除。来源：C18 spec OOS。
+73. ~~**`architecture-law` 是否整部删除（Q2-B）**：第三步降为参考法、不再注入纪律块；同一十张卡观察窗内若无一次被查阅改变决定，再议整部删除。来源：C18 spec OOS。~~ **已关闭（2026-11-12，第五步）**：第十四条给了它执行点（plan 骨架、implement 骨架边界、review 裁决表「超线容器」行各有引用），不再议整部删除。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 改法表。
 74. ~~**handoff 卡机械归 handoff 仓**：轮次门 3/3 对分段派发误判、pass 不自动移列、dispatch 被拒形态、工单无人收——均为 handoff 仓的事，本仓只记此指针，不在 charter 修。来源：C18 spec OOS。~~ **已关闭（2026-11-01）**：handoff 已退役，指针无对象。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 2.7。
 75. **第四步观察项 S9——定级只认契约面**：下一张跨子系统各改内部的产品卡被定为多张 L2 挂集成父卡，不走拆分与接缝；证据看该卡 spec 头部。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S9。
 76. **第四步观察项 S10——plan 三件产出**：下一张 L3 产品卡的 plan 产出含层表 + 可编译骨架 + 楼层图，拍板者审图而非审文，子卡不等首故事；证据看该卡 plan 产出与卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S10。
 77. **第四步观察项 S11——批级 finish**：下一批（≥ 2 张卡）的 finish 全量只在集成分支跑一次、main 以 ff-only 合入、有整体走查记录；证据看 git log 与父卡记录。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 三、S11。
 78. **第四步 OOS 后续**：pejam 作为账本与执行器接入全局规则（用户：「加 pejam 等我再看看」）；流列是否随两级 finish 调整（finish 列要不要拆「集成」列，先跑一批看人工关口够不够）；既有 PJ 卡（含 PJ28/PJ41）从退役账本迁出，账本工具定了再做；定级表「对接既有 wire 契约本侧零修改也算 L3」是否过严，等真卡命中再看。来源：`docs/specs/2026-11-01-charter-step4-skeleton-floors-batch-spec.md` 六。 另两项同窗观察：「一个仓一个活跃集成分支」与「热修另拉集成父卡」在批进行中互斥，靠 finish 第 3 步 ff 失败回退兜底（review M5）；plan「能算金样本的写测试」与「骨架是唯一代码产出」的张力（review M6）。
+79. **第五步观察项 S7——L2 骨架即计划**：下一张 L2 产品卡没有 plan 文档，拍板前有骨架提交，spec 末尾有实施备注；证据看该卡 git log 与 spec。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S7。
+80. **第五步观察项 S8——随卡搬迁**：下一张碰到超线容器的 L2 / L3 卡有独立的搬迁提交且先合入，该容器计数下降，新家不回调老容器；证据看该卡 git log 与结构检查输出。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S8。
+81. **第五步观察项 S9——测试清单**：同一张卡新增测试文件都在骨架清单内或已披露，删除清单已执行；证据看该卡 diff 与 review 裁决表。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S9。
+82. **第五步观察项 S10——一次权威运行**：下一张在有运行记录的项目里走完的卡，审查者没有重跑整套，裁决表「复跑」格是记录指针与提交号，交回物末节没有贴测试输出，变异处数为两处；证据看该卡 review 裁决表与交回物。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S10。
+83. **第五步观察项 S12——全量只属于集成分支**：改版后一周内的一个项目，卡级没有全量运行记录，全量记录都落在集成分支的提交上且同一时间只有一个，main 的每次前进都指向一个全绿提交并有用户放行痕迹；证据看该项目 git log 与运行记录。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S12。
+84. **第五步观察项 S14——轻档边界**：改版后一周内的一个项目，没有卡号的落入全部满足四条判据，超出判据的改动都有卡，轻档提交没有 spec、裁决表、交回物；证据按落入逐个核 diff 行数与触及目录。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S14。
+85. **第五步观察项 S16——随卡走**：有随卡存储的项目里走完的下一张卡，仓内新增的文档只有 spec、决策、roadmap、架构文档，交回物、裁决表、截图、测试输出不在仓内，给人的消息都落在六类之内；证据看该卡提交的文件清单与卡附件。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S16。
+86. **第五步观察项 S18——领域说明**：下一张 L3 产品卡，用户审到的除楼层图外有领域说明，其中已有领域只展开了改动的字段与方法，骨架里新类型都有「拥有什么」一句；证据看该卡骨架 diff 与给用户的审图物。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 三、S18。
+87. **L3 的 plan 文档是否同样收缩成骨架 + 备注**：第五步只动 L2（Q3=A）；L2 跑几张后回看。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+88. **第十三条上帝对象判据「跨 > 1 层」是否保留**：有了第十四条的计数后看它是否还有独立命中。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+89. **手画楼层图存废**：等楼层图生成器落地后再议。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+90. **不随卡触及的旧测试是否专项清理**：先看随卡删除的效果。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+91. **「哪些桩承载规则」的漏判率**：出稿者在写业务逻辑之前判断不变式测试桩；靠「清单外已披露」的条数回看。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+92. **轻档是否被拆着用**：一个功能切成多次线内落入；按同一文件在短期内的轻档落入次数回看，边看边调的界面微调本来就会重复落入，先观察再定是否加累计判据。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+93. **卡级审查漏到后面的缺陷（用户定：不改规则，只观察）**：改版后看集成分支全量与父卡验收阶段发现的缺陷里，还有多少本该在卡级拦下；基线读数是一张父卡批级阶段 11 个缺陷中约 7 个在卡级范围内。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
+94. **修复熔断是否被执行（用户定：不改规则，只观察）**：同一问题修复超过三轮的卡还有几张；基线读数是一张子卡同一问题修到第四轮后改回 plan 原方案。来源：`docs/specs/2026-11-12-c22-ratchet-skeleton-as-plan-spec.md` 六。
