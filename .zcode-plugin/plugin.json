@@ -1,7 +1,7 @@
 {
   "name": "charter",
   "version": "0.1.0",
-  "description": "契约先行、分域并行的开发流程套件：每个流程节点一个 skill，同一正文既是本地 subagent 纪律，也是 handoff 工作流节点的纪律块。",
+  "description": "契约先行、分域并行的开发流程套件：每个流程节点一个 skill，同一正文既是本地 subagent 纪律，也是卡驱动工作流各节点的纪律块。",
   "author": {
     "name": "xsx"
   },
